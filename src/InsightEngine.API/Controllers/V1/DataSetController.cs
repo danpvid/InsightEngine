@@ -1,23 +1,20 @@
-using InsightEngine.Application.Commands.DataSet;
-using InsightEngine.Application.Models.DataSet;
-using InsightEngine.Domain.Core.Notifications;
 using InsightEngine.Domain.Interfaces;
-using MediatR;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace InsightEngine.API.Controllers.V1;
 
 /// <summary>
 /// Controller para gerenciamento de datasets (arquivos CSV)
 /// </summary>
+[ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/datasets")]
-[Authorize]
-public class DataSetController : BaseController
+[AllowAnonymous]
+public class DataSetController : ControllerBase
 {
-    private readonly IDataSetRepository _dataSetRepository;
+    private readonly IFileStorageService _fileStorageService;
     private readonly ICsvProfiler _csvProfiler;
     private readonly ILogger<DataSetController> _logger;
 
@@ -25,15 +22,88 @@ public class DataSetController : BaseController
     private const long MaxFileSize = 20L * 1024 * 1024;
 
     public DataSetController(
-        IDomainNotificationHandler notificationHandler,
-        IMediator mediator,
-        IDataSetRepository dataSetRepository,
+        IFileStorageService fileStorageService,
         ICsvProfiler csvProfiler,
-        ILogger<DataSetController> logger) : base(notificationHandler, mediator)
+        ILogger<DataSetController> logger)
     {
-        _dataSetRepository = dataSetRepository;
+        _fileStorageService = fileStorageService;
         _csvProfiler = csvProfiler;
         _logger = logger;
+    }
+
+    private class DatasetMetadata
+    {
+        public Guid Id { get; set; }
+        public string OriginalFileName { get; set; } = string.Empty;
+        public string StoredFileName { get; set; } = string.Empty;
+        public string StoredPath { get; set; } = string.Empty;
+        public long FileSizeInBytes { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    private string GetMetadataFilePath(Guid datasetId)
+    {
+        var basePath = _fileStorageService.GetFullPath(string.Empty);
+        var directory = Path.GetDirectoryName(basePath) ?? ".";
+        return Path.Combine(directory, $"{datasetId}.meta.json");
+    }
+
+    private async Task SaveMetadataAsync(DatasetMetadata metadata)
+    {
+        var metadataPath = GetMetadataFilePath(metadata.Id);
+        var json = JsonSerializer.Serialize(metadata, new JsonSerializerOptions 
+        { 
+            WriteIndented = true 
+        });
+        await System.IO.File.WriteAllTextAsync(metadataPath, json);
+        _logger.LogInformation("Metadata saved: {MetadataPath}", metadataPath);
+    }
+
+    private async Task<DatasetMetadata?> LoadMetadataAsync(Guid datasetId)
+    {
+        var metadataPath = GetMetadataFilePath(datasetId);
+        
+        if (!System.IO.File.Exists(metadataPath))
+        {
+            _logger.LogWarning("Metadata not found: {MetadataPath}", metadataPath);
+            return null;
+        }
+
+        var json = await System.IO.File.ReadAllTextAsync(metadataPath);
+        return JsonSerializer.Deserialize<DatasetMetadata>(json);
+    }
+
+    private async Task<List<DatasetMetadata>> LoadAllMetadataAsync()
+    {
+        var basePath = _fileStorageService.GetFullPath(string.Empty);
+        var directory = Path.GetDirectoryName(basePath) ?? ".";
+        
+        if (!Directory.Exists(directory))
+        {
+            return new List<DatasetMetadata>();
+        }
+
+        var metadataFiles = Directory.GetFiles(directory, "*.meta.json");
+        var metadataList = new List<DatasetMetadata>();
+
+        foreach (var file in metadataFiles)
+        {
+            try
+            {
+                var json = await System.IO.File.ReadAllTextAsync(file);
+                var metadata = JsonSerializer.Deserialize<DatasetMetadata>(json);
+                if (metadata != null)
+                {
+                    metadataList.Add(metadata);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load metadata from {File}", file);
+            }
+        }
+
+        return metadataList;
     }
 
     /// <summary>
@@ -67,9 +137,8 @@ public class DataSetController : BaseController
     [RequestSizeLimit(MaxFileSize)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxFileSize)]
     [DisableRequestSizeLimit] // Para Kestrel
-    [ProducesResponseType(typeof(DataSetUploadOutputModel), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Upload(IFormFile file)
@@ -110,39 +179,32 @@ public class DataSetController : BaseController
             _logger.LogInformation("Receiving file upload: {FileName}, Size: {Size} bytes",
                 file.FileName, file.Length);
 
-            // Cria e executa o comando usando streaming
+            // Gerar datasetId e nomes de arquivo
+            var datasetId = Guid.NewGuid();
+            var storedFileName = $"{datasetId}.csv";
+
+            // Salvar arquivo CSV usando streaming
             await using var fileStream = file.OpenReadStream();
-            
-            var command = new UploadDataSetCommand(
+            var (storedPath, fileSize) = await _fileStorageService.SaveFileAsync(
                 fileStream,
-                file.FileName,
-                file.ContentType,
-                file.Length
-            );
-            
-            var result = await _mediator.Send(command);
+                storedFileName,
+                default);
 
-            if (!result)
+            // Criar metadados
+            var metadata = new DatasetMetadata
             {
-                return ResponseCommand();
-            }
+                Id = datasetId,
+                OriginalFileName = file.FileName,
+                StoredFileName = storedFileName,
+                StoredPath = storedPath,
+                FileSizeInBytes = fileSize,
+                CreatedAt = DateTime.UtcNow
+            };
 
-            // Busca o dataset criado para retornar os metadados
-            var datasets = await _dataSetRepository.GetAllAsync();
-            var dataset = datasets.OrderByDescending(ds => ds.CreatedAt).FirstOrDefault();
+            // Salvar metadados em JSON
+            await SaveMetadataAsync(metadata);
 
-            if (dataset == null)
-            {
-                return ResponseCommand();
-            }
-
-            var output = new DataSetUploadOutputModel(
-                dataSetId: dataset.Id,
-                originalFileName: dataset.OriginalFileName,
-                storedPath: dataset.StoredPath,
-                fileSizeInBytes: dataset.FileSizeInBytes,
-                createdAt: dataset.CreatedAt
-            );
+            _logger.LogInformation("Dataset uploaded successfully: {DatasetId}", datasetId);
 
             var response = new
             {
@@ -150,17 +212,17 @@ public class DataSetController : BaseController
                 message = "Arquivo enviado com sucesso.",
                 data = new
                 {
-                    datasetId = output.DataSetId,
-                    originalFileName = output.OriginalFileName,
-                    storedFileName = dataset.StoredFileName,
-                    sizeBytes = output.FileSizeInBytes,
-                    createdAtUtc = output.CreatedAt.ToUniversalTime()
+                    datasetId = metadata.Id,
+                    originalFileName = metadata.OriginalFileName,
+                    storedFileName = metadata.StoredFileName,
+                    sizeBytes = metadata.FileSizeInBytes,
+                    createdAtUtc = metadata.CreatedAt
                 }
             };
 
             return CreatedAtAction(
                 nameof(GetById),
-                new { id = output.DataSetId, version = "1.0" },
+                new { id = metadata.Id, version = "1.0" },
                 response);
         }
         catch (Exception ex)
@@ -181,10 +243,9 @@ public class DataSetController : BaseController
     /// </summary>
     [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetAll()
     {
-        var datasets = await _dataSetRepository.GetAllAsync();
+        var datasets = await LoadAllMetadataAsync();
 
         var result = datasets.Select(ds => new
         {
@@ -209,10 +270,9 @@ public class DataSetController : BaseController
     [HttpGet("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var dataset = await _dataSetRepository.GetByIdAsync(id);
+        var dataset = await LoadMetadataAsync(id);
 
         if (dataset == null)
         {
@@ -234,9 +294,7 @@ public class DataSetController : BaseController
                 storedPath = dataset.StoredPath,
                 fileSizeInBytes = dataset.FileSizeInBytes,
                 fileSizeMB = Math.Round(dataset.FileSizeInBytes / (1024.0 * 1024.0), 2),
-                contentType = dataset.ContentType,
-                createdAt = dataset.CreatedAt,
-                updatedAt = dataset.UpdatedAt
+                createdAt = dataset.CreatedAt
             }
         });
     }
@@ -284,7 +342,6 @@ public class DataSetController : BaseController
     [HttpGet("{id:guid}/profile")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetProfile(Guid id)
     {
@@ -292,8 +349,8 @@ public class DataSetController : BaseController
         {
             _logger.LogInformation("Generating profile for dataset {DatasetId}", id);
 
-            // Busca o dataset
-            var dataset = await _dataSetRepository.GetByIdAsync(id);
+            // Busca metadados
+            var dataset = await LoadMetadataAsync(id);
             if (dataset == null)
             {
                 return NotFound(new
@@ -303,7 +360,7 @@ public class DataSetController : BaseController
                 });
             }
 
-            // Verifica se o arquivo existe
+            // Verifica se o arquivo CSV existe
             if (!System.IO.File.Exists(dataset.StoredPath))
             {
                 _logger.LogError("File not found for dataset {DatasetId}: {Path}", id, dataset.StoredPath);
