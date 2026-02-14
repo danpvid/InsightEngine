@@ -11,19 +11,6 @@ public static class SwaggerConfiguration
     {
         services.AddSwaggerGen(c =>
         {
-            // Configuração básica
-            c.SwaggerDoc("v1", new OpenApiInfo
-            {
-                Title = "InsightEngine API",
-                Version = "v1",
-                Description = "API do InsightEngine com arquitetura limpa, CQRS e Domain Notifications",
-                Contact = new OpenApiContact
-                {
-                    Name = "InsightEngine Team",
-                    Email = "contato@insightengine.com"
-                }
-            });
-
             // Configuração de autenticação JWT no Swagger
             c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
