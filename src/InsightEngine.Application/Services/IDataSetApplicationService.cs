@@ -1,6 +1,7 @@
 using InsightEngine.Domain.Commands.DataSet;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
 using Microsoft.AspNetCore.Http;
 
@@ -25,4 +26,9 @@ public interface IDataSetApplicationService
     /// Get chart recommendations for a dataset
     /// </summary>
     Task<Result<List<ChartRecommendation>>> GetRecommendationsAsync(Guid datasetId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get all datasets
+    /// </summary>
+    Task<Result<List<DataSetSummary>>> GetAllAsync(CancellationToken cancellationToken = default);
 }

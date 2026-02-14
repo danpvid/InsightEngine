@@ -89,4 +89,23 @@ public class DataSetApplicationService : IDataSetApplicationService
 
         return result;
     }
+
+    public async Task<Result<List<DataSetSummary>>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Retrieving all datasets");
+
+        var query = new GetAllDataSetsQuery();
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (result.IsSuccess)
+        {
+            _logger.LogInformation("Retrieved {Count} datasets", result.Data.Count);
+        }
+        else
+        {
+            _logger.LogWarning("Failed to retrieve datasets: {Errors}", string.Join(", ", result.Errors));
+        }
+
+        return result;
+    }
 }

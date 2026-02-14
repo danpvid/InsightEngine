@@ -115,6 +115,47 @@ public class DataSetController : BaseController
     }
 
     /// <summary>
+    /// Lista todos os datasets
+    /// </summary>
+    /// <returns>Lista de datasets com informações resumidas</returns>
+    [HttpGet]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetAll()
+    {
+        try
+        {
+            var result = await _dataSetApplicationService.GetAllAsync();
+
+            if (!result.IsSuccess)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    success = false,
+                    errors = result.Errors
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving datasets");
+            
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                success = false,
+                message = "Erro ao listar datasets.",
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
     /// Obtém informações de um dataset específico
     /// </summary>
     [HttpGet("{id:guid}")]
