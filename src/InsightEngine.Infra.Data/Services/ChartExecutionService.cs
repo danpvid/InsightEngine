@@ -331,9 +331,167 @@ LIMIT {topN};
         ChartRecommendation recommendation,
         CancellationToken ct)
     {
+        var swDuckDb = Stopwatch.StartNew();
+
+        try
+        {
+            // Validar eixos: X=Measure, Y=Measure (sem agregação)
+            if (recommendation.Query.X.Role != AxisRole.Measure)
+                return Result.Failure<ChartExecutionResult>("Scatter chart requires X axis with role Measure.");
+
+            if (recommendation.Query.Y.Role != AxisRole.Measure)
+                return Result.Failure<ChartExecutionResult>("Scatter chart requires Y axis with role Measure.");
+
+            // Scatter não usa agregação (pontos individuais)
+            if (recommendation.Query.X.Aggregation.HasValue || recommendation.Query.Y.Aggregation.HasValue)
+                return Result.Failure<ChartExecutionResult>("Scatter chart does not use aggregation (plots individual points).");
+
+            // Gerar e executar SQL com sampling
+            var sql = BuildScatterSQL(csvPath, recommendation);
+            var dataResult = await ExecuteScatterQueryAsync(sql, ct);
+            swDuckDb.Stop();
+
+            if (!dataResult.IsSuccess)
+                return Result.Failure<ChartExecutionResult>(dataResult.Errors);
+
+            var points = dataResult.Data!;
+
+            // Montar ECharts option
+            var option = BuildScatterEChartsOption(recommendation, points);
+
+            return Result.Success(new ChartExecutionResult
+            {
+                Option = option,
+                DuckDbMs = swDuckDb.ElapsedMilliseconds,
+                GeneratedSql = sql,
+                RowCount = points.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing Scatter chart");
+            return Result.Failure<ChartExecutionResult>($"Scatter chart execution failed: {ex.Message}");
+        }
+    }
+
+    private string BuildScatterSQL(string csvPath, ChartRecommendation recommendation)
+    {
+        var xCol = recommendation.Query.X.Column;
+        var yCol = recommendation.Query.Y.Column;
+
+        var escapedPath = csvPath.Replace("'", "''");
+
+        // MaxPoints configurável (default 2000) com sampling aleatório
+        var maxPoints = _settings.ScatterMaxPoints > 0 ? _settings.ScatterMaxPoints : 2000;
+
+        // Scatter: pontos individuais (sem agregação) + sampling aleatório se muitos pontos
+        var sql = $@"
+SELECT 
+    CAST(REPLACE(CAST(""{xCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS x,
+    CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS y
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
+WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL
+ORDER BY random()
+LIMIT {maxPoints};
+";
+
+        return sql;
+    }
+
+    private async Task<Result<List<ScatterPoint>>> ExecuteScatterQueryAsync(
+        string sql,
+        CancellationToken ct)
+    {
         await Task.CompletedTask;
-        // TODO: Implementar Day 5 - Task 5.4
-        return Result.Failure<ChartExecutionResult>("Scatter chart not implemented yet.");
+
+        var points = new List<ScatterPoint>();
+
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            connection.Open();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+
+            _logger.LogDebug("Executing DuckDB Scatter query: {SQL}", sql);
+
+            using var reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                if (ct.IsCancellationRequested)
+                    break;
+
+                var x = reader.IsDBNull(0) ? 0.0 : reader.GetDouble(0);
+                var y = reader.IsDBNull(1) ? 0.0 : reader.GetDouble(1);
+
+                points.Add(new ScatterPoint(x, y));
+            }
+
+            _logger.LogInformation("DuckDB Scatter query returned {RowCount} points", points.Count);
+
+            return Result.Success(points);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "DuckDB Scatter query execution failed");
+            return Result.Failure<List<ScatterPoint>>($"Scatter query execution failed: {ex.Message}");
+        }
+    }
+
+    private EChartsOption BuildScatterEChartsOption(
+        ChartRecommendation recommendation,
+        List<ScatterPoint> data)
+    {
+        // Converter para formato ECharts [[x, y], [x, y], ...]
+        var scatterData = data.Select(p => new object[] { p.X, p.Y }).ToList();
+
+        var option = new EChartsOption
+        {
+            Title = new Dictionary<string, object>
+            {
+                ["text"] = recommendation.Title,
+                ["subtext"] = recommendation.Reason
+            },
+            Tooltip = new Dictionary<string, object>
+            {
+                ["trigger"] = "item",
+                ["formatter"] = "{a}<br/>{b}: ({c})"
+            },
+            Grid = new Dictionary<string, object>
+            {
+                ["left"] = "3%",
+                ["right"] = "7%",
+                ["bottom"] = "10%",
+                ["top"] = "15%",
+                ["containLabel"] = true
+            },
+            XAxis = new Dictionary<string, object>
+            {
+                ["type"] = "value",
+                ["name"] = recommendation.Query.X.Column,
+                ["scale"] = true  // Auto-escala baseado nos dados
+            },
+            YAxis = new Dictionary<string, object>
+            {
+                ["type"] = "value",
+                ["name"] = recommendation.Query.Y.Column,
+                ["scale"] = true
+            },
+            Series = new List<Dictionary<string, object>>
+            {
+                new()
+                {
+                    ["name"] = $"{recommendation.Query.X.Column} vs {recommendation.Query.Y.Column}",
+                    ["type"] = "scatter",
+                    ["symbolSize"] = 8,
+                    ["data"] = scatterData
+                }
+            }
+        };
+
+        return option;
     }
 
     // ===========================
@@ -345,9 +503,216 @@ LIMIT {topN};
         ChartRecommendation recommendation,
         CancellationToken ct)
     {
+        var swDuckDb = Stopwatch.StartNew();
+
+        try
+        {
+            // Validar eixo: apenas X=Measure (histograma de distribuição)
+            if (recommendation.Query.X.Role != AxisRole.Measure)
+                return Result.Failure<ChartExecutionResult>("Histogram chart requires X axis with role Measure.");
+
+            // Histograma não usa Y axis
+            if (recommendation.Query.Y != null && !string.IsNullOrEmpty(recommendation.Query.Y.Column))
+                return Result.Failure<ChartExecutionResult>("Histogram chart uses only X axis (frequency distribution).");
+
+            // Gerar e executar SQL para calcular bins
+            var histogramResult = await ExecuteHistogramQueryAsync(csvPath, recommendation, ct);
+            swDuckDb.Stop();
+
+            if (!histogramResult.IsSuccess)
+                return Result.Failure<ChartExecutionResult>(histogramResult.Errors);
+
+            var (bins, sql) = histogramResult.Data!;
+
+            // Montar ECharts option
+            var option = BuildHistogramEChartsOption(recommendation, bins);
+
+            return Result.Success(new ChartExecutionResult
+            {
+                Option = option,
+                DuckDbMs = swDuckDb.ElapsedMilliseconds,
+                GeneratedSql = sql,
+                RowCount = bins.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing Histogram chart");
+            return Result.Failure<ChartExecutionResult>($"Histogram chart execution failed: {ex.Message}");
+        }
+    }
+
+    private async Task<Result<(List<HistogramBin> Bins, string Sql)>> ExecuteHistogramQueryAsync(
+        string csvPath,
+        ChartRecommendation recommendation,
+        CancellationToken ct)
+    {
         await Task.CompletedTask;
-        // TODO: Implementar Day 5 - Task 5.5
-        return Result.Failure<ChartExecutionResult>("Histogram chart not implemented yet.");
+
+        var xCol = recommendation.Query.X.Column;
+        var escapedPath = csvPath.Replace("'", "''");
+        var numBins = _settings.HistogramBins > 0 ? _settings.HistogramBins : 20;
+
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            connection.Open();
+
+            // Passo 1: Obter min e max
+            var minMaxSql = $@"
+SELECT 
+    MIN(CAST(REPLACE(CAST(""{xCol}"" AS VARCHAR), ',', '') AS DOUBLE)) AS min_val,
+    MAX(CAST(REPLACE(CAST(""{xCol}"" AS VARCHAR), ',', '') AS DOUBLE)) AS max_val
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
+WHERE ""{xCol}"" IS NOT NULL;
+";
+
+            double minVal, maxVal;
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = minMaxSql;
+                using var reader = cmd.ExecuteReader();
+                if (!reader.Read())
+                    return Result.Failure<(List<HistogramBin>, string)>("Failed to calculate min/max for histogram.");
+
+                minVal = reader.IsDBNull(0) ? 0.0 : reader.GetDouble(0);
+                maxVal = reader.IsDBNull(1) ? 0.0 : reader.GetDouble(1);
+            }
+
+            // Evitar divisão por zero
+            if (Math.Abs(maxVal - minVal) < 0.0001)
+            {
+                return Result.Success((
+                    new List<HistogramBin> { new($"{minVal:F2}", 1) },
+                    minMaxSql
+                ));
+            }
+
+            var binWidth = (maxVal - minVal) / numBins;
+
+            // Passo 2: Calcular contagens por bin
+            var histogramSql = $@"
+SELECT 
+    FLOOR((value - {minVal}) / {binWidth}) AS bin_index,
+    COUNT(*) AS count
+FROM (
+    SELECT CAST(REPLACE(CAST(""{xCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS value
+    FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
+    WHERE ""{xCol}"" IS NOT NULL
+)
+WHERE value >= {minVal} AND value <= {maxVal}
+GROUP BY 1
+ORDER BY 1;
+";
+
+            var bins = new List<HistogramBin>();
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = histogramSql;
+
+                _logger.LogDebug("Executing DuckDB Histogram query: {SQL}", histogramSql);
+
+                using var reader = cmd.ExecuteReader();
+
+                // Criar todos os bins (preenchendo com 0 se não houver dados)
+                var binCounts = new Dictionary<int, int>();
+                while (reader.Read())
+                {
+                    if (ct.IsCancellationRequested)
+                        break;
+
+                    var binIndex = reader.IsDBNull(0) ? 0 : reader.GetInt32(0);
+                    var count = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
+
+                    binCounts[binIndex] = count;
+                }
+
+                // Gerar labels e contagens para todos os bins
+                for (int i = 0; i < numBins; i++)
+                {
+                    var binStart = minVal + (i * binWidth);
+                    var binEnd = minVal + ((i + 1) * binWidth);
+                    var label = $"[{binStart:F2}, {binEnd:F2})";
+                    var count = binCounts.GetValueOrDefault(i, 0);
+
+                    bins.Add(new HistogramBin(label, count));
+                }
+            }
+
+            _logger.LogInformation("DuckDB Histogram query returned {BinCount} bins", bins.Count);
+
+            var combinedSql = $"-- Step 1: Min/Max\n{minMaxSql}\n\n-- Step 2: Bin Counts\n{histogramSql}";
+            return Result.Success((bins, combinedSql));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "DuckDB Histogram query execution failed");
+            return Result.Failure<(List<HistogramBin>, string)>($"Histogram query execution failed: {ex.Message}");
+        }
+    }
+
+    private EChartsOption BuildHistogramEChartsOption(
+        ChartRecommendation recommendation,
+        List<HistogramBin> bins)
+    {
+        var labels = bins.Select(b => b.Label).ToList();
+        var counts = bins.Select(b => b.Count).ToList();
+
+        var option = new EChartsOption
+        {
+            Title = new Dictionary<string, object>
+            {
+                ["text"] = recommendation.Title,
+                ["subtext"] = recommendation.Reason
+            },
+            Tooltip = new Dictionary<string, object>
+            {
+                ["trigger"] = "axis",
+                ["axisPointer"] = new Dictionary<string, object>
+                {
+                    ["type"] = "shadow"
+                }
+            },
+            Grid = new Dictionary<string, object>
+            {
+                ["left"] = "3%",
+                ["right"] = "4%",
+                ["bottom"] = "10%",
+                ["top"] = "15%",
+                ["containLabel"] = true
+            },
+            XAxis = new Dictionary<string, object>
+            {
+                ["type"] = "category",
+                ["name"] = recommendation.Query.X.Column,
+                ["data"] = labels,
+                ["axisLabel"] = new Dictionary<string, object>
+                {
+                    ["rotate"] = 45,
+                    ["fontSize"] = 10
+                }
+            },
+            YAxis = new Dictionary<string, object>
+            {
+                ["type"] = "value",
+                ["name"] = "Frequency"
+            },
+            Series = new List<Dictionary<string, object>>
+            {
+                new()
+                {
+                    ["name"] = "Frequency",
+                    ["type"] = "bar",
+                    ["data"] = counts,
+                    ["itemStyle"] = new Dictionary<string, object>
+                    {
+                        ["color"] = "#5470c6"
+                    }
+                }
+            }
+        };
+
+        return option;
     }
 
     // ===========================
@@ -566,4 +931,14 @@ ORDER BY 1;
     /// Representa um par categoria-valor para gráficos de barra
     /// </summary>
     private record CategoryValue(string Category, double Value);
+
+    /// <summary>
+    /// Representa um ponto (x, y) para gráfico de dispersão
+    /// </summary>
+    private record ScatterPoint(double X, double Y);
+
+    /// <summary>
+    /// Representa um bin de histograma com label e contagem
+    /// </summary>
+    private record HistogramBin(string Label, int Count);
 }
