@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AutoMapper.Extensions.Microsoft.DependencyInjection" />
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\InsightEngine.Application\InsightEngine.Application.csproj" />
+    <ProjectReference Include="..\InsightEngine.Infra.Data\InsightEngine.Infra.Data.csproj" />
+    <ProjectReference Include="..\InsightEngine.Infra.ExternalService\InsightEngine.Infra.ExternalService.csproj" />
+  </ItemGroup>
+
+</Project>

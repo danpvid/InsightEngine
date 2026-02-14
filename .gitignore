@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.cache
+.vscode/
+
+# Arquivos de configuração com dados sensíveis
+appsettings.Production.json
+*.secrets.json
+
+# User Secrets
+secrets.json
+

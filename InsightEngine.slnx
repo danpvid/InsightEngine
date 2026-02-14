@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/InsightEngine.API/InsightEngine.API.csproj" />
+    <Project Path="src/InsightEngine.Application/InsightEngine.Application.csproj" />
+    <Project Path="src/InsightEngine.CrossCutting/InsightEngine.CrossCutting.csproj" />
+    <Project Path="src/InsightEngine.Domain/InsightEngine.Domain.csproj" />
+    <Project Path="src/InsightEngine.Infra.Data/InsightEngine.Infra.Data.csproj" />
+    <Project Path="src/InsightEngine.Infra.ExternalService/InsightEngine.Infra.ExternalService.csproj" />
+  </Folder>
+</Solution>
