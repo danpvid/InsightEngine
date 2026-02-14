@@ -1,28 +1,37 @@
 namespace InsightEngine.API.Models;
 
 /// <summary>
-/// Envelope padrão para respostas de erro da API
+/// Standard error response envelope for all API errors
 /// </summary>
 public class ApiErrorResponse
 {
     /// <summary>
-    /// Sempre false em respostas de erro
+    /// Always false for error responses
     /// </summary>
     public bool Success { get; set; } = false;
 
     /// <summary>
-    /// Sempre null em respostas de erro
+    /// Always null for error responses
     /// </summary>
     public object? Data { get; set; }
 
     /// <summary>
-    /// Dicionário de erros agrupados por campo/chave
-    /// Formato: { "fieldName": ["erro1", "erro2"], "general": ["erro geral"] }
+    /// Machine-readable error code
     /// </summary>
-    public Dictionary<string, List<string>> Errors { get; set; } = new();
+    public string Code { get; set; } = "internal_error";
 
     /// <summary>
-    /// ID de rastreamento para correlação de logs
+    /// Human-readable error message
+    /// </summary>
+    public string Message { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Field-level error details
+    /// </summary>
+    public Dictionary<string, List<string>>? Details { get; set; }
+
+    /// <summary>
+    /// Request trace ID
     /// </summary>
     public string TraceId { get; set; } = string.Empty;
 
@@ -30,55 +39,44 @@ public class ApiErrorResponse
     {
     }
 
-    public ApiErrorResponse(string traceId)
+    public ApiErrorResponse(string code, string message, string traceId)
     {
+        Code = code;
+        Message = message;
         TraceId = traceId;
     }
 
-    public ApiErrorResponse(Dictionary<string, List<string>> errors, string traceId)
+    public static ApiErrorResponse FromMessage(string message, string traceId, string code = "internal_error")
     {
-        Errors = errors;
-        TraceId = traceId;
+        return new ApiErrorResponse(code, message, traceId);
     }
 
-    /// <summary>
-    /// Cria resposta de erro com mensagem única sem campo específico
-    /// </summary>
-    public static ApiErrorResponse FromMessage(string message, string traceId)
+    public static ApiErrorResponse FromValidationErrors(Dictionary<string, List<string>> errors, string traceId)
     {
+        var firstError = errors.Values.FirstOrDefault()?.FirstOrDefault() ?? "Validation failed";
         return new ApiErrorResponse
         {
-            Errors = new Dictionary<string, List<string>>
-            {
-                ["general"] = new List<string> { message }
-            },
+            Code = "validation_error",
+            Message = firstError,
+            Details = errors,
             TraceId = traceId
         };
     }
 
-    /// <summary>
-    /// Cria resposta de erro a partir de lista de strings (Result Pattern)
-    /// </summary>
     public static ApiErrorResponse FromList(List<string> errors, string traceId)
     {
+        var firstError = errors.FirstOrDefault() ?? "Operation failed";
         return new ApiErrorResponse
         {
-            Errors = new Dictionary<string, List<string>>
-            {
-                ["general"] = errors
-            },
+            Code = "operation_error",
+            Message = firstError,
+            Details = new Dictionary<string, List<string>> { ["Errors"] = errors },
             TraceId = traceId
         };
     }
 
-    /// <summary>
-    /// Adiciona erro a um campo específico
-    /// </summary>
-    public void AddError(string field, string message)
+    public static ApiErrorResponse NotFound(string message, string traceId)
     {
-        if (!Errors.ContainsKey(field))
-            Errors[field] = new List<string>();
-
-        Errors[field].Add(message);
+        return new ApiErrorResponse("not_found", message, traceId);
     }
 }

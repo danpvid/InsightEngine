@@ -78,7 +78,7 @@ public abstract class BaseController : ControllerBase
             errors[notification.Key].Add(notification.Value);
         }
 
-        return BadRequest(new ApiErrorResponse(errors, traceId));
+        return BadRequest(ApiErrorResponse.FromValidationErrors(errors, traceId));
     }
 
     /// <summary>
