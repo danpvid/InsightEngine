@@ -12,20 +12,23 @@ using ChartExecutionResponse = InsightEngine.API.Models.ChartExecutionResponse;
 
 namespace InsightEngine.IntegrationTests;
 
-[Collection("IntegrationTests")]
+[Collection("RealApi")]
 public class DataSetIntegrationTests : IAsyncLifetime
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly RealApiFixture _fixture;
     private HttpClient _client = null!;
 
-    public DataSetIntegrationTests(WebApplicationFactory<Program> factory)
+    public DataSetIntegrationTests(RealApiFixture fixture)
     {
-        _factory = factory;
+        _fixture = fixture;
     }
 
     public Task InitializeAsync()
     {
-        _client = _factory.CreateClient();
+        _client = new HttpClient
+        {
+            BaseAddress = new Uri(_fixture.BaseUrl)
+        };
         return Task.CompletedTask;
     }
 
