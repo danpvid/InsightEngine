@@ -13,7 +13,7 @@ public class EChartsOption
     public Dictionary<string, object>? XAxis { get; set; }
     public Dictionary<string, object>? YAxis { get; set; }
     public List<Dictionary<string, object>>? Series { get; set; }
-    public Dictionary<string, object>? DataZoom { get; set; }
+    public List<Dictionary<string, object>>? DataZoom { get; set; }
     public Dictionary<string, object>? ToolBox { get; set; }
 
     public EChartsOption()

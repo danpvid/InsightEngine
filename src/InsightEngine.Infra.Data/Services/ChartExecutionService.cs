@@ -253,6 +253,8 @@ ORDER BY 1;
         ChartRecommendation recommendation,
         List<(long TimestampMs, double? Value)> data)
     {
+        var rowCount = data.Count;
+
         // Partir do template (se existir) ou criar novo
         var option = new EChartsOption
         {
@@ -268,6 +270,15 @@ ORDER BY 1;
                 {
                     ["type"] = "cross"
                 }
+            },
+            // Grid com defaults úteis (Prompt 4)
+            Grid = new Dictionary<string, object>
+            {
+                ["left"] = "3%",
+                ["right"] = "4%",
+                ["bottom"] = "10%",
+                ["top"] = "15%",
+                ["containLabel"] = true
             },
             XAxis = new Dictionary<string, object>
             {
@@ -290,6 +301,29 @@ ORDER BY 1;
                 }
             }
         };
+
+        // DataZoom automático se exceder threshold (Prompt 4)
+        if (_settings.EnableAutoDataZoom && rowCount > _settings.DataZoomThreshold)
+        {
+            option.DataZoom = new List<Dictionary<string, object>>
+            {
+                new()
+                {
+                    ["type"] = "slider",
+                    ["show"] = true,
+                    ["xAxisIndex"] = 0,
+                    ["start"] = 0,
+                    ["end"] = 100
+                },
+                new()
+                {
+                    ["type"] = "inside",
+                    ["xAxisIndex"] = 0,
+                    ["start"] = 0,
+                    ["end"] = 100
+                }
+            };
+        }
 
         return option;
     }
