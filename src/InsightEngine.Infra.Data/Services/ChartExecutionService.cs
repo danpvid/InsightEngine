@@ -381,8 +381,10 @@ LIMIT {topN};
 
         var escapedPath = csvPath.Replace("'", "''");
 
-        // MaxPoints configurável (default 2000) com sampling aleatório
+        // Task 6.5: Enforce safety limit for scatter points (max 2000)
         var maxPoints = _settings.ScatterMaxPoints > 0 ? _settings.ScatterMaxPoints : 2000;
+        
+        _logger.LogDebug("Scatter max points: {MaxPoints}", maxPoints);
 
         // Scatter: pontos individuais (sem agregação) + sampling aleatório se muitos pontos
         var sql = $@"
@@ -551,7 +553,16 @@ LIMIT {maxPoints};
 
         var xCol = recommendation.Query.X.Column;
         var escapedPath = csvPath.Replace("'", "''");
+        
+        // Task 6.5: Enforce safety limits for bins (5-50)
         var numBins = _settings.HistogramBins > 0 ? _settings.HistogramBins : 20;
+        var minBins = _settings.HistogramMinBins > 0 ? _settings.HistogramMinBins : 5;
+        var maxBins = _settings.HistogramMaxBins > 0 ? _settings.HistogramMaxBins : 50;
+        
+        // Clamp bins to safe range
+        numBins = Math.Max(minBins, Math.Min(maxBins, numBins));
+        
+        _logger.LogDebug("Histogram bins: {NumBins} (min: {MinBins}, max: {MaxBins})", numBins, minBins, maxBins);
 
         try
         {

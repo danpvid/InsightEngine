@@ -38,7 +38,17 @@ public class ChartExecutionSettings
     public int ScatterMaxPoints { get; set; } = 2000;
 
     /// <summary>
-    /// Número de bins para histograma
+    /// Número de bins para histograma (default)
     /// </summary>
     public int HistogramBins { get; set; } = 20;
+
+    /// <summary>
+    /// Número mínimo de bins para histograma (Task 6.5)
+    /// </summary>
+    public int HistogramMinBins { get; set; } = 5;
+
+    /// <summary>
+    /// Número máximo de bins para histograma (Task 6.5)
+    /// </summary>
+    public int HistogramMaxBins { get; set; } = 50;
 }
