@@ -68,6 +68,10 @@ public abstract class BaseController : ControllerBase
         }
 
         var notifications = _notificationHandler.GetNotifications();
+        
+        // Determinar status code baseado no tipo de erro das notificações
+        var statusCode = DetermineStatusCodeFromNotifications(notifications);
+        
         var errors = new Dictionary<string, List<string>>();
         
         foreach (var notification in notifications)
@@ -78,7 +82,10 @@ public abstract class BaseController : ControllerBase
             errors[notification.Key].Add(notification.Value);
         }
 
-        return BadRequest(ApiErrorResponse.FromValidationErrors(errors, traceId));
+        var errorResponse = ApiErrorResponse.FromValidationErrors(errors, traceId);
+        errorResponse.Code = MapErrorTypeToCode(notifications.FirstOrDefault()?.Type ?? ErrorType.Validation);
+        
+        return StatusCode(statusCode, errorResponse);
     }
 
     /// <summary>
@@ -119,6 +126,49 @@ public abstract class BaseController : ControllerBase
 
         // Erro genérico/interno
         return 500;
+    }
+
+    /// <summary>
+    /// Determina o status code HTTP baseado no tipo de erro das notificações
+    /// </summary>
+    private int DetermineStatusCodeFromNotifications(IReadOnlyCollection<DomainNotification> notifications)
+    {
+        if (notifications == null || notifications.Count == 0)
+            return 500;
+
+        // Usar o tipo da primeira notificação (priorizar NotFound > Conflict > Validation)
+        var priorityOrder = new[] 
+        { 
+            ErrorType.NotFound, 
+            ErrorType.Conflict, 
+            ErrorType.UnprocessableEntity,
+            ErrorType.Validation,
+            ErrorType.InternalError 
+        };
+
+        foreach (var errorType in priorityOrder)
+        {
+            if (notifications.Any(n => n.Type == errorType))
+                return (int)errorType;
+        }
+
+        return 500;
+    }
+
+    /// <summary>
+    /// Mapeia ErrorType para código de erro legível
+    /// </summary>
+    private string MapErrorTypeToCode(ErrorType errorType)
+    {
+        return errorType switch
+        {
+            ErrorType.Validation => "validation_error",
+            ErrorType.NotFound => "not_found",
+            ErrorType.Conflict => "conflict",
+            ErrorType.UnprocessableEntity => "unprocessable_entity",
+            ErrorType.InternalError => "internal_error",
+            _ => "internal_error"
+        };
     }
 
     protected async Task<IActionResult> SendCommand<TCommand>(TCommand command) where TCommand : class, IRequest<bool>
