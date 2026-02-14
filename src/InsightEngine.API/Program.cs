@@ -28,14 +28,32 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        // Converter enums para string no JSON
-        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+        // Task 6.3: Standardize JSON serialization
         
-        // Ignorar propriedades null no JSON (Prompt 4)
-        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        // Converter enums para string no JSON (não números)
+        options.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter());
         
-        // Configurações adicionais para performance
+        // Usar camelCase para nomes de propriedades
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        
+        // Ignorar propriedades null no JSON
+        options.JsonSerializerOptions.DefaultIgnoreCondition = 
+            System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        
+        // Permitir trailing commas em JSON (flexibilidade)
+        options.JsonSerializerOptions.AllowTrailingCommas = true;
+        
+        // Permitir comentários em JSON (útil para debugging)
+        options.JsonSerializerOptions.ReadCommentHandling = 
+            System.Text.Json.JsonCommentHandling.Skip;
+        
+        // Case-insensitive property names ao fazer desserialização
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        
+        // Configurar números para permitir NaN e Infinity (dados científicos)
+        options.JsonSerializerOptions.NumberHandling = 
+            System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
     });
 builder.Services.AddEndpointsApiExplorer();
 
