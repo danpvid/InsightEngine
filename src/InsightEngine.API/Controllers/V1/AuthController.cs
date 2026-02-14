@@ -4,9 +4,10 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace InsightEngine.API.Controllers;
+namespace InsightEngine.API.Controllers.V1;
 
-[Route("api/[controller]")]
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/[controller]")]
 public class AuthController : BaseController
 {
     private readonly ITokenService _tokenService;

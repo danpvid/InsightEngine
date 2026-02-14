@@ -7,12 +7,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
-namespace InsightEngine.API.Controllers;
+namespace InsightEngine.API.Controllers.V1;
 
 /// <summary>
 /// Controller para gerenciamento de datasets (arquivos CSV)
 /// </summary>
-[Route("api/[controller]")]
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/[controller]")]
 [Authorize]
 public class DataSetController : BaseController
 {

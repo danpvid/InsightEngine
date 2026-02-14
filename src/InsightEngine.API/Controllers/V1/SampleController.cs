@@ -3,12 +3,13 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace InsightEngine.API.Controllers;
+namespace InsightEngine.API.Controllers.V1;
 
 /// <summary>
 /// Exemplo de controller protegido com autenticação JWT
 /// </summary>
-[Route("api/[controller]")]
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/[controller]")]
 [Authorize] // Todos os endpoints requerem autenticação
 public class SampleController : BaseController
 {

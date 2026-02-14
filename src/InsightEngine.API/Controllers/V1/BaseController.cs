@@ -2,9 +2,10 @@ using InsightEngine.Domain.Core.Notifications;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
-namespace InsightEngine.API.Controllers;
+namespace InsightEngine.API.Controllers.V1;
 
 [ApiController]
+[ApiVersion("1.0")]
 public abstract class BaseController : ControllerBase
 {
     private readonly IDomainNotificationHandler _notificationHandler;
