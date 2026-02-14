@@ -8,7 +8,7 @@ namespace InsightEngine.API.Controllers;
 public abstract class BaseController : ControllerBase
 {
     private readonly IDomainNotificationHandler _notificationHandler;
-    private readonly IMediator _mediator;
+    protected readonly IMediator _mediator;
 
     protected BaseController(IDomainNotificationHandler notificationHandler, IMediator mediator)
     {

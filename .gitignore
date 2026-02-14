@@ -13,3 +13,8 @@ appsettings.Production.json
 # User Secrets
 secrets.json
 
+# Uploads de arquivos
+uploads/
+*.csv
+!**/sample.csv
+

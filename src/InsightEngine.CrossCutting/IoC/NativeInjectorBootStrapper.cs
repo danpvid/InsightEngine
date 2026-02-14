@@ -2,6 +2,7 @@ using InsightEngine.Domain.Core.Notifications;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Infra.Data.Context;
 using InsightEngine.Infra.Data.Repositories;
+using InsightEngine.Infra.Data.Services;
 using InsightEngine.Infra.Data.UoW;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -23,6 +24,12 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
+        // Repositories específicos
+        services.AddScoped<IDataSetRepository, DataSetRepository>();
+
+        // Services
+        services.AddScoped<IFileStorageService, FileStorageService>();
+
         // Application - AutoMapper
         services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 
@@ -32,11 +39,5 @@ public static class NativeInjectorBootStrapper
 
         // Infra - External Services
         services.AddHttpClient();
-
-        // Adicione aqui seus repositórios específicos
-        // services.AddScoped<ISeuRepositorio, SeuRepositorio>();
-        
-        // Adicione aqui seus serviços específicos
-        // services.AddScoped<ISeuServico, SeuServico>();
     }
 }

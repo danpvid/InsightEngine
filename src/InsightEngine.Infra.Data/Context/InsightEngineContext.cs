@@ -1,3 +1,4 @@
+using InsightEngine.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace InsightEngine.Infra.Data.Context;
@@ -8,8 +9,8 @@ public class InsightEngineContext : DbContext
     {
     }
 
-    // DbSets aqui
-    // public DbSet<SuaEntidade> SuasEntidades { get; set; }
+    // DbSets
+    public DbSet<DataSet> DataSets { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

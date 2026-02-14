@@ -1,8 +1,24 @@
 using InsightEngine.API.Configuration;
 using InsightEngine.API.Services;
 using InsightEngine.CrossCutting.IoC;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configurar Kestrel para suportar arquivos grandes
+builder.Services.Configure<KestrelServerOptions>(options =>
+{
+    options.Limits.MaxRequestBodySize = 500 * 1024 * 1024; // 500MB
+});
+
+// Configurar Form Options para uploads grandes
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 500 * 1024 * 1024; // 500MB
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartHeadersLengthLimit = int.MaxValue;
+});
 
 // Add services to the container.
 builder.Services.AddControllers();
