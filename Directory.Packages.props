@@ -6,6 +6,8 @@
     <!-- MediatR -->
     <PackageVersion Include="CsvHelper" Version="33.1.0" />
     <PackageVersion Include="MediatR" Version="12.2.0" />
+    <!-- DuckDB -->
+    <PackageVersion Include="DuckDB.NET.Data.Full" Version="1.1.3" />
     <!-- AutoMapper -->
     <PackageVersion Include="AutoMapper" Version="12.0.1" />
     <PackageVersion Include="AutoMapper.Extensions.Microsoft.DependencyInjection" Version="12.0.1" />

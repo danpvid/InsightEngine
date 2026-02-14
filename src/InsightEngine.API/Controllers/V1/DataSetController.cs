@@ -306,4 +306,100 @@ public class DataSetController : BaseController
             });
         }
     }
+
+    /// <summary>
+    /// Executa uma recomendação de gráfico e retorna EChartsOption completo com dados reais
+    /// </summary>
+    /// <param name="id">ID do dataset</param>
+    /// <param name="recommendationId">ID da recomendação (ex: rec_001)</param>
+    /// <returns>EChartsOption completo pronto para renderização</returns>
+    /// <remarks>
+    /// Exemplo de uso:
+    /// 
+    ///     GET /api/v1/datasets/{datasetId}/charts/rec_001
+    ///     
+    /// Dia 4 MVP:
+    /// - Suporta apenas gráficos tipo Line (time series)
+    /// - Suporta ECharts como biblioteca
+    /// - Executa agregação via DuckDB
+    /// - Retorna option com series.data preenchido
+    /// 
+    /// Response envelope com telemetria:
+    /// - datasetId: ID do dataset
+    /// - recommendationId: ID da recomendação executada
+    /// - option: EChartsOption completo (pronto para setOption)
+    /// - executedQuery: QuerySpec resolvido
+    /// - rowCountReturned: Número de pontos retornados
+    /// </remarks>
+    [HttpGet("{id:guid}/charts/{recommendationId}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetChart(Guid id, string recommendationId)
+    {
+        try
+        {
+            var result = await _dataSetApplicationService.GetChartAsync(id, recommendationId);
+
+            if (!result.IsSuccess)
+            {
+                // Distinguir entre NotFound (404) e BadRequest (400)
+                var isNotFound = result.Errors.Any(e => 
+                    e.Contains("not found", StringComparison.OrdinalIgnoreCase));
+
+                if (isNotFound)
+                {
+                    return NotFound(new
+                    {
+                        success = false,
+                        errors = result.Errors
+                    });
+                }
+
+                return BadRequest(new
+                {
+                    success = false,
+                    errors = result.Errors
+                });
+            }
+
+            // Response envelope com telemetria (Dia 4 Plus)
+            var response = new
+            {
+                success = true,
+                data = new
+                {
+                    datasetId = id,
+                    recommendationId = recommendationId,
+                    option = result.Data,
+                    meta = new
+                    {
+                        // Contar pontos na primeira série
+                        rowCountReturned = result.Data?.Series?.FirstOrDefault()?
+                            .GetValueOrDefault("data") is IEnumerable<object> data 
+                            ? ((IEnumerable<object>)data).Count() 
+                            : 0,
+                        chartType = result.Data?.Series?.FirstOrDefault()?
+                            .GetValueOrDefault("type"),
+                        generatedAt = DateTime.UtcNow
+                    }
+                }
+            };
+
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing chart {RecommendationId} for dataset {DatasetId}", 
+                recommendationId, id);
+            
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                success = false,
+                message = "Erro ao executar gráfico.",
+                error = ex.Message
+            });
+        }
+    }
 }

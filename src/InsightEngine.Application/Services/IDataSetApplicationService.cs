@@ -31,4 +31,9 @@ public interface IDataSetApplicationService
     /// Get all datasets
     /// </summary>
     Task<Result<List<DataSetSummary>>> GetAllAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Execute a chart recommendation and get EChartsOption with real data
+    /// </summary>
+    Task<Result<EChartsOption>> GetChartAsync(Guid datasetId, string recommendationId, CancellationToken cancellationToken = default);
 }

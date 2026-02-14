@@ -108,4 +108,32 @@ public class DataSetApplicationService : IDataSetApplicationService
 
         return result;
     }
+
+    public async Task<Result<EChartsOption>> GetChartAsync(
+        Guid datasetId, 
+        string recommendationId, 
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Executing chart for dataset {DatasetId}, recommendation {RecommendationId}", 
+            datasetId, recommendationId);
+
+        var query = new GetDataSetChartQuery(datasetId, recommendationId);
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (result.IsSuccess)
+        {
+            _logger.LogInformation(
+                "Chart executed successfully: {DatasetId}/{RecommendationId}",
+                datasetId, recommendationId);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "Failed to execute chart {DatasetId}/{RecommendationId}: {Errors}",
+                datasetId, recommendationId, string.Join(", ", result.Errors));
+        }
+
+        return result;
+    }
 }
