@@ -25,48 +25,66 @@ public class ChartExecutionService : IChartExecutionService
         _logger = logger;
     }
 
-    public async Task<Result<EChartsOption>> ExecuteAsync(
+    public async Task<Result<ChartExecutionResult>> ExecuteAsync(
         Guid datasetId,
         ChartRecommendation recommendation,
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
+        string generatedSql = string.Empty;
+        long duckDbMs = 0;
 
         try
         {
             // 1. Validar suporte (Dia 4: apenas Line + ECharts)
             var validationErrors = ValidateRecommendation(recommendation);
             if (validationErrors.Any())
-                return Result.Failure<EChartsOption>(validationErrors);
+                return Result.Failure<ChartExecutionResult>(validationErrors);
 
             // 2. Resolver path do CSV
             var csvPath = _fileStorageService.GetFullPath($"{datasetId}.csv");
             if (!File.Exists(csvPath))
             {
                 _logger.LogWarning("Dataset file not found: {DatasetId}", datasetId);
-                return Result.Failure<EChartsOption>($"Dataset file not found: {datasetId}");
+                return Result.Failure<ChartExecutionResult>($"Dataset file not found: {datasetId}");
             }
 
-            // 3. Executar query no DuckDB
-            var dataResult = await ExecuteQueryAsync(csvPath, recommendation, ct);
-            if (!dataResult.IsSuccess)
-                return Result.Failure<EChartsOption>(dataResult.Errors);
+            // 3. Gerar SQL
+            generatedSql = BuildTimeSeriesSQL(csvPath, recommendation);
 
-            // 4. Montar EChartsOption completo
+            // 4. Executar query no DuckDB (medir tempo separadamente)
+            var swDuckDb = Stopwatch.StartNew();
+            var dataResult = await ExecuteQueryAsync(generatedSql, ct);
+            swDuckDb.Stop();
+            duckDbMs = swDuckDb.ElapsedMilliseconds;
+
+            if (!dataResult.IsSuccess)
+                return Result.Failure<ChartExecutionResult>(dataResult.Errors);
+
+            // 5. Montar EChartsOption completo
             var option = BuildEChartsOption(recommendation, dataResult.Data!);
 
             sw.Stop();
-            _logger.LogInformation(
-                "Chart executed successfully: {RecommendationId}, Rows: {RowCount}, Duration: {Duration}ms",
-                recommendation.Id, dataResult.Data!.Count, sw.ElapsedMilliseconds);
 
-            return Result.Success(option);
+            var result = new ChartExecutionResult
+            {
+                Option = option,
+                DuckDbMs = duckDbMs,
+                GeneratedSql = generatedSql,
+                RowCount = dataResult.Data!.Count
+            };
+
+            _logger.LogInformation(
+                "Chart executed successfully: {RecommendationId}, Rows: {RowCount}, TotalMs: {TotalMs}, DuckDbMs: {DuckDbMs}",
+                recommendation.Id, result.RowCount, sw.ElapsedMilliseconds, duckDbMs);
+
+            return Result.Success(result);
         }
         catch (Exception ex)
         {
             sw.Stop();
             _logger.LogError(ex, "Error executing chart: {RecommendationId}", recommendation.Id);
-            return Result.Failure<EChartsOption>($"Error executing chart: {ex.Message}");
+            return Result.Failure<ChartExecutionResult>($"Error executing chart: {ex.Message}");
         }
     }
 
@@ -100,8 +118,7 @@ public class ChartExecutionService : IChartExecutionService
     }
 
     private async Task<Result<List<TimeSeriesPoint>>> ExecuteQueryAsync(
-        string csvPath,
-        ChartRecommendation recommendation,
+        string sql,
         CancellationToken ct)
     {
         await Task.CompletedTask; // DuckDB é síncrono, mas mantemos async para future-proof
@@ -114,9 +131,6 @@ public class ChartExecutionService : IChartExecutionService
             connection.Open();
 
             using var command = connection.CreateCommand();
-
-            // Montar SQL para time series com path do CSV embutido
-            var sql = BuildTimeSeriesSQL(csvPath, recommendation);
             command.CommandText = sql;
 
             _logger.LogDebug("Executing DuckDB query: {SQL}", sql);

@@ -1,8 +1,11 @@
+using InsightEngine.API.Models;
 using InsightEngine.Application.Services;
+using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Core.Notifications;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace InsightEngine.API.Controllers.V1;
 
@@ -17,6 +20,7 @@ public class DataSetController : BaseController
 {
     private readonly IDataSetApplicationService _dataSetApplicationService;
     private readonly ILogger<DataSetController> _logger;
+    private readonly IWebHostEnvironment _environment;
 
     // Limite de 20MB por arquivo (MVP)
     private const long MaxFileSize = 20L * 1024 * 1024;
@@ -25,11 +29,13 @@ public class DataSetController : BaseController
         IDataSetApplicationService dataSetApplicationService,
         IDomainNotificationHandler notificationHandler,
         IMediator mediator,
-        ILogger<DataSetController> logger)
+        ILogger<DataSetController> logger,
+        IWebHostEnvironment environment)
         : base(notificationHandler, mediator)
     {
         _dataSetApplicationService = dataSetApplicationService;
         _logger = logger;
+        _environment = environment;
     }
 
     /// <summary>
@@ -332,10 +338,10 @@ public class DataSetController : BaseController
     /// - rowCountReturned: Número de pontos retornados
     /// </remarks>
     [HttpGet("{id:guid}/charts/{recommendationId}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(typeof(ApiResponse<Models.ChartExecutionResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetChart(Guid id, string recommendationId)
     {
         try
@@ -344,62 +350,43 @@ public class DataSetController : BaseController
 
             if (!result.IsSuccess)
             {
-                // Distinguir entre NotFound (404) e BadRequest (400)
-                var isNotFound = result.Errors.Any(e => 
-                    e.Contains("not found", StringComparison.OrdinalIgnoreCase));
-
-                if (isNotFound)
-                {
-                    return NotFound(new
-                    {
-                        success = false,
-                        errors = result.Errors
-                    });
-                }
-
-                return BadRequest(new
-                {
-                    success = false,
-                    errors = result.Errors
-                });
+                return ResponseResult(Result.Failure<object>(result.Errors));
             }
 
-            // Response envelope com telemetria (Dia 4 Plus)
-            var response = new
+            // Mapear Domain response para API response
+            var domainResponse = result.Data!;
+            var apiResponse = new Models.ChartExecutionResponse
             {
-                success = true,
-                data = new
+                DatasetId = domainResponse.DatasetId,
+                RecommendationId = domainResponse.RecommendationId,
+                Option = domainResponse.ExecutionResult.Option,
+                Meta = new ChartExecutionMeta
                 {
-                    datasetId = id,
-                    recommendationId = recommendationId,
-                    option = result.Data,
-                    meta = new
-                    {
-                        // Contar pontos na primeira série
-                        rowCountReturned = result.Data?.Series?.FirstOrDefault()?
-                            .GetValueOrDefault("data") is IEnumerable<object> data 
-                            ? ((IEnumerable<object>)data).Count() 
-                            : 0,
-                        chartType = result.Data?.Series?.FirstOrDefault()?
-                            .GetValueOrDefault("type"),
-                        generatedAt = DateTime.UtcNow
-                    }
+                    ExecutionMs = domainResponse.TotalExecutionMs,
+                    DuckDbMs = domainResponse.ExecutionResult.DuckDbMs,
+                    QueryHash = domainResponse.QueryHash,
+                    DatasetVersion = null, // Não implementado ainda
+                    RowCountReturned = domainResponse.ExecutionResult.RowCount,
+                    ChartType = domainResponse.ExecutionResult.Option.Series?.FirstOrDefault()?
+                        .GetValueOrDefault("type")?.ToString() ?? "line",
+                    GeneratedAt = DateTime.UtcNow,
+                    DebugSql = _environment.IsDevelopment() ? domainResponse.ExecutionResult.GeneratedSql : null
                 }
             };
 
-            return Ok(response);
+            return ResponseResult(Result.Success(apiResponse));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error executing chart {RecommendationId} for dataset {DatasetId}", 
                 recommendationId, id);
-            
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                success = false,
-                message = "Erro ao executar gráfico.",
-                error = ex.Message
-            });
+
+            var traceId = GetTraceId();
+            var errorResponse = ApiErrorResponse.FromMessage(
+                "Erro interno ao executar gráfico. Verifique os logs para mais detalhes.",
+                traceId);
+
+            return StatusCode(StatusCodes.Status500InternalServerError, errorResponse);
         }
     }
 }

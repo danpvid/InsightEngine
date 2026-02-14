@@ -14,8 +14,8 @@ public interface IChartExecutionService
     /// <param name="datasetId">ID do dataset</param>
     /// <param name="recommendation">Recomendação a ser executada</param>
     /// <param name="ct">Cancellation token</param>
-    /// <returns>Result com EChartsOption completo incluindo dados</returns>
-    Task<Result<EChartsOption>> ExecuteAsync(
+    /// <returns>Result com ChartExecutionResult incluindo telemetria</returns>
+    Task<Result<ChartExecutionResult>> ExecuteAsync(
         Guid datasetId,
         ChartRecommendation recommendation,
         CancellationToken ct = default);

@@ -33,7 +33,7 @@ public interface IDataSetApplicationService
     Task<Result<List<DataSetSummary>>> GetAllAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Execute a chart recommendation and get EChartsOption with real data
+    /// Execute a chart recommendation and get complete response with telemetry
     /// </summary>
-    Task<Result<EChartsOption>> GetChartAsync(Guid datasetId, string recommendationId, CancellationToken cancellationToken = default);
+    Task<Result<ChartExecutionResponse>> GetChartAsync(Guid datasetId, string recommendationId, CancellationToken cancellationToken = default);
 }

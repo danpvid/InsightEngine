@@ -109,7 +109,7 @@ public class DataSetApplicationService : IDataSetApplicationService
         return result;
     }
 
-    public async Task<Result<EChartsOption>> GetChartAsync(
+    public async Task<Result<ChartExecutionResponse>> GetChartAsync(
         Guid datasetId, 
         string recommendationId, 
         CancellationToken cancellationToken = default)
@@ -124,8 +124,8 @@ public class DataSetApplicationService : IDataSetApplicationService
         if (result.IsSuccess)
         {
             _logger.LogInformation(
-                "Chart executed successfully: {DatasetId}/{RecommendationId}",
-                datasetId, recommendationId);
+                "Chart executed successfully: {DatasetId}/{RecommendationId}, TotalMs: {TotalMs}",
+                datasetId, recommendationId, result.Data!.TotalExecutionMs);
         }
         else
         {
