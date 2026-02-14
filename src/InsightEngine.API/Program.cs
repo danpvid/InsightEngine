@@ -1,6 +1,7 @@
 using InsightEngine.API.Configuration;
 using InsightEngine.API.Services;
 using InsightEngine.CrossCutting.IoC;
+using InsightEngine.Domain.Settings;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -12,13 +13,13 @@ var builder = WebApplication.CreateBuilder(args);
 // Configurar Kestrel para suportar arquivos grandes
 builder.Services.Configure<KestrelServerOptions>(options =>
 {
-    options.Limits.MaxRequestBodySize = 500 * 1024 * 1024; // 500MB
+    options.Limits.MaxRequestBodySize = 20 * 1024 * 1024; // 20MB (MVP)
 });
 
 // Configurar Form Options para uploads grandes
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 500 * 1024 * 1024; // 500MB
+    options.MultipartBodyLengthLimit = 20 * 1024 * 1024; // 20MB (MVP)
     options.ValueLengthLimit = int.MaxValue;
     options.MultipartHeadersLengthLimit = int.MaxValue;
 });
@@ -49,6 +50,9 @@ builder.Services.AddVersionedApiExplorer(options =>
 
 // Configure JWT Settings
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
+
+// Configure Upload Settings
+builder.Services.Configure<UploadSettings>(builder.Configuration.GetSection("UploadSettings"));
 
 // Configure JWT Authentication
 builder.Services.AddJwtAuthentication(builder.Configuration);

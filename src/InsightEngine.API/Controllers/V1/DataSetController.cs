@@ -13,23 +13,26 @@ namespace InsightEngine.API.Controllers.V1;
 /// Controller para gerenciamento de datasets (arquivos CSV)
 /// </summary>
 [ApiVersion("1.0")]
-[Route("api/v{version:apiVersion}/[controller]")]
+[Route("api/v{version:apiVersion}/datasets")]
 [Authorize]
 public class DataSetController : BaseController
 {
     private readonly IDataSetRepository _dataSetRepository;
+    private readonly ICsvProfiler _csvProfiler;
     private readonly ILogger<DataSetController> _logger;
 
-    // Limite de 500MB por arquivo
-    private const long MaxFileSize = 500L * 1024 * 1024;
+    // Limite de 20MB por arquivo (MVP)
+    private const long MaxFileSize = 20L * 1024 * 1024;
 
     public DataSetController(
         IDomainNotificationHandler notificationHandler,
         IMediator mediator,
         IDataSetRepository dataSetRepository,
+        ICsvProfiler csvProfiler,
         ILogger<DataSetController> logger) : base(notificationHandler, mediator)
     {
         _dataSetRepository = dataSetRepository;
+        _csvProfiler = csvProfiler;
         _logger = logger;
     }
 
@@ -41,30 +44,30 @@ public class DataSetController : BaseController
     /// <remarks>
     /// Exemplo de requisição:
     /// 
-    ///     POST /api/dataset/upload
+    ///     POST /api/v1/datasets
     ///     Content-Type: multipart/form-data
     ///     
     ///     file: [arquivo.csv]
     ///     
-    /// Limite máximo: 500MB
+    /// Limite máximo: 20MB (configurável)
     /// 
-    /// O arquivo é salvo com um GUID único para:
+    /// O arquivo é salvo como {datasetId}.csv para:
     /// - Evitar colisões de nomes
     /// - Mitigar ataques de path traversal
     /// - Garantir unicidade
     /// 
-    /// Retorna:
+    /// Retorna HTTP 201 Created com:
     /// - datasetId: Identificador único do dataset
     /// - originalFileName: Nome original do arquivo
-    /// - storedPath: Caminho onde o arquivo foi armazenado
-    /// - fileSizeInBytes: Tamanho do arquivo em bytes
-    /// - createdAt: Data/hora do upload
+    /// - storedFileName: Nome do arquivo no storage ({datasetId}.csv)
+    /// - sizeBytes: Tamanho do arquivo em bytes
+    /// - createdAtUtc: Data/hora UTC do upload
     /// </remarks>
-    [HttpPost("upload")]
+    [HttpPost]
     [RequestSizeLimit(MaxFileSize)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxFileSize)]
     [DisableRequestSizeLimit] // Para Kestrel
-    [ProducesResponseType(typeof(DataSetUploadOutputModel), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(DataSetUploadOutputModel), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
@@ -141,7 +144,7 @@ public class DataSetController : BaseController
                 createdAt: dataset.CreatedAt
             );
 
-            return Ok(new
+            var response = new
             {
                 success = true,
                 message = "Arquivo enviado com sucesso.",
@@ -149,12 +152,16 @@ public class DataSetController : BaseController
                 {
                     datasetId = output.DataSetId,
                     originalFileName = output.OriginalFileName,
-                    storedPath = output.StoredPath,
-                    fileSizeInBytes = output.FileSizeInBytes,
-                    fileSizeMB = Math.Round(output.FileSizeInBytes / (1024.0 * 1024.0), 2),
-                    createdAt = output.CreatedAt
+                    storedFileName = dataset.StoredFileName,
+                    sizeBytes = output.FileSizeInBytes,
+                    createdAtUtc = output.CreatedAt.ToUniversalTime()
                 }
-            });
+            };
+
+            return CreatedAtAction(
+                nameof(GetById),
+                new { id = output.DataSetId, version = "1.0" },
+                response);
         }
         catch (Exception ex)
         {
@@ -232,5 +239,117 @@ public class DataSetController : BaseController
                 updatedAt = dataset.UpdatedAt
             }
         });
+    }
+
+    /// <summary>
+    /// Gera profile (análise) de um dataset CSV
+    /// </summary>
+    /// <param name="id">ID do dataset</param>
+    /// <returns>Profile com schema inferido, estatísticas e amostras</returns>
+    /// <remarks>
+    /// Exemplo de resposta:
+    /// 
+    ///     {
+    ///       "datasetId": "b8d3...e1",
+    ///       "rowCount": 12450,
+    ///       "columns": [
+    ///         {
+    ///           "name": "sale_date",
+    ///           "inferredType": "Date",
+    ///           "nullRate": 0.0,
+    ///           "distinctCount": 365,
+    ///           "topValues": ["2025-01-01", "2025-01-02", "2025-01-03"]
+    ///         },
+    ///         {
+    ///           "name": "amount",
+    ///           "inferredType": "Number",
+    ///           "nullRate": 0.01,
+    ///           "distinctCount": 9400,
+    ///           "topValues": ["19.9", "29.9", "9.9"]
+    ///         }
+    ///       ]
+    ///     }
+    ///     
+    /// Tipos inferidos:
+    /// - Number: valores numéricos (90%+ parseia como decimal)
+    /// - Date: datas (90%+ parseia como DateTime)
+    /// - Boolean: booleanos (true/false, yes/no, 1/0, sim/não)
+    /// - Category: baixa cardinalidade (≤ max(20, 5% das linhas))
+    /// - String: texto genérico
+    /// 
+    /// Performance:
+    /// - Amostra de até 5.000 linhas para inferência de tipo
+    /// - Contagem total de linhas sem carregar tudo em memória
+    /// </remarks>
+    [HttpGet("{id:guid}/profile")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetProfile(Guid id)
+    {
+        try
+        {
+            _logger.LogInformation("Generating profile for dataset {DatasetId}", id);
+
+            // Busca o dataset
+            var dataset = await _dataSetRepository.GetByIdAsync(id);
+            if (dataset == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Dataset não encontrado."
+                });
+            }
+
+            // Verifica se o arquivo existe
+            if (!System.IO.File.Exists(dataset.StoredPath))
+            {
+                _logger.LogError("File not found for dataset {DatasetId}: {Path}", id, dataset.StoredPath);
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Arquivo do dataset não encontrado no sistema."
+                });
+            }
+
+            // Gera o profile
+            var profile = await _csvProfiler.ProfileAsync(id, dataset.StoredPath);
+
+            _logger.LogInformation(
+                "Profile generated for dataset {DatasetId}: {RowCount} rows, {ColumnCount} columns",
+                id, profile.RowCount, profile.Columns.Count);
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    datasetId = profile.DatasetId,
+                    rowCount = profile.RowCount,
+                    sampleSize = profile.SampleSize,
+                    columns = profile.Columns.Select(c => new
+                    {
+                        name = c.Name,
+                        inferredType = c.InferredType.ToString(),
+                        nullRate = Math.Round(c.NullRate, 4),
+                        distinctCount = c.DistinctCount,
+                        topValues = c.TopValues
+                    })
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating profile for dataset {DatasetId}", id);
+            
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                success = false,
+                message = "Erro ao gerar profile do dataset.",
+                error = ex.Message
+            });
+        }
     }
 }
