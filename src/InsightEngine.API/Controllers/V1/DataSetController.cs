@@ -43,8 +43,7 @@ public class DataSetController : ControllerBase
 
     private string GetMetadataFilePath(Guid datasetId)
     {
-        var basePath = _fileStorageService.GetFullPath(string.Empty);
-        var directory = Path.GetDirectoryName(basePath) ?? ".";
+        var directory = _fileStorageService.GetStoragePath();
         return Path.Combine(directory, $"{datasetId}.meta.json");
     }
 
@@ -75,8 +74,7 @@ public class DataSetController : ControllerBase
 
     private async Task<List<DatasetMetadata>> LoadAllMetadataAsync()
     {
-        var basePath = _fileStorageService.GetFullPath(string.Empty);
-        var directory = Path.GetDirectoryName(basePath) ?? ".";
+        var directory = _fileStorageService.GetStoragePath();
         
         if (!Directory.Exists(directory))
         {
@@ -183,12 +181,18 @@ public class DataSetController : ControllerBase
             var datasetId = Guid.NewGuid();
             var storedFileName = $"{datasetId}.csv";
 
+            _logger.LogInformation("Generated datasetId: {DatasetId}, storedFileName: {StoredFileName}", 
+                datasetId, storedFileName);
+
             // Salvar arquivo CSV usando streaming
             await using var fileStream = file.OpenReadStream();
+            
+            _logger.LogInformation("About to call SaveFileAsync with fileName: '{FileName}'", storedFileName);
+            
             var (storedPath, fileSize) = await _fileStorageService.SaveFileAsync(
-                fileStream,
-                storedFileName,
-                default);
+                fileStream: fileStream,
+                fileName: storedFileName,
+                cancellationToken: default);
 
             // Criar metadados
             var metadata = new DatasetMetadata

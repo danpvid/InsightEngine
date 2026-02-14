@@ -190,6 +190,11 @@ public class FileStorageService : IFileStorageService
         return Path.Combine(_storagePath, sanitizedFileName);
     }
 
+    public string GetStoragePath()
+    {
+        return _storagePath;
+    }
+
     private static string SanitizeFileName(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))

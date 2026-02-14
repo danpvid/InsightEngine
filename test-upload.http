@@ -1,0 +1,19 @@
+### Test Dataset Upload
+POST http://localhost:5000/api/v1/datasets
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="ecommerce_sales.csv"
+Content-Type: text/csv
+
+< ./samples/ecommerce_sales.csv
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### Test Get All Datasets
+GET http://localhost:5000/api/v1/datasets
+
+### Test Get Dataset by ID (replace with actual ID)
+GET http://localhost:5000/api/v1/datasets/{{datasetId}}
+
+### Test Get Dataset Profile (replace with actual ID)
+GET http://localhost:5000/api/v1/datasets/{{datasetId}}/profile
