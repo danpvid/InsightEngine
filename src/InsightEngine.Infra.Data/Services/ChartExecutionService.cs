@@ -37,15 +37,13 @@ public class ChartExecutionService : IChartExecutionService
         CancellationToken ct = default)
     {
         var sw = Stopwatch.StartNew();
-        string generatedSql = string.Empty;
-        long duckDbMs = 0;
 
         try
         {
-            // 1. Validar suporte (Dia 4: apenas Line + ECharts)
-            var validationErrors = ValidateRecommendation(recommendation);
-            if (validationErrors.Any())
-                return Result.Failure<ChartExecutionResult>(validationErrors);
+            // 1. Validar suporte de biblioteca
+            if (recommendation.Chart.Library != ChartLibrary.ECharts)
+                return Result.Failure<ChartExecutionResult>(
+                    $"Unsupported chart library: {recommendation.Chart.Library}. Only ECharts is supported.");
 
             // 2. Resolver path do CSV
             var csvPath = _fileStorageService.GetFullPath($"{datasetId}.csv");
@@ -55,39 +53,27 @@ public class ChartExecutionService : IChartExecutionService
                 return Result.Failure<ChartExecutionResult>($"Dataset file not found: {datasetId}");
             }
 
-            // 3. Gerar SQL
-            generatedSql = BuildTimeSeriesSQL(csvPath, recommendation);
-
-            // 4. Executar query no DuckDB (medir tempo separadamente)
-            var swDuckDb = Stopwatch.StartNew();
-            var dataResult = await ExecuteQueryAsync(generatedSql, ct);
-            swDuckDb.Stop();
-            duckDbMs = swDuckDb.ElapsedMilliseconds;
-
-            if (!dataResult.IsSuccess)
-                return Result.Failure<ChartExecutionResult>(dataResult.Errors);
-
-            // 4.5. Aplicar gap filling se configurado
-            var processedPoints = ApplyGapFilling(dataResult.Data!, recommendation.Query.X.Bin!.Value);
-
-            // 5. Montar EChartsOption completo
-            var option = BuildEChartsOption(recommendation, processedPoints);
+            // 3. Dispatcher por tipo de chart
+            Result<ChartExecutionResult> result = recommendation.Chart.Type switch
+            {
+                ChartType.Line => await ExecuteLineAsync(csvPath, recommendation, ct),
+                ChartType.Bar => await ExecuteBarAsync(csvPath, recommendation, ct),
+                ChartType.Scatter => await ExecuteScatterAsync(csvPath, recommendation, ct),
+                ChartType.Histogram => await ExecuteHistogramAsync(csvPath, recommendation, ct),
+                _ => Result.Failure<ChartExecutionResult>(
+                    $"Unsupported chart type: {recommendation.Chart.Type}. Supported: Line, Bar, Scatter, Histogram.")
+            };
 
             sw.Stop();
 
-            var result = new ChartExecutionResult
+            if (result.IsSuccess)
             {
-                Option = option,
-                DuckDbMs = duckDbMs,
-                GeneratedSql = generatedSql,
-                RowCount = processedPoints.Count
-            };
+                _logger.LogInformation(
+                    "Chart executed successfully: Type={ChartType}, RecommendationId={RecommendationId}, Rows={RowCount}, TotalMs={TotalMs}",
+                    recommendation.Chart.Type, recommendation.Id, result.Data!.RowCount, sw.ElapsedMilliseconds);
+            }
 
-            _logger.LogInformation(
-                "Chart executed successfully: {RecommendationId}, Rows: {RowCount}, TotalMs: {TotalMs}, DuckDbMs: {DuckDbMs}, GapFillMode: {GapFillMode}",
-                recommendation.Id, result.RowCount, sw.ElapsedMilliseconds, duckDbMs, _settings.GapFillMode);
-
-            return Result.Success(result);
+            return result;
         }
         catch (Exception ex)
         {
@@ -97,34 +83,106 @@ public class ChartExecutionService : IChartExecutionService
         }
     }
 
-    private List<string> ValidateRecommendation(ChartRecommendation recommendation)
+    // ===========================
+    // LINE CHART EXECUTION
+    // ===========================
+
+    private async Task<Result<ChartExecutionResult>> ExecuteLineAsync(
+        string csvPath,
+        ChartRecommendation recommendation,
+        CancellationToken ct)
     {
-        var errors = new List<string>();
+        var swDuckDb = Stopwatch.StartNew();
 
-        // Validar biblioteca
-        if (recommendation.Chart.Library != ChartLibrary.ECharts)
-            errors.Add($"Unsupported chart library: {recommendation.Chart.Library}. Day 4 supports only ECharts.");
+        try
+        {
+            // Validar eixos
+            if (recommendation.Query.X.Role != AxisRole.Time)
+                return Result.Failure<ChartExecutionResult>("Line chart requires X axis with role Time.");
 
-        // Validar tipo de gráfico
-        if (recommendation.Chart.Type != ChartType.Line)
-            errors.Add($"Unsupported chart type: {recommendation.Chart.Type}. Day 4 supports only Line charts.");
+            if (!recommendation.Query.X.Bin.HasValue)
+                return Result.Failure<ChartExecutionResult>("Line chart requires X axis with TimeBin defined.");
 
-        // Validar eixo X (deve ser time com bin)
-        if (recommendation.Query.X.Role != AxisRole.Time)
-            errors.Add("X axis must have role Time for time series charts.");
+            if (recommendation.Query.Y.Role != AxisRole.Measure)
+                return Result.Failure<ChartExecutionResult>("Line chart requires Y axis with role Measure.");
 
-        if (!recommendation.Query.X.Bin.HasValue)
-            errors.Add("X axis must have TimeBin defined (Day, Month, Year).");
+            if (!recommendation.Query.Y.Aggregation.HasValue)
+                return Result.Failure<ChartExecutionResult>("Line chart requires Y axis with aggregation defined.");
 
-        // Validar eixo Y (deve ter agregação)
-        if (recommendation.Query.Y.Role != AxisRole.Measure)
-            errors.Add("Y axis must have role Measure.");
+            // Gerar e executar SQL
+            var sql = BuildTimeSeriesSQL(csvPath, recommendation);
+            var dataResult = await ExecuteQueryAsync(sql, ct);
+            swDuckDb.Stop();
 
-        if (!recommendation.Query.Y.Aggregation.HasValue)
-            errors.Add("Y axis must have aggregation defined (Sum, Avg, Count, Min, Max).");
+            if (!dataResult.IsSuccess)
+                return Result.Failure<ChartExecutionResult>(dataResult.Errors);
 
-        return errors;
+            // Aplicar gap filling
+            var processedPoints = ApplyGapFilling(dataResult.Data!, recommendation.Query.X.Bin!.Value);
+
+            // Montar ECharts option
+            var option = BuildEChartsOption(recommendation, processedPoints);
+
+            return Result.Success(new ChartExecutionResult
+            {
+                Option = option,
+                DuckDbMs = swDuckDb.ElapsedMilliseconds,
+                GeneratedSql = sql,
+                RowCount = processedPoints.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing Line chart");
+            return Result.Failure<ChartExecutionResult>($"Line chart execution failed: {ex.Message}");
+        }
     }
+
+    // ===========================
+    // BAR CHART EXECUTION
+    // ===========================
+
+    private async Task<Result<ChartExecutionResult>> ExecuteBarAsync(
+        string csvPath,
+        ChartRecommendation recommendation,
+        CancellationToken ct)
+    {
+        await Task.CompletedTask;
+        // TODO: Implementar Day 5 - Task 5.3
+        return Result.Failure<ChartExecutionResult>("Bar chart not implemented yet.");
+    }
+
+    // ===========================
+    // SCATTER CHART EXECUTION
+    // ===========================
+
+    private async Task<Result<ChartExecutionResult>> ExecuteScatterAsync(
+        string csvPath,
+        ChartRecommendation recommendation,
+        CancellationToken ct)
+    {
+        await Task.CompletedTask;
+        // TODO: Implementar Day 5 - Task 5.4
+        return Result.Failure<ChartExecutionResult>("Scatter chart not implemented yet.");
+    }
+
+    // ===========================
+    // HISTOGRAM CHART EXECUTION
+    // ===========================
+
+    private async Task<Result<ChartExecutionResult>> ExecuteHistogramAsync(
+        string csvPath,
+        ChartRecommendation recommendation,
+        CancellationToken ct)
+    {
+        await Task.CompletedTask;
+        // TODO: Implementar Day 5 - Task 5.5
+        return Result.Failure<ChartExecutionResult>("Histogram chart not implemented yet.");
+    }
+
+    // ===========================
+    // HELPERS
+    // ===========================
 
     private async Task<Result<List<TimeSeriesPoint>>> ExecuteQueryAsync(
         string sql,

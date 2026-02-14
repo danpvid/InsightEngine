@@ -2,6 +2,7 @@ using InsightEngine.API.Models;
 using InsightEngine.Application.Services;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Core.Notifications;
+using InsightEngine.Domain.Models;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -362,22 +363,21 @@ public class DataSetController : BaseController
                 Option = domainResponse.ExecutionResult.Option,
                 Meta = new ChartExecutionMeta
                 {
+                    RowCountReturned = domainResponse.ExecutionResult.RowCount,
                     ExecutionMs = domainResponse.TotalExecutionMs,
                     DuckDbMs = domainResponse.ExecutionResult.DuckDbMs,
-                    QueryHash = domainResponse.QueryHash,
-                    DatasetVersion = null, // Não implementado ainda
-                    RowCountReturned = domainResponse.ExecutionResult.RowCount,
                     ChartType = domainResponse.ExecutionResult.Option.Series?.FirstOrDefault()?
-                        .GetValueOrDefault("type")?.ToString() ?? "line",
+                        .GetValueOrDefault("type")?.ToString() ?? "Line",
                     GeneratedAt = DateTime.UtcNow,
-                    DebugSql = _environment.IsDevelopment() ? domainResponse.ExecutionResult.GeneratedSql : null
-                }
+                    QueryHash = domainResponse.QueryHash
+                },
+                DebugSql = _environment.IsDevelopment() ? domainResponse.ExecutionResult.GeneratedSql : null
             };
 
             return ResponseResult(Result.Success(apiResponse));
         }
         catch (Exception ex)
-        {
+{
             _logger.LogError(ex, "Error executing chart {RecommendationId} for dataset {DatasetId}", 
                 recommendationId, id);
 
