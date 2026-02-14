@@ -591,16 +591,21 @@ WHERE ""{xCol}"" IS NOT NULL;
             var binWidth = (maxVal - minVal) / numBins;
 
             // Passo 2: Calcular contagens por bin
+            // Use InvariantCulture para evitar problemas com separador decimal
+            var minValStr = minVal.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
+            var maxValStr = maxVal.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
+            var binWidthStr = binWidth.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
+            
             var histogramSql = $@"
 SELECT 
-    FLOOR((value - {minVal}) / {binWidth}) AS bin_index,
+    FLOOR((value - {minValStr}) / {binWidthStr}) AS bin_index,
     COUNT(*) AS count
 FROM (
     SELECT CAST(REPLACE(CAST(""{xCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS value
     FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
     WHERE ""{xCol}"" IS NOT NULL
 )
-WHERE value >= {minVal} AND value <= {maxVal}
+WHERE value >= {minValStr} AND value <= {maxValStr}
 GROUP BY 1
 ORDER BY 1;
 ";
@@ -646,7 +651,8 @@ ORDER BY 1;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "DuckDB Histogram query execution failed");
+            _logger.LogError(ex, "DuckDB Histogram query execution failed. minVal={MinVal}, maxVal={MaxVal}, binWidth={BinWidth}, numBins={NumBins}",
+                0, 0, 0, numBins);
             return Result.Failure<(List<HistogramBin>, string)>($"Histogram query execution failed: {ex.Message}");
         }
     }

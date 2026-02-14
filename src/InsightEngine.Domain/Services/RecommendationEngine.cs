@@ -252,13 +252,8 @@ public class RecommendationEngine
                     {
                         Column = measure.ColumnName,
                         Role = AxisRole.Measure
-                    },
-                    Y = new FieldSpec
-                    {
-                        Column = "count",
-                        Role = AxisRole.Measure,
-                        Aggregation = Aggregation.Count
                     }
+                    // Histogram não usa Y - calcula frequência automaticamente
                 },
                 OptionTemplate = EChartsTemplates.CreateHistogramTemplate()
             };

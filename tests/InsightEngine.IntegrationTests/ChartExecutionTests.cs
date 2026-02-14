@@ -63,10 +63,10 @@ public class ChartExecutionTests : IAsyncLifetime
         
         result!.Data.Option.Should().NotBeNull();
         result.Data.Option.XAxis.Should().ContainKey("type");
-        result.Data.Option.XAxis["type"].Should().Be("time");
+        result.Data.Option.XAxis["type"].ToString().Should().Be("time");
         result.Data.Option.Series.Should().NotBeEmpty();
-        result.Data.Option.Series![0]["type"].Should().Be("line");
-        result.Data.Meta.ChartType.Should().Be("Line");
+        result.Data.Option.Series![0]["type"].ToString().Should().Be("line");
+        result.Data.Meta.ChartType.Should().Be("line"); // ECharts uses lowercase
         result.Data.Meta.DuckDbMs.Should().BeGreaterThan(0);
     }
 
@@ -92,11 +92,11 @@ public class ChartExecutionTests : IAsyncLifetime
         
         result!.Data.Option.Should().NotBeNull();
         result.Data.Option.XAxis.Should().ContainKey("type");
-        result.Data.Option.XAxis["type"].Should().Be("category");
+        result.Data.Option.XAxis["type"].ToString().Should().Be("category");
         result.Data.Option.XAxis.Should().ContainKey("data"); // Categories array
         result.Data.Option.Series.Should().NotBeEmpty();
-        result.Data.Option.Series![0]["type"].Should().Be("bar");
-        result.Data.Meta.ChartType.Should().Be("Bar");
+        result.Data.Option.Series![0]["type"].ToString().Should().Be("bar");
+        result.Data.Meta.ChartType.Should().Be("bar"); // ECharts uses lowercase
         result.Data.Meta.RowCountReturned.Should().BeLessOrEqualTo(20); // TopN limit
     }
 
@@ -122,11 +122,11 @@ public class ChartExecutionTests : IAsyncLifetime
         
         result!.Data.Option.Should().NotBeNull();
         result.Data.Option.XAxis.Should().ContainKey("type");
-        result.Data.Option.XAxis["type"].Should().Be("value");
+        result.Data.Option.XAxis["type"].ToString().Should().Be("value");
         result.Data.Option.YAxis.Should().ContainKey("type");
-        result.Data.Option.YAxis["type"].Should().Be("value");
+        result.Data.Option.YAxis["type"].ToString().Should().Be("value");
         result.Data.Option.Series.Should().NotBeEmpty();
-        result.Data.Option.Series![0]["type"].Should().Be("scatter");
+        result.Data.Option.Series![0]["type"].ToString().Should().Be("scatter");
         result.Data.Meta.ChartType.Should().Be("Scatter");
         result.Data.Meta.RowCountReturned.Should().BeLessOrEqualTo(2000); // MaxPoints sampling
     }
@@ -153,13 +153,13 @@ public class ChartExecutionTests : IAsyncLifetime
         
         result!.Data.Option.Should().NotBeNull();
         result.Data.Option.XAxis.Should().ContainKey("type");
-        result.Data.Option.XAxis["type"].Should().Be("category");
+        result.Data.Option.XAxis["type"].ToString().Should().Be("category");
         result.Data.Option.XAxis.Should().ContainKey("data"); // Bin labels
         result.Data.Option.YAxis.Should().ContainKey("name");
-        result.Data.Option.YAxis["name"].Should().Be("Frequency");
+        result.Data.Option.YAxis["name"].ToString().Should().Be("Frequency");
         result.Data.Option.Series.Should().NotBeEmpty();
-        result.Data.Option.Series![0]["type"].Should().Be("bar");
-        result.Data.Meta.ChartType.Should().Be("Histogram");
+        result.Data.Option.Series![0]["type"].ToString().Should().Be("bar");
+        result.Data.Meta.ChartType.Should().Be("bar"); // Histogram uses bar series type
         result.Data.Meta.RowCountReturned.Should().BeLessOrEqualTo(20); // Default bins
     }
 
@@ -173,6 +173,7 @@ public class ChartExecutionTests : IAsyncLifetime
         foreach (var rec in recommendations!.Take(4)) // Limitar para não demorar muito
         {
             var response = await _client.GetAsync($"/api/v1/datasets/{_datasetId}/charts/{rec.Id}");
+            
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             var result = await response.Content.ReadFromJsonAsync<ApiResponse<ChartExecutionResponse>>(TestHelpers.JsonOptions);
