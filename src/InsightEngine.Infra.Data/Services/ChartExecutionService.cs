@@ -205,6 +205,7 @@ public class ChartExecutionService : IChartExecutionService
 
         // Montar SQL com path do CSV inline (DuckDB não suporta parâmetros em read_csv_auto)
         // Usa COALESCE com TRY_STRPTIME para tentar múltiplos formatos de data comuns em CSVs brasileiros
+        // CAST para VARCHAR primeiro para evitar erro "Binder Error: No function matches... BIGINT"
         var sql = $@"
 SELECT 
     date_trunc('{dateTruncPart}', parsed_date) AS x,
@@ -213,12 +214,12 @@ FROM (
     SELECT 
         COALESCE(
             TRY_CAST(""{xCol}"" AS TIMESTAMP),
-            TRY_STRPTIME(""{xCol}"", '%Y%m%d'),
-            TRY_STRPTIME(""{xCol}"", '%d/%m/%Y'),
-            TRY_STRPTIME(""{xCol}"", '%Y-%m-%d'),
-            TRY_STRPTIME(""{xCol}"", '%m/%d/%Y')
+            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%Y%m%d'),
+            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%d/%m/%Y'),
+            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%Y-%m-%d'),
+            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%m/%d/%Y')
         ) AS parsed_date,
-        CAST(REPLACE(""{yCol}"", ',', '') AS DOUBLE) AS parsed_value
+        CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS parsed_value
     FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
     WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL
 )

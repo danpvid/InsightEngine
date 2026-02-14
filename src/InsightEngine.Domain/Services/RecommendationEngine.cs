@@ -94,10 +94,15 @@ public class RecommendationEngine
             return true;
         }
 
-        // Alta cardinalidade (>= 98% único)
-        if (column.DistinctCount >= sampleSize * 0.98)
+        // Alta cardinalidade (>= 98% único), mas APENAS para tipos String/Category
+        // Numbers e Dates com alta cardinalidade não são IDs
+        if (column.InferredType == InferredType.String || 
+            column.InferredType == InferredType.Category)
         {
-            return true;
+            if (column.DistinctCount >= sampleSize * 0.98)
+            {
+                return true;
+            }
         }
 
         return false;
