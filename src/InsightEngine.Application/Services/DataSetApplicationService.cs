@@ -1,5 +1,6 @@
 using InsightEngine.Domain.Commands.DataSet;
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
@@ -17,13 +18,16 @@ public class DataSetApplicationService : IDataSetApplicationService
 {
     private readonly IMediator _mediator;
     private readonly ILogger<DataSetApplicationService> _logger;
+    private readonly IMetadataCacheService _cacheService;
 
     public DataSetApplicationService(
         IMediator mediator,
-        ILogger<DataSetApplicationService> logger)
+        ILogger<DataSetApplicationService> logger,
+        IMetadataCacheService cacheService)
     {
         _mediator = mediator;
         _logger = logger;
+        _cacheService = cacheService;
     }
 
     public async Task<Result<UploadDataSetResponse>> UploadAsync(IFormFile file, CancellationToken cancellationToken = default)
@@ -49,6 +53,14 @@ public class DataSetApplicationService : IDataSetApplicationService
     {
         _logger.LogInformation("Generating profile for dataset {DatasetId}", datasetId);
 
+        // Task 6.4: Check cache first
+        var cachedProfile = await _cacheService.GetCachedProfileAsync<DatasetProfile>(datasetId);
+        if (cachedProfile != null)
+        {
+            _logger.LogInformation("Returning cached profile for dataset {DatasetId}", datasetId);
+            return Result<DatasetProfile>.Success(cachedProfile);
+        }
+
         var query = new GetDataSetProfileQuery(datasetId);
         var result = await _mediator.Send(query, cancellationToken);
 
@@ -57,6 +69,9 @@ public class DataSetApplicationService : IDataSetApplicationService
             _logger.LogInformation(
                 "Profile generated for dataset {DatasetId}: {RowCount} rows, {ColumnCount} columns",
                 datasetId, result.Data.RowCount, result.Data.Columns.Count);
+            
+            // Cache the profile for future requests
+            await _cacheService.SetCachedProfileAsync(datasetId, result.Data);
         }
         else
         {
@@ -73,6 +88,14 @@ public class DataSetApplicationService : IDataSetApplicationService
     {
         _logger.LogInformation("Generating chart recommendations for dataset {DatasetId}", datasetId);
 
+        // Task 6.4: Check cache first
+        var cachedRecommendations = await _cacheService.GetCachedRecommendationsAsync<List<ChartRecommendation>>(datasetId);
+        if (cachedRecommendations != null)
+        {
+            _logger.LogInformation("Returning cached recommendations for dataset {DatasetId}", datasetId);
+            return Result<List<ChartRecommendation>>.Success(cachedRecommendations);
+        }
+
         var query = new GetDataSetRecommendationsQuery(datasetId);
         var result = await _mediator.Send(query, cancellationToken);
 
@@ -80,6 +103,9 @@ public class DataSetApplicationService : IDataSetApplicationService
         {
             _logger.LogInformation("Generated {Count} recommendations for dataset {DatasetId}", 
                 result.Data.Count, datasetId);
+            
+            // Cache the recommendations for future requests
+            await _cacheService.SetCachedRecommendationsAsync(datasetId, result.Data);
         }
         else
         {

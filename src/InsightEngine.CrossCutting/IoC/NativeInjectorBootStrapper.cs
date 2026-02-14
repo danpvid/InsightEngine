@@ -40,6 +40,9 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<ICsvProfiler, CsvProfiler>();
         services.AddScoped<IChartExecutionService, ChartExecutionService>();
         services.AddScoped<InsightEngine.Domain.Services.RecommendationEngine>();
+        
+        // Task 6.4: Metadata cache service
+        services.AddSingleton<IMetadataCacheService, MetadataCacheService>();
 
         // Application Services (thin orchestration layer)
         services.AddScoped<IDataSetApplicationService, DataSetApplicationService>();
