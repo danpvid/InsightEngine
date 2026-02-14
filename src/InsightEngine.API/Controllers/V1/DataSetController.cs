@@ -1,4 +1,5 @@
 using InsightEngine.Domain.Interfaces;
+using InsightEngine.Domain.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -16,6 +17,7 @@ public class DataSetController : ControllerBase
 {
     private readonly IFileStorageService _fileStorageService;
     private readonly ICsvProfiler _csvProfiler;
+    private readonly RecommendationEngine _recommendationEngine;
     private readonly ILogger<DataSetController> _logger;
 
     // Limite de 20MB por arquivo (MVP)
@@ -24,10 +26,12 @@ public class DataSetController : ControllerBase
     public DataSetController(
         IFileStorageService fileStorageService,
         ICsvProfiler csvProfiler,
+        RecommendationEngine recommendationEngine,
         ILogger<DataSetController> logger)
     {
         _fileStorageService = fileStorageService;
         _csvProfiler = csvProfiler;
+        _recommendationEngine = recommendationEngine;
         _logger = logger;
     }
 
@@ -409,6 +413,67 @@ public class DataSetController : ControllerBase
             {
                 success = false,
                 message = "Erro ao gerar profile do dataset.",
+                error = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("{id:guid}/recommendations")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetRecommendations(Guid id)
+    {
+        try
+        {
+            _logger.LogInformation("Generating chart recommendations for dataset {DatasetId}", id);
+
+            // Busca metadados
+            var dataset = await LoadMetadataAsync(id);
+            if (dataset == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Dataset não encontrado."
+                });
+            }
+
+            // Verifica se o arquivo CSV existe
+            if (!System.IO.File.Exists(dataset.StoredPath))
+            {
+                _logger.LogError("File not found for dataset {DatasetId}: {Path}", id, dataset.StoredPath);
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Arquivo do dataset não encontrado no sistema."
+                });
+            }
+
+            // Gera o profile
+            var profile = await _csvProfiler.ProfileAsync(id, dataset.StoredPath);
+
+            // Gera recomendações
+            var recommendations = _recommendationEngine.Generate(profile);
+
+            _logger.LogInformation(
+                "Generated {Count} recommendations for dataset {DatasetId}",
+                recommendations.Count, id);
+
+            return Ok(new
+            {
+                success = true,
+                data = recommendations
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating recommendations for dataset {DatasetId}", id);
+            
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                success = false,
+                message = "Erro ao gerar recomendações do dataset.",
                 error = ex.Message
             });
         }

@@ -30,6 +30,7 @@ public static class NativeInjectorBootStrapper
         // Services
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddScoped<ICsvProfiler, CsvProfiler>();
+        services.AddScoped<InsightEngine.Domain.Services.RecommendationEngine>();
 
         // Application - AutoMapper
         services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
