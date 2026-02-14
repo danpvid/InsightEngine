@@ -1,8 +1,8 @@
-using InsightEngine.Domain.Interfaces;
-using InsightEngine.Domain.Services;
+using InsightEngine.Application.Services;
+using InsightEngine.Domain.Core.Notifications;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
 
 namespace InsightEngine.API.Controllers.V1;
 
@@ -13,99 +13,23 @@ namespace InsightEngine.API.Controllers.V1;
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/datasets")]
 [AllowAnonymous]
-public class DataSetController : ControllerBase
+public class DataSetController : BaseController
 {
-    private readonly IFileStorageService _fileStorageService;
-    private readonly ICsvProfiler _csvProfiler;
-    private readonly RecommendationEngine _recommendationEngine;
+    private readonly IDataSetApplicationService _dataSetApplicationService;
     private readonly ILogger<DataSetController> _logger;
 
     // Limite de 20MB por arquivo (MVP)
     private const long MaxFileSize = 20L * 1024 * 1024;
 
     public DataSetController(
-        IFileStorageService fileStorageService,
-        ICsvProfiler csvProfiler,
-        RecommendationEngine recommendationEngine,
+        IDataSetApplicationService dataSetApplicationService,
+        IDomainNotificationHandler notificationHandler,
+        IMediator mediator,
         ILogger<DataSetController> logger)
+        : base(notificationHandler, mediator)
     {
-        _fileStorageService = fileStorageService;
-        _csvProfiler = csvProfiler;
-        _recommendationEngine = recommendationEngine;
+        _dataSetApplicationService = dataSetApplicationService;
         _logger = logger;
-    }
-
-    private class DatasetMetadata
-    {
-        public Guid Id { get; set; }
-        public string OriginalFileName { get; set; } = string.Empty;
-        public string StoredFileName { get; set; } = string.Empty;
-        public string StoredPath { get; set; } = string.Empty;
-        public long FileSizeInBytes { get; set; }
-        public DateTime CreatedAt { get; set; }
-    }
-
-    private string GetMetadataFilePath(Guid datasetId)
-    {
-        var directory = _fileStorageService.GetStoragePath();
-        return Path.Combine(directory, $"{datasetId}.meta.json");
-    }
-
-    private async Task SaveMetadataAsync(DatasetMetadata metadata)
-    {
-        var metadataPath = GetMetadataFilePath(metadata.Id);
-        var json = JsonSerializer.Serialize(metadata, new JsonSerializerOptions 
-        { 
-            WriteIndented = true 
-        });
-        await System.IO.File.WriteAllTextAsync(metadataPath, json);
-        _logger.LogInformation("Metadata saved: {MetadataPath}", metadataPath);
-    }
-
-    private async Task<DatasetMetadata?> LoadMetadataAsync(Guid datasetId)
-    {
-        var metadataPath = GetMetadataFilePath(datasetId);
-        
-        if (!System.IO.File.Exists(metadataPath))
-        {
-            _logger.LogWarning("Metadata not found: {MetadataPath}", metadataPath);
-            return null;
-        }
-
-        var json = await System.IO.File.ReadAllTextAsync(metadataPath);
-        return JsonSerializer.Deserialize<DatasetMetadata>(json);
-    }
-
-    private async Task<List<DatasetMetadata>> LoadAllMetadataAsync()
-    {
-        var directory = _fileStorageService.GetStoragePath();
-        
-        if (!Directory.Exists(directory))
-        {
-            return new List<DatasetMetadata>();
-        }
-
-        var metadataFiles = Directory.GetFiles(directory, "*.meta.json");
-        var metadataList = new List<DatasetMetadata>();
-
-        foreach (var file in metadataFiles)
-        {
-            try
-            {
-                var json = await System.IO.File.ReadAllTextAsync(file);
-                var metadata = JsonSerializer.Deserialize<DatasetMetadata>(json);
-                if (metadata != null)
-                {
-                    metadataList.Add(metadata);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load metadata from {File}", file);
-            }
-        }
-
-        return metadataList;
     }
 
     /// <summary>
@@ -147,72 +71,16 @@ public class DataSetController : ControllerBase
     {
         try
         {
-            // Validações iniciais
-            if (file == null || file.Length == 0)
+            var result = await _dataSetApplicationService.UploadAsync(file);
+
+            if (!result.IsSuccess)
             {
                 return BadRequest(new
                 {
                     success = false,
-                    message = "Nenhum arquivo foi enviado."
+                    errors = result.Errors
                 });
             }
-
-            // Valida tamanho máximo
-            if (file.Length > MaxFileSize)
-            {
-                return StatusCode(StatusCodes.Status413PayloadTooLarge, new
-                {
-                    success = false,
-                    message = $"Arquivo muito grande. Tamanho máximo permitido: {MaxFileSize / (1024 * 1024)}MB"
-                });
-            }
-
-            // Valida extensão
-            var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
-            if (extension != ".csv")
-            {
-                return BadRequest(new
-                {
-                    success = false,
-                    message = "Apenas arquivos CSV são permitidos."
-                });
-            }
-
-            _logger.LogInformation("Receiving file upload: {FileName}, Size: {Size} bytes",
-                file.FileName, file.Length);
-
-            // Gerar datasetId e nomes de arquivo
-            var datasetId = Guid.NewGuid();
-            var storedFileName = $"{datasetId}.csv";
-
-            _logger.LogInformation("Generated datasetId: {DatasetId}, storedFileName: {StoredFileName}", 
-                datasetId, storedFileName);
-
-            // Salvar arquivo CSV usando streaming
-            await using var fileStream = file.OpenReadStream();
-            
-            _logger.LogInformation("About to call SaveFileAsync with fileName: '{FileName}'", storedFileName);
-            
-            var (storedPath, fileSize) = await _fileStorageService.SaveFileAsync(
-                fileStream: fileStream,
-                fileName: storedFileName,
-                cancellationToken: default);
-
-            // Criar metadados
-            var metadata = new DatasetMetadata
-            {
-                Id = datasetId,
-                OriginalFileName = file.FileName,
-                StoredFileName = storedFileName,
-                StoredPath = storedPath,
-                FileSizeInBytes = fileSize,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            // Salvar metadados em JSON
-            await SaveMetadataAsync(metadata);
-
-            _logger.LogInformation("Dataset uploaded successfully: {DatasetId}", datasetId);
 
             var response = new
             {
@@ -220,17 +88,17 @@ public class DataSetController : ControllerBase
                 message = "Arquivo enviado com sucesso.",
                 data = new
                 {
-                    datasetId = metadata.Id,
-                    originalFileName = metadata.OriginalFileName,
-                    storedFileName = metadata.StoredFileName,
-                    sizeBytes = metadata.FileSizeInBytes,
-                    createdAtUtc = metadata.CreatedAt
+                    datasetId = result.Data.DatasetId,
+                    originalFileName = result.Data.OriginalFileName,
+                    storedFileName = result.Data.StoredFileName,
+                    sizeBytes = result.Data.SizeBytes,
+                    createdAtUtc = result.Data.CreatedAtUtc
                 }
             };
 
             return CreatedAtAction(
                 nameof(GetById),
-                new { id = metadata.Id, version = "1.0" },
+                new { id = result.Data.DatasetId, version = "1.0" },
                 response);
         }
         catch (Exception ex)
@@ -247,32 +115,6 @@ public class DataSetController : ControllerBase
     }
 
     /// <summary>
-    /// Lista todos os datasets
-    /// </summary>
-    [HttpGet]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetAll()
-    {
-        var datasets = await LoadAllMetadataAsync();
-
-        var result = datasets.Select(ds => new
-        {
-            datasetId = ds.Id,
-            originalFileName = ds.OriginalFileName,
-            storedFileName = ds.StoredFileName,
-            fileSizeInBytes = ds.FileSizeInBytes,
-            fileSizeMB = Math.Round(ds.FileSizeInBytes / (1024.0 * 1024.0), 2),
-            createdAt = ds.CreatedAt
-        });
-
-        return Ok(new
-        {
-            success = true,
-            data = result
-        });
-    }
-
-    /// <summary>
     /// Obtém informações de um dataset específico
     /// </summary>
     [HttpGet("{id:guid}")]
@@ -280,30 +122,11 @@ public class DataSetController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var dataset = await LoadMetadataAsync(id);
-
-        if (dataset == null)
+        // TODO: Implement GetByIdQuery when needed
+        return NotFound(new
         {
-            return NotFound(new
-            {
-                success = false,
-                message = "Dataset não encontrado."
-            });
-        }
-
-        return Ok(new
-        {
-            success = true,
-            data = new
-            {
-                datasetId = dataset.Id,
-                originalFileName = dataset.OriginalFileName,
-                storedFileName = dataset.StoredFileName,
-                storedPath = dataset.StoredPath,
-                fileSizeInBytes = dataset.FileSizeInBytes,
-                fileSizeMB = Math.Round(dataset.FileSizeInBytes / (1024.0 * 1024.0), 2),
-                createdAt = dataset.CreatedAt
-            }
+            success = false,
+            message = "Dataset não encontrado."
         });
     }
 
@@ -355,36 +178,18 @@ public class DataSetController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Generating profile for dataset {DatasetId}", id);
+            var result = await _dataSetApplicationService.GetProfileAsync(id);
 
-            // Busca metadados
-            var dataset = await LoadMetadataAsync(id);
-            if (dataset == null)
+            if (!result.IsSuccess)
             {
                 return NotFound(new
                 {
                     success = false,
-                    message = "Dataset não encontrado."
+                    errors = result.Errors
                 });
             }
 
-            // Verifica se o arquivo CSV existe
-            if (!System.IO.File.Exists(dataset.StoredPath))
-            {
-                _logger.LogError("File not found for dataset {DatasetId}: {Path}", id, dataset.StoredPath);
-                return NotFound(new
-                {
-                    success = false,
-                    message = "Arquivo do dataset não encontrado no sistema."
-                });
-            }
-
-            // Gera o profile
-            var profile = await _csvProfiler.ProfileAsync(id, dataset.StoredPath);
-
-            _logger.LogInformation(
-                "Profile generated for dataset {DatasetId}: {RowCount} rows, {ColumnCount} columns",
-                id, profile.RowCount, profile.Columns.Count);
+            var profile = result.Data;
 
             return Ok(new
             {
@@ -418,6 +223,11 @@ public class DataSetController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Gera recomendações de gráficos inteligentes para um dataset
+    /// </summary>
+    /// <param name="id">ID do dataset</param>
+    /// <returns>Lista de até 12 recomendações de gráficos com templates ECharts</returns>
     [HttpGet("{id:guid}/recommendations")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -426,44 +236,21 @@ public class DataSetController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Generating chart recommendations for dataset {DatasetId}", id);
+            var result = await _dataSetApplicationService.GetRecommendationsAsync(id);
 
-            // Busca metadados
-            var dataset = await LoadMetadataAsync(id);
-            if (dataset == null)
+            if (!result.IsSuccess)
             {
                 return NotFound(new
                 {
                     success = false,
-                    message = "Dataset não encontrado."
+                    errors = result.Errors
                 });
             }
-
-            // Verifica se o arquivo CSV existe
-            if (!System.IO.File.Exists(dataset.StoredPath))
-            {
-                _logger.LogError("File not found for dataset {DatasetId}: {Path}", id, dataset.StoredPath);
-                return NotFound(new
-                {
-                    success = false,
-                    message = "Arquivo do dataset não encontrado no sistema."
-                });
-            }
-
-            // Gera o profile
-            var profile = await _csvProfiler.ProfileAsync(id, dataset.StoredPath);
-
-            // Gera recomendações
-            var recommendations = _recommendationEngine.Generate(profile);
-
-            _logger.LogInformation(
-                "Generated {Count} recommendations for dataset {DatasetId}",
-                recommendations.Count, id);
 
             return Ok(new
             {
                 success = true,
-                data = recommendations
+                data = result.Data
             });
         }
         catch (Exception ex)

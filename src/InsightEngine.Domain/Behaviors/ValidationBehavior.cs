@@ -1,0 +1,63 @@
+using FluentValidation;
+using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Core.Notifications;
+using MediatR;
+
+namespace InsightEngine.Domain.Behaviors;
+
+/// <summary>
+/// Pipeline behavior that validates commands/queries using FluentValidation
+/// and integrates with DomainNotification system
+/// </summary>
+public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : IRequest<TResponse>
+    where TResponse : Result
+{
+    private readonly IEnumerable<IValidator<TRequest>> _validators;
+    private readonly IDomainNotificationHandler _notificationHandler;
+
+    public ValidationBehavior(
+        IEnumerable<IValidator<TRequest>> validators,
+        IDomainNotificationHandler notificationHandler)
+    {
+        _validators = validators;
+        _notificationHandler = notificationHandler;
+    }
+
+    public async Task<TResponse> Handle(
+        TRequest request,
+        RequestHandlerDelegate<TResponse> next,
+        CancellationToken cancellationToken)
+    {
+        if (!_validators.Any())
+        {
+            return await next();
+        }
+
+        var context = new ValidationContext<TRequest>(request);
+
+        var validationResults = await Task.WhenAll(
+            _validators.Select(v => v.ValidateAsync(context, cancellationToken)));
+
+        var failures = validationResults
+            .SelectMany(r => r.Errors)
+            .Where(f => f != null)
+            .ToList();
+
+        if (failures.Any())
+        {
+            // Add failures to DomainNotification
+            foreach (var failure in failures)
+            {
+                _notificationHandler.AddNotification(failure.PropertyName, failure.ErrorMessage);
+            }
+
+            // Return failure result
+            var errors = failures.Select(f => f.ErrorMessage).ToList();
+            
+            return (TResponse)(object)Result.Failure(errors);
+        }
+
+        return await next();
+    }
+}
