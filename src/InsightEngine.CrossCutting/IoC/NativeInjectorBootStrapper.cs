@@ -46,7 +46,6 @@ public static class NativeInjectorBootStrapper
         services.AddMediatR(cfg =>
         {
             cfg.RegisterServicesFromAssembly(typeof(InsightEngine.Domain.Commands.Command).Assembly);
-            cfg.RegisterServicesFromAssembly(typeof(InsightEngine.Application.Commands.Command).Assembly);
         });
 
         // Domain - FluentValidation
