@@ -147,9 +147,179 @@ public class ChartExecutionService : IChartExecutionService
         ChartRecommendation recommendation,
         CancellationToken ct)
     {
+        var swDuckDb = Stopwatch.StartNew();
+
+        try
+        {
+            // Validar eixos: X=Category, Y=Measure
+            if (recommendation.Query.X.Role != AxisRole.Category)
+                return Result.Failure<ChartExecutionResult>("Bar chart requires X axis with role Category.");
+
+            if (recommendation.Query.Y.Role != AxisRole.Measure)
+                return Result.Failure<ChartExecutionResult>("Bar chart requires Y axis with role Measure.");
+
+            if (!recommendation.Query.Y.Aggregation.HasValue)
+                return Result.Failure<ChartExecutionResult>("Bar chart requires Y axis with aggregation defined.");
+
+            // Gerar e executar SQL
+            var sql = BuildBarSQL(csvPath, recommendation);
+            var dataResult = await ExecuteBarQueryAsync(sql, ct);
+            swDuckDb.Stop();
+
+            if (!dataResult.IsSuccess)
+                return Result.Failure<ChartExecutionResult>(dataResult.Errors);
+
+            var categories = dataResult.Data!;
+
+            // Montar ECharts option
+            var option = BuildBarEChartsOption(recommendation, categories);
+
+            return Result.Success(new ChartExecutionResult
+            {
+                Option = option,
+                DuckDbMs = swDuckDb.ElapsedMilliseconds,
+                GeneratedSql = sql,
+                RowCount = categories.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing Bar chart");
+            return Result.Failure<ChartExecutionResult>($"Bar chart execution failed: {ex.Message}");
+        }
+    }
+
+    private string BuildBarSQL(string csvPath, ChartRecommendation recommendation)
+    {
+        var xCol = recommendation.Query.X.Column;
+        var yCol = recommendation.Query.Y.Column;
+        var agg = recommendation.Query.Y.Aggregation!.Value;
+
+        var aggFunction = agg switch
+        {
+            Aggregation.Sum => "SUM",
+            Aggregation.Avg => "AVG",
+            Aggregation.Count => "COUNT",
+            Aggregation.Min => "MIN",
+            Aggregation.Max => "MAX",
+            _ => "AVG"
+        };
+
+        var escapedPath = csvPath.Replace("'", "''");
+
+        // TopN configurável (default 20)
+        var topN = _settings.BarChartTopN > 0 ? _settings.BarChartTopN : 20;
+
+        // GROUP BY + agregação + ORDER BY + LIMIT
+        var sql = $@"
+SELECT 
+    CAST(""{xCol}"" AS VARCHAR) AS category,
+    {aggFunction}(CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE)) AS value
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
+WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT {topN};
+";
+
+        return sql;
+    }
+
+    private async Task<Result<List<CategoryValue>>> ExecuteBarQueryAsync(
+        string sql,
+        CancellationToken ct)
+    {
         await Task.CompletedTask;
-        // TODO: Implementar Day 5 - Task 5.3
-        return Result.Failure<ChartExecutionResult>("Bar chart not implemented yet.");
+
+        var values = new List<CategoryValue>();
+
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            connection.Open();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+
+            _logger.LogDebug("Executing DuckDB Bar query: {SQL}", sql);
+
+            using var reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                if (ct.IsCancellationRequested)
+                    break;
+
+                var category = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+                var value = reader.IsDBNull(1) ? 0.0 : reader.GetDouble(1);
+
+                values.Add(new CategoryValue(category, value));
+            }
+
+            _logger.LogInformation("DuckDB Bar query returned {RowCount} categories", values.Count);
+
+            return Result.Success(values);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "DuckDB Bar query execution failed");
+            return Result.Failure<List<CategoryValue>>($"Bar query execution failed: {ex.Message}");
+        }
+    }
+
+    private EChartsOption BuildBarEChartsOption(
+        ChartRecommendation recommendation,
+        List<CategoryValue> data)
+    {
+        var categories = data.Select(d => d.Category).ToList();
+        var values = data.Select(d => d.Value).ToList();
+
+        var option = new EChartsOption
+        {
+            Title = new Dictionary<string, object>
+            {
+                ["text"] = recommendation.Title,
+                ["subtext"] = recommendation.Reason
+            },
+            Tooltip = new Dictionary<string, object>
+            {
+                ["trigger"] = "axis",
+                ["axisPointer"] = new Dictionary<string, object>
+                {
+                    ["type"] = "shadow"
+                }
+            },
+            Grid = new Dictionary<string, object>
+            {
+                ["left"] = "3%",
+                ["right"] = "4%",
+                ["bottom"] = "10%",
+                ["top"] = "15%",
+                ["containLabel"] = true
+            },
+            XAxis = new Dictionary<string, object>
+            {
+                ["type"] = "category",
+                ["name"] = recommendation.Query.X.Column,
+                ["data"] = categories
+            },
+            YAxis = new Dictionary<string, object>
+            {
+                ["type"] = "value",
+                ["name"] = recommendation.Query.Y.Column
+            },
+            Series = new List<Dictionary<string, object>>
+            {
+                new()
+                {
+                    ["name"] = $"{recommendation.Query.Y.Aggregation}({recommendation.Query.Y.Column})",
+                    ["type"] = "bar",
+                    ["data"] = values
+                }
+            }
+        };
+
+        return option;
     }
 
     // ===========================
@@ -391,4 +561,9 @@ ORDER BY 1;
     /// Representa um ponto em série temporal
     /// </summary>
     private record TimeSeriesPoint(long TimestampMs, double Value);
+
+    /// <summary>
+    /// Representa um par categoria-valor para gráficos de barra
+    /// </summary>
+    private record CategoryValue(string Category, double Value);
 }

@@ -26,4 +26,19 @@ public class ChartExecutionSettings
     /// Incluir SQL de debug na resposta (apenas Development)
     /// </summary>
     public bool IncludeDebugSql { get; set; } = false;
+
+    /// <summary>
+    /// Número máximo de categorias em gráfico de barras (TopN)
+    /// </summary>
+    public int BarChartTopN { get; set; } = 20;
+
+    /// <summary>
+    /// Número máximo de pontos em gráfico de dispersão (sampling)
+    /// </summary>
+    public int ScatterMaxPoints { get; set; } = 2000;
+
+    /// <summary>
+    /// Número de bins para histograma
+    /// </summary>
+    public int HistogramBins { get; set; } = 20;
 }
