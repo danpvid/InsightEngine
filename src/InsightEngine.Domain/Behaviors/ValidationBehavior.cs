@@ -55,6 +55,19 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
             // Return failure result
             var errors = failures.Select(f => f.ErrorMessage).ToList();
             
+            // Criar Result<T> failure usando reflexão para obter o tipo genérico
+            var responseType = typeof(TResponse);
+            if (responseType.IsGenericType && responseType.GetGenericTypeDefinition() == typeof(Result<>))
+            {
+                var dataType = responseType.GetGenericArguments()[0];
+                var failureMethod = typeof(Result)
+                    .GetMethod(nameof(Result.Failure), new[] { typeof(List<string>) })
+                    ?.MakeGenericMethod(dataType);
+                
+                var result = failureMethod?.Invoke(null, new object[] { errors });
+                return (TResponse)result!;
+            }
+            
             return (TResponse)(object)Result.Failure(errors);
         }
 

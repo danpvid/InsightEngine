@@ -35,22 +35,22 @@ public class ChartExecutionService : IChartExecutionService
         try
         {
             // 1. Validar suporte (Dia 4: apenas Line + ECharts)
-            var validationResult = ValidateRecommendation(recommendation);
-            if (!validationResult.IsSuccess)
-                return Result<EChartsOption>.Failure<EChartsOption>(validationResult.Errors);
+            var validationErrors = ValidateRecommendation(recommendation);
+            if (validationErrors.Any())
+                return Result.Failure<EChartsOption>(validationErrors);
 
             // 2. Resolver path do CSV
             var csvPath = _fileStorageService.GetFullPath($"{datasetId}.csv");
             if (!File.Exists(csvPath))
             {
                 _logger.LogWarning("Dataset file not found: {DatasetId}", datasetId);
-                return Result<EChartsOption>.Failure<EChartsOption>($"Dataset file not found: {datasetId}");
+                return Result.Failure<EChartsOption>($"Dataset file not found: {datasetId}");
             }
 
             // 3. Executar query no DuckDB
             var dataResult = await ExecuteQueryAsync(csvPath, recommendation, ct);
             if (!dataResult.IsSuccess)
-                return Result<EChartsOption>.Failure<EChartsOption>(dataResult.Errors);
+                return Result.Failure<EChartsOption>(dataResult.Errors);
 
             // 4. Montar EChartsOption completo
             var option = BuildEChartsOption(recommendation, dataResult.Data!);
@@ -60,17 +60,17 @@ public class ChartExecutionService : IChartExecutionService
                 "Chart executed successfully: {RecommendationId}, Rows: {RowCount}, Duration: {Duration}ms",
                 recommendation.Id, dataResult.Data!.Count, sw.ElapsedMilliseconds);
 
-            return Result<EChartsOption>.Success(option);
+            return Result.Success(option);
         }
         catch (Exception ex)
         {
             sw.Stop();
             _logger.LogError(ex, "Error executing chart: {RecommendationId}", recommendation.Id);
-            return Result<EChartsOption>.Failure<EChartsOption>($"Error executing chart: {ex.Message}");
+            return Result.Failure<EChartsOption>($"Error executing chart: {ex.Message}");
         }
     }
 
-    private Result ValidateRecommendation(ChartRecommendation recommendation)
+    private List<string> ValidateRecommendation(ChartRecommendation recommendation)
     {
         var errors = new List<string>();
 
@@ -96,7 +96,7 @@ public class ChartExecutionService : IChartExecutionService
         if (!recommendation.Query.Y.Aggregation.HasValue)
             errors.Add("Y axis must have aggregation defined (Sum, Avg, Count, Min, Max).");
 
-        return errors.Any() ? Result.Failure(errors) : Result.Success();
+        return errors;
     }
 
     private async Task<Result<List<TimeSeriesPoint>>> ExecuteQueryAsync(
@@ -115,15 +115,9 @@ public class ChartExecutionService : IChartExecutionService
 
             using var command = connection.CreateCommand();
 
-            // Montar SQL para time series
-            var sql = BuildTimeSeriesSQL(recommendation);
+            // Montar SQL para time series com path do CSV embutido
+            var sql = BuildTimeSeriesSQL(csvPath, recommendation);
             command.CommandText = sql;
-
-            // Parametrizar o path do CSV
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@csvPath";
-            parameter.Value = csvPath;
-            command.Parameters.Add(parameter);
 
             _logger.LogDebug("Executing DuckDB query: {SQL}", sql);
 
@@ -146,16 +140,16 @@ public class ChartExecutionService : IChartExecutionService
 
             _logger.LogInformation("DuckDB query returned {RowCount} points", points.Count);
 
-            return Result<List<TimeSeriesPoint>>.Success(points);
+            return Result.Success(points);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "DuckDB query execution failed");
-            return Result<List<TimeSeriesPoint>>.Failure<List<TimeSeriesPoint>>($"Query execution failed: {ex.Message}");
+            return Result.Failure<List<TimeSeriesPoint>>($"Query execution failed: {ex.Message}");
         }
     }
 
-    private string BuildTimeSeriesSQL(ChartRecommendation recommendation)
+    private string BuildTimeSeriesSQL(string csvPath, ChartRecommendation recommendation)
     {
         var xCol = recommendation.Query.X.Column;
         var yCol = recommendation.Query.Y.Column;
@@ -182,13 +176,30 @@ public class ChartExecutionService : IChartExecutionService
             _ => "AVG"
         };
 
-        // Montar SQL
+        // Escapar o path do CSV (importante para segurança)
+        // DuckDB aceita single quotes no path e escapa aspas internas duplicando-as
+        var escapedPath = csvPath.Replace("'", "''");
+
+        // Montar SQL com path do CSV inline (DuckDB não suporta parâmetros em read_csv_auto)
+        // Usa COALESCE com TRY_STRPTIME para tentar múltiplos formatos de data comuns em CSVs brasileiros
         var sql = $@"
 SELECT 
-    date_trunc('{dateTruncPart}', CAST(""{xCol}"" AS TIMESTAMP)) AS x,
-    {aggFunction}(CAST(""{yCol}"" AS DOUBLE)) AS y
-FROM read_csv_auto(@csvPath, header=true, ignore_errors=true)
-WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL
+    date_trunc('{dateTruncPart}', parsed_date) AS x,
+    {aggFunction}(parsed_value) AS y
+FROM (
+    SELECT 
+        COALESCE(
+            TRY_CAST(""{xCol}"" AS TIMESTAMP),
+            TRY_STRPTIME(""{xCol}"", '%Y%m%d'),
+            TRY_STRPTIME(""{xCol}"", '%d/%m/%Y'),
+            TRY_STRPTIME(""{xCol}"", '%Y-%m-%d'),
+            TRY_STRPTIME(""{xCol}"", '%m/%d/%Y')
+        ) AS parsed_date,
+        CAST(REPLACE(""{yCol}"", ',', '') AS DOUBLE) AS parsed_value
+    FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
+    WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL
+)
+WHERE parsed_date IS NOT NULL AND parsed_value IS NOT NULL
 GROUP BY 1
 ORDER BY 1;
 ";

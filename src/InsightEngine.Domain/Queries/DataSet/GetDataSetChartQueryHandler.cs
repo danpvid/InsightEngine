@@ -41,7 +41,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
             if (!File.Exists(csvPath))
             {
                 _logger.LogWarning("Dataset not found: {DatasetId}", request.DatasetId);
-                return Result<EChartsOption>.Failure<EChartsOption>($"Dataset not found: {request.DatasetId}");
+                return Result.Failure<EChartsOption>($"Dataset not found: {request.DatasetId}");
             }
 
             // 2. Gerar profile (necessário para recommendations)
@@ -58,7 +58,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 _logger.LogWarning(
                     "Recommendation {RecommendationId} not found for dataset {DatasetId}",
                     request.RecommendationId, request.DatasetId);
-                return Result<EChartsOption>.Failure<EChartsOption>(
+                return Result.Failure<EChartsOption>(
                     $"Recommendation '{request.RecommendationId}' not found. Available recommendations: {string.Join(", ", recommendations.Select(r => r.Id))}");
             }
 
@@ -86,7 +86,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         {
             _logger.LogError(ex, "Error executing chart query: {DatasetId}/{RecommendationId}",
                 request.DatasetId, request.RecommendationId);
-            return Result<EChartsOption>.Failure<EChartsOption>($"Error executing chart: {ex.Message}");
+            return Result.Failure<EChartsOption>($"Error executing chart: {ex.Message}");
         }
     }
 }
