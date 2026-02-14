@@ -87,6 +87,8 @@ public class CsvProfiler : ICsvProfiler
         private readonly HashSet<string> _distinctValues;
         private readonly Dictionary<string, int> _valueFrequency;
         private bool _distinctTrackingActive = true;
+        private double? _min;
+        private double? _max;
 
         public ColumnStats(string name)
         {
@@ -124,7 +126,14 @@ public class CsvProfiler : ICsvProfiler
             // Type inference counters
             if (IsBooleanValue(value)) _boolOk++;
             if (IsDateValue(value)) _dateOk++;
-            if (IsNumericValue(value)) _numberOk++;
+            
+            // Numeric validation and min/max tracking
+            if (IsNumericValue(value, out var numericValue))
+            {
+                _numberOk++;
+                _min = _min.HasValue ? Math.Min(_min.Value, numericValue) : numericValue;
+                _max = _max.HasValue ? Math.Max(_max.Value, numericValue) : numericValue;
+            }
         }
 
         public ColumnProfile ToColumnProfile(int totalRows)
@@ -141,7 +150,9 @@ public class CsvProfiler : ICsvProfiler
                     .Take(TopValuesCount)
                     .Select(kvp => kvp.Key)
                     .ToList(),
-                InferredType = InferType(nonNull, totalRows)
+                InferredType = InferType(nonNull, totalRows),
+                Min = _min,
+                Max = _max
             };
         }
 
@@ -200,6 +211,22 @@ public class CsvProfiler : ICsvProfiler
                 NumberStyles.Number | NumberStyles.Float,
                 CultureInfo.InvariantCulture,
                 out _);
+        }
+
+        private static bool IsNumericValue(string value, out double numericValue)
+        {
+            var cleaned = value.Replace(",", "").Replace(" ", "");
+            if (decimal.TryParse(cleaned,
+                NumberStyles.Number | NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var decimalValue))
+            {
+                numericValue = (double)decimalValue;
+                return true;
+            }
+
+            numericValue = 0;
+            return false;
         }
     }
 }
