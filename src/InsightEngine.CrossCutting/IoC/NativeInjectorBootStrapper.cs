@@ -3,6 +3,7 @@ using InsightEngine.Application.Services;
 using InsightEngine.Domain.Behaviors;
 using InsightEngine.Domain.Core.Notifications;
 using InsightEngine.Domain.Interfaces;
+using InsightEngine.Infra.Data.Configuration;
 using InsightEngine.Infra.Data.Context;
 using InsightEngine.Infra.Data.Repositories;
 using InsightEngine.Infra.Data.Services;
@@ -20,6 +21,9 @@ public static class NativeInjectorBootStrapper
     {
         // Domain - Notifications
         services.AddScoped<IDomainNotificationHandler, DomainNotificationHandler>();
+
+        // Configuration - Settings
+        services.Configure<ChartExecutionSettings>(configuration.GetSection("ChartExecution"));
 
         // Infra - Data
         services.AddDbContext<InsightEngineContext>(options =>

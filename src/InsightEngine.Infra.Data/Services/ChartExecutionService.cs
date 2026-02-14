@@ -1,9 +1,12 @@
 using DuckDB.NET.Data;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
+using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Infra.Data.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Globalization;
 
@@ -16,13 +19,16 @@ public class ChartExecutionService : IChartExecutionService
 {
     private readonly IFileStorageService _fileStorageService;
     private readonly ILogger<ChartExecutionService> _logger;
+    private readonly ChartExecutionSettings _settings;
 
     public ChartExecutionService(
         IFileStorageService fileStorageService,
-        ILogger<ChartExecutionService> logger)
+        ILogger<ChartExecutionService> logger,
+        IOptions<ChartExecutionSettings> settings)
     {
         _fileStorageService = fileStorageService;
         _logger = logger;
+        _settings = settings.Value;
     }
 
     public async Task<Result<ChartExecutionResult>> ExecuteAsync(
@@ -61,8 +67,11 @@ public class ChartExecutionService : IChartExecutionService
             if (!dataResult.IsSuccess)
                 return Result.Failure<ChartExecutionResult>(dataResult.Errors);
 
+            // 4.5. Aplicar gap filling se configurado
+            var processedPoints = ApplyGapFilling(dataResult.Data!, recommendation.Query.X.Bin!.Value);
+
             // 5. Montar EChartsOption completo
-            var option = BuildEChartsOption(recommendation, dataResult.Data!);
+            var option = BuildEChartsOption(recommendation, processedPoints);
 
             sw.Stop();
 
@@ -71,12 +80,12 @@ public class ChartExecutionService : IChartExecutionService
                 Option = option,
                 DuckDbMs = duckDbMs,
                 GeneratedSql = generatedSql,
-                RowCount = dataResult.Data!.Count
+                RowCount = processedPoints.Count
             };
 
             _logger.LogInformation(
-                "Chart executed successfully: {RecommendationId}, Rows: {RowCount}, TotalMs: {TotalMs}, DuckDbMs: {DuckDbMs}",
-                recommendation.Id, result.RowCount, sw.ElapsedMilliseconds, duckDbMs);
+                "Chart executed successfully: {RecommendationId}, Rows: {RowCount}, TotalMs: {TotalMs}, DuckDbMs: {DuckDbMs}, GapFillMode: {GapFillMode}",
+                recommendation.Id, result.RowCount, sw.ElapsedMilliseconds, duckDbMs, _settings.GapFillMode);
 
             return Result.Success(result);
         }
@@ -221,9 +230,28 @@ ORDER BY 1;
         return sql;
     }
 
+    /// <summary>
+    /// Aplica preenchimento de lacunas (gap filling) baseado na configuração
+    /// </summary>
+    private List<(long TimestampMs, double? Value)> ApplyGapFilling(
+        List<TimeSeriesPoint> points,
+        TimeBin timeBin)
+    {
+        if (_settings.GapFillMode == GapFillMode.None)
+        {
+            return points.Select(p => (p.TimestampMs, (double?)p.Value)).ToList();
+        }
+
+        // Converter para formato do helper
+        var inputPoints = points.Select(p => (p.TimestampMs, p.Value)).ToList();
+        
+        // Aplicar gap filling
+        return GapFillHelper.FillGaps(inputPoints, _settings.GapFillMode, timeBin);
+    }
+
     private EChartsOption BuildEChartsOption(
         ChartRecommendation recommendation,
-        List<TimeSeriesPoint> data)
+        List<(long TimestampMs, double? Value)> data)
     {
         // Partir do template (se existir) ou criar novo
         var option = new EChartsOption
@@ -258,7 +286,7 @@ ORDER BY 1;
                     ["name"] = $"{recommendation.Query.Y.Aggregation}({recommendation.Query.Y.Column})",
                     ["type"] = "line",
                     ["smooth"] = true,
-                    ["data"] = data.Select(p => new object[] { p.TimestampMs, p.Value }).ToList()
+                    ["data"] = data.Select(p => new object?[] { p.TimestampMs, p.Value }).ToList()
                 }
             }
         };
