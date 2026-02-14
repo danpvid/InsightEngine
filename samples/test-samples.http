@@ -1,0 +1,333 @@
+### ===========================================
+### InsightEngine API - Complete Test Suite
+### Sample Datasets Testing
+### ===========================================
+
+### Variables
+@baseUrl = https://localhost:5000
+@username = admin
+@password = admin123
+
+### ===========================================
+### 1. AUTHENTICATION
+### ===========================================
+
+### Login (get JWT token)
+# @name login
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "{{password}}"
+}
+
+### Extract token from response
+@token = {{login.response.body.$.data.token}}
+
+### ===========================================
+### 2. UPLOAD DATASETS
+### ===========================================
+
+### Upload E-commerce Sales (5k rows)
+# @name uploadEcommerce
+POST {{baseUrl}}/api/v1/datasets
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="ecommerce_sales.csv"
+Content-Type: text/csv
+
+< ./ecommerce_sales.csv
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### Extract dataset ID
+@ecommerceId = {{uploadEcommerce.response.body.$.data.id}}
+
+### Upload Employee Records (8k rows)
+# @name uploadEmployees
+POST {{baseUrl}}/api/v1/datasets
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="employee_records.csv"
+Content-Type: text/csv
+
+< ./employee_records.csv
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+@employeesId = {{uploadEmployees.response.body.$.data.id}}
+
+### Upload Financial Transactions (10k rows)
+# @name uploadFinancial
+POST {{baseUrl}}/api/v1/datasets
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="financial_transactions.csv"
+Content-Type: text/csv
+
+< ./financial_transactions.csv
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+@financialId = {{uploadFinancial.response.body.$.data.id}}
+
+### ===========================================
+### 3. PROFILE (with Min/Max - Task 6.6)
+### ===========================================
+
+### Get E-commerce Profile
+GET {{baseUrl}}/api/v1/datasets/{{ecommerceId}}/profile
+Authorization: Bearer {{token}}
+
+### Get Employees Profile (check min/max for salary)
+GET {{baseUrl}}/api/v1/datasets/{{employeesId}}/profile
+Authorization: Bearer {{token}}
+
+### Get Financial Profile
+GET {{baseUrl}}/api/v1/datasets/{{financialId}}/profile
+Authorization: Bearer {{token}}
+
+### ===========================================
+### 4. LINE CHARTS (Date x Number)
+### ===========================================
+
+### Line: E-commerce Sales Over Time
+POST {{baseUrl}}/api/v1/charts/line
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{ecommerceId}}",
+  "xColumn": "order_date",
+  "yColumn": "total_amount"
+}
+
+### Line: Financial Transactions Timeline
+POST {{baseUrl}}/api/v1/charts/line
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{financialId}}",
+  "xColumn": "transaction_date",
+  "yColumn": "amount"
+}
+
+### ===========================================
+### 5. BAR CHARTS (Category x Number)
+### ===========================================
+
+### Bar: Products by Category (COUNT)
+POST {{baseUrl}}/api/v1/charts/bar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{ecommerceId}}",
+  "xColumn": "category",
+  "yColumn": "order_id",
+  "aggregation": "count"
+}
+
+### Bar: Average Salary by Department
+POST {{baseUrl}}/api/v1/charts/bar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{employeesId}}",
+  "xColumn": "department",
+  "yColumn": "salary",
+  "aggregation": "avg"
+}
+
+### Bar: Total Revenue by Payment Method
+POST {{baseUrl}}/api/v1/charts/bar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{ecommerceId}}",
+  "xColumn": "payment_method",
+  "yColumn": "total_amount",
+  "aggregation": "sum"
+}
+
+### ===========================================
+### 6. SCATTER CHARTS (Number x Number)
+### ===========================================
+
+### Scatter: Discount Impact on Sales
+# Should return max 2000 points (Task 6.5)
+POST {{baseUrl}}/api/v1/charts/scatter
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{ecommerceId}}",
+  "xColumn": "discount_percentage",
+  "yColumn": "total_amount"
+}
+
+### Scatter: Transaction Amount vs Fee
+# 10k rows → sampled to 2k (Task 6.5)
+POST {{baseUrl}}/api/v1/charts/scatter
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{financialId}}",
+  "xColumn": "amount",
+  "yColumn": "fee"
+}
+
+### ===========================================
+### 7. HISTOGRAMS (Distribution)
+### ===========================================
+
+### Histogram: Salary Distribution (default bins)
+POST {{baseUrl}}/api/v1/charts/histogram
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{employeesId}}",
+  "column": "salary"
+}
+
+### Histogram: Salary with 10 bins
+POST {{baseUrl}}/api/v1/charts/histogram
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{employeesId}}",
+  "column": "salary",
+  "bins": 10
+}
+
+### Histogram: Age Distribution
+POST {{baseUrl}}/api/v1/charts/histogram
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{employeesId}}",
+  "column": "age"
+}
+
+### Histogram: Transaction Amounts
+POST {{baseUrl}}/api/v1/charts/histogram
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{financialId}}",
+  "column": "amount"
+}
+
+### ===========================================
+### 8. TESTING SAFETY LIMITS (Task 6.5)
+### ===========================================
+
+### Test: Histogram with bins < 5 (should clamp to 5)
+POST {{baseUrl}}/api/v1/charts/histogram
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{employeesId}}",
+  "column": "salary",
+  "bins": 2
+}
+
+### Test: Histogram with bins > 50 (should clamp to 50)
+POST {{baseUrl}}/api/v1/charts/histogram
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{employeesId}}",
+  "column": "salary",
+  "bins": 100
+}
+
+### Test: Scatter with 10k rows (should sample to 2k)
+POST {{baseUrl}}/api/v1/charts/scatter
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{financialId}}",
+  "xColumn": "amount",
+  "yColumn": "fee"
+}
+
+### ===========================================
+### 9. RECOMMENDATIONS
+### ===========================================
+
+### Get Chart Recommendations for E-commerce
+GET {{baseUrl}}/api/v1/datasets/{{ecommerceId}}/recommendations
+Authorization: Bearer {{token}}
+
+### Get Chart Recommendations for Employees
+GET {{baseUrl}}/api/v1/datasets/{{employeesId}}/recommendations
+Authorization: Bearer {{token}}
+
+### ===========================================
+### 10. LIST & CLEANUP
+### ===========================================
+
+### List All Datasets
+GET {{baseUrl}}/api/v1/datasets
+Authorization: Bearer {{token}}
+
+### Delete E-commerce Dataset
+DELETE {{baseUrl}}/api/v1/datasets/{{ecommerceId}}
+Authorization: Bearer {{token}}
+
+### Delete Employees Dataset
+DELETE {{baseUrl}}/api/v1/datasets/{{employeesId}}
+Authorization: Bearer {{token}}
+
+### Delete Financial Dataset
+DELETE {{baseUrl}}/api/v1/datasets/{{financialId}}
+Authorization: Bearer {{token}}
+
+### ===========================================
+### 11. ERROR CASES (Validation)
+### ===========================================
+
+### Error: Invalid column name
+POST {{baseUrl}}/api/v1/charts/line
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{ecommerceId}}",
+  "xColumn": "invalid_column",
+  "yColumn": "total_amount"
+}
+
+### Error: Wrong column type (String for Line chart)
+POST {{baseUrl}}/api/v1/charts/line
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "datasetId": "{{ecommerceId}}",
+  "xColumn": "category",
+  "yColumn": "total_amount"
+}
+
+### Error: Non-existent dataset
+GET {{baseUrl}}/api/v1/datasets/00000000-0000-0000-0000-000000000000/profile
+Authorization: Bearer {{token}}
+
+### Error: Missing authorization
+GET {{baseUrl}}/api/v1/datasets

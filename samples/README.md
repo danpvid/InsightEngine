@@ -1,69 +1,352 @@
-# InsightEngine Sample CSV Files
+# 📊 InsightEngine Sample CSV Files
 
-Este diretório contém CSVs gerados automaticamente pelo **InsightEngine.DataGenerator** para testes da API.
+Este diretório contém CSVs gerados automaticamente pelo **InsightEngine.DataGenerator** para testes completos da API.
 
-## Arquivos Disponíveis
+## 📁 Arquivos Disponíveis
 
-| Arquivo | Linhas | Colunas | Descrição |
-|---------|--------|---------|-----------|
-| `ecommerce_sales.csv` | 5.000 | 12 | Transações de e-commerce |
-| `employee_records.csv` | 8.000 | 12 | Registros de RH |
-| `financial_transactions.csv` | 10.000 | 12 | Transações bancárias |
-| `healthcare_patients.csv` | 6.000 | 12 | Registros médicos |
-| `logistics_shipments.csv` | 7.500 | 13 | Operações de logística |
+| Arquivo | Linhas | Colunas | Descrição | Melhor para |
+|---------|--------|---------|-----------|-------------|
+| `ecommerce_sales.csv` | 5.000 | 12 | Transações de e-commerce | Line, Bar, Scatter |
+| `employee_records.csv` | 8.000 | 12 | Registros de RH | Histogram, Bar |
+| `financial_transactions.csv` | 10.000 | 12 | Transações bancárias | Line, Histogram |
+| `healthcare_patients.csv` | 6.000 | 12 | Registros médicos | Histogram, Bar |
+| `logistics_shipments.csv` | 7.500 | 13 | Operações de logística | Scatter, Line |
 
 **Total:** 36.500 linhas, 61 colunas
 
-## Como Usar
+### 🎯 Recomendações de Uso por Dataset
 
-### 1. Teste via Swagger
+**E-commerce Sales** - Melhor para:
+- Line Chart: `order_date` x `total_amount` (tendências de vendas)
+- Bar Chart: `category` x `COUNT(*)` (produtos mais vendidos)
+- Scatter: `discount_percentage` x `total_amount` (impacto de descontos)
+
+**Employee Records** - Melhor para:
+- Histogram: `salary` (distribuição salarial)
+- Bar Chart: `department` x `COUNT(*)` (tamanho dos departamentos)
+- Histogram: `years_of_service` (tempo de empresa)
+
+**Financial Transactions** - Melhor para:
+- Line Chart: `transaction_date` x `amount` (fluxo de caixa)
+- Histogram: `amount` (distribuição de valores)
+- Bar Chart: `transaction_type` x `SUM(amount)` (tipos de transação)
+
+**Healthcare Patients** - Melhor para:
+- Histogram: `age` (faixa etária de pacientes)
+- Bar Chart: `diagnosis` x `COUNT(*)` (doenças mais comuns)
+- Histogram: `treatment_cost` (custos de tratamento)
+
+**Logistics Shipments** - Melhor para:
+- Scatter: `weight_kg` x `delivery_days` (relação peso/tempo)
+- Line Chart: `ship_date` x `COUNT(*)` (volume de envios)
+- Bar Chart: `carrier` x `AVG(delivery_days)` (performance de transportadoras)
+
+## 🚀 Como Usar
+
+### 1️⃣ Teste via Swagger (Recomendado)
 
 1. Inicie a API: `dotnet run --project src/InsightEngine.API`
 2. Abra: `https://localhost:5000/swagger`
-3. Autentique-se (POST `/api/v1/auth/login`)
-4. Faça upload de um CSV (POST `/api/v1/datasets`)
-5. Veja o profile (GET `/api/v1/datasets/{id}/profile`)
+3. **Autentique-se** (POST `/api/v1/auth/login`)
+   ```json
+   {
+     "username": "admin",
+     "password": "admin123"
+   }
+   ```
+4. **Copie o Bearer token** da resposta
+5. **Clique no cadeado** 🔒 no topo do Swagger e cole o token
+6. **Faça upload** (POST `/api/v1/datasets`)
+7. **Veja o profile** (GET `/api/v1/datasets/{id}/profile`)
+8. **Gere gráficos** (POST `/api/v1/charts/{type}`)
 
-### 2. Teste via cURL
+### 2️⃣ Teste via cURL
 
 ```bash
-# Upload
-curl -X POST "https://localhost:5000/api/v1/datasets" \
-  -H "Authorization: Bearer {token}" \
-  -F "file=@samples/ecommerce_sales.csv"
+# 1. Login
+TOKEN=$(curl -s -X POST "https://localhost:5000/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}' | jq -r '.data.token')
 
-# Profile
-curl -X GET "https://localhost:5000/api/v1/datasets/{datasetId}/profile" \
-  -H "Authorization: Bearer {token}"
+# 2. Upload
+DATASET_ID=$(curl -s -X POST "https://localhost:5000/api/v1/datasets" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@samples/ecommerce_sales.csv" | jq -r '.data.id')
+
+# 3. Profile
+curl -X GET "https://localhost:5000/api/v1/datasets/$DATASET_ID/profile" \
+  -H "Authorization: Bearer $TOKEN" | jq
+
+# 4. Line Chart
+curl -X POST "https://localhost:5000/api/v1/charts/line" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"datasetId\": \"$DATASET_ID\",
+    \"xColumn\": \"order_date\",
+    \"yColumn\": \"total_amount\"
+  }" | jq
 ```
 
-## Regenerar Samples
+### 3️⃣ Teste via HTTP Files (VS Code REST Client)
+
+Veja `test-upload.http` na raiz do projeto para exemplos completos.
+
+### 4️⃣ Teste via Bash Script
+
+```bash
+./test-api.sh
+```
+
+## 📊 Exemplos de Charts por Tipo
+
+### Line Chart (Tendências Temporais)
+
+```bash
+POST /api/v1/charts/line
+{
+  "datasetId": "{id}",
+  "xColumn": "order_date",      # Coluna temporal (Date)
+  "yColumn": "total_amount"      # Coluna numérica (Number)
+}
+```
+
+**Bons exemplos:**
+- `ecommerce_sales.csv`: `order_date` x `total_amount`
+- `financial_transactions.csv`: `transaction_date` x `amount`
+- `logistics_shipments.csv`: `ship_date` x `weight_kg`
+
+### Bar Chart (Comparações Categóricas)
+
+```bash
+POST /api/v1/charts/bar
+{
+  "datasetId": "{id}",
+  "xColumn": "category",         # Coluna categórica
+  "yColumn": "total_amount",     # Coluna numérica
+  "aggregation": "sum"           # sum, avg, count, min, max
+}
+```
+
+**Bons exemplos:**
+- `ecommerce_sales.csv`: `category` x `COUNT(*)` (produtos mais vendidos)
+- `employee_records.csv`: `department` x `AVG(salary)` (salário médio)
+- `healthcare_patients.csv`: `diagnosis` x `COUNT(*)` (doenças comuns)
+
+### Scatter Chart (Correlações)
+
+```bash
+POST /api/v1/charts/scatter
+{
+  "datasetId": "{id}",
+  "xColumn": "discount_percentage",  # Number
+  "yColumn": "total_amount"          # Number
+}
+```
+
+**⚠️ Limite:** 2.000 pontos (amostragem aleatória aplicada automaticamente)
+
+**Bons exemplos:**
+- `ecommerce_sales.csv`: `discount_percentage` x `total_amount`
+- `logistics_shipments.csv`: `weight_kg` x `delivery_days`
+- `financial_transactions.csv`: `amount` x `fee`
+
+### Histogram (Distribuições)
+
+```bash
+POST /api/v1/charts/histogram
+{
+  "datasetId": "{id}",
+  "column": "salary"             # Coluna numérica
+}
+```
+
+**⚠️ Limites:**
+- Min bins: 5
+- Max bins: 50
+- Default: 20
+
+**Bons exemplos:**
+- `employee_records.csv`: `salary` (distribuição salarial)
+- `healthcare_patients.csv`: `age` (faixa etária)
+- `financial_transactions.csv`: `amount` (valores de transações)
+
+## 🧪 Testando Limites de Segurança
+
+### Upload Limit (20MB)
+
+```bash
+# ✅ Deve passar (arquivos samples são < 1MB)
+curl -X POST "https://localhost:5000/api/v1/datasets" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@samples/financial_transactions.csv"
+
+# ❌ Deve falhar com 400 Bad Request
+dd if=/dev/zero of=large.csv bs=1M count=25
+curl -X POST "https://localhost:5000/api/v1/datasets" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@large.csv"
+```
+
+### Scatter Limit (2.000 pontos)
+
+```bash
+# Dataset com 10.000 linhas → API retorna amostra de 2.000
+POST /api/v1/charts/scatter
+{
+  "datasetId": "{financial_transactions_id}",
+  "xColumn": "amount",
+  "yColumn": "fee"
+}
+
+# Resposta terá exatamente 2.000 pontos (amostragem aleatória)
+```
+
+### Histogram Bins (5-50)
+
+```bash
+# ✅ Bins = 10 (válido)
+POST /api/v1/charts/histogram
+{
+  "datasetId": "{id}",
+  "column": "salary",
+  "bins": 10
+}
+
+# ⚠️ Bins = 3 → Clamped para 5
+POST /api/v1/charts/histogram
+{
+  "datasetId": "{id}",
+  "column": "salary",
+  "bins": 3
+}
+
+# ⚠️ Bins = 100 → Clamped para 50
+POST /api/v1/charts/histogram
+{
+  "datasetId": "{id}",
+  "column": "salary",
+  "bins": 100
+}
+```
+
+## 🔄 Regenerar Samples
+
+Para gerar novos dados aleatórios:
 
 ```bash
 cd tools/InsightEngine.DataGenerator
 dotnet run
 ```
 
-Os arquivos serão sobrescritos com novos dados aleatórios.
+Os arquivos serão **sobrescritos** com novos dados.
 
-## Validação de Tipos
+**Configuração:**
+- Linhas por dataset: 5k-10k
+- Seed aleatória: cada execução gera dados diferentes
+- Tipos inferidos: todos os 5 tipos (Number, Date, Boolean, Category, String)
 
-Cada dataset foi projetado para cobrir todos os 5 tipos inferidos:
+## ✅ Validação de Tipos
 
-- ✅ **Number:** Valores numéricos, decimais, negativos
-- ✅ **Date:** Múltiplos formatos (ISO, BR, US, compacto)
-- ✅ **Boolean:** Variações (true/false, yes/no, 1/0, sim/não)
-- ✅ **Category:** Baixa cardinalidade (status, department, etc.)
-- ✅ **String:** Alta cardinalidade (IDs, descriptions, notes)
+## ✅ Validação de Tipos
 
-## Null Rates
+Cada dataset foi projetado para cobrir todos os 5 tipos inferidos pelo Profiler:
+
+| Tipo | Descrição | Exemplos de Colunas |
+|------|-----------|---------------------|
+| 🔢 **Number** | Valores numéricos (int, decimal, negativo) | `salary`, `amount`, `age`, `weight_kg` |
+| 📅 **Date** | Datas em múltiplos formatos | `order_date`, `hire_date`, `ship_date` |
+| ✅ **Boolean** | Variações de verdadeiro/falso | `is_premium`, `is_active`, `is_express` |
+| 🏷️ **Category** | Baixa cardinalidade (< 5% distinct) | `category`, `department`, `status`, `carrier` |
+| 📝 **String** | Alta cardinalidade (texto livre) | `customer_id`, `notes`, `description` |
+
+### 🎯 Cobertura de Edge Cases
+
+- **Números negativos:** `financial_transactions.csv` (amount pode ser negativo)
+- **Decimais:** Todos os datasets (valores monetários com 2 casas)
+- **Datas ISO 8601:** `order_date`, `transaction_date` (formato: YYYY-MM-DD)
+- **Nulls variados:** 0%, 5%, 15%, 30% de null rate
+- **Boolean variants:** `true/false`, `yes/no`, `1/0`, `sim/não`
+- **Alta cardinalidade:** IDs únicos (1 por linha)
+- **Baixa cardinalidade:** Status, departments (5-10 valores)
+
+## 📈 Testando Profile com Min/Max
+
+Desde a Task 6.6, o Profile retorna min/max para colunas numéricas:
+
+```bash
+GET /api/v1/datasets/{id}/profile
+
+# Resposta inclui:
+{
+  "data": {
+    "columns": [
+      {
+        "name": "salary",
+        "inferredType": "Number",
+        "min": 35000.00,      # ✨ Novo campo
+        "max": 150000.00,     # ✨ Novo campo
+        "nullRate": 0.0,
+        "distinctCount": 4285
+      }
+    ]
+  }
+}
+```
+
+**Use min/max para:**
+- Calcular bins otimizados: `(max - min) / bins`
+- Definir escalas de eixos de gráficos
+- Validar outliers antes de plotar
+- Evitar queries extras ao DuckDB
+
+## 🗂️ Null Rates
 
 Colunas possuem diferentes taxas de nulos para testes realistas:
 
-- **0%:** Campos obrigatórios (IDs, dates principais)
-- **1-15%:** Campos opcionais (bonus, discharge_date)
-- **20-60%:** Campos frequentemente vazios (notes, special_instructions)
+| Null Rate | Tipo de Campo | Exemplos |
+|-----------|---------------|----------|
+| **0%** | Obrigatórios (PKs, dates) | `employee_id`, `order_date`, `patient_id` |
+| **1-15%** | Opcionais comuns | `bonus`, `discount_percentage`, `middle_name` |
+| **20-60%** | Raramente preenchidos | `notes`, `special_instructions`, `discharge_date` |
+
+## 🛠️ Troubleshooting
+
+### "Dataset not found"
+- Verifique se o `datasetId` está correto
+- Confirme que o token JWT é válido
+- Use GET `/api/v1/datasets` para listar todos os datasets
+
+### "Column not found in dataset"
+- Nomes de colunas são **case-sensitive**
+- Use GET `/api/v1/datasets/{id}/profile` para ver colunas disponíveis
+- Colunas com espaços: use exatamente como aparecem no profile
+
+### "Chart generation failed"
+- **Line Chart:** xColumn deve ser Date, yColumn deve ser Number
+- **Bar Chart:** xColumn deve ser Category/String
+- **Scatter Chart:** ambas colunas devem ser Number
+- **Histogram:** column deve ser Number
+
+### "Unauthorized"
+- Token JWT expirou (válido por 1 hora)
+- Faça login novamente: POST `/api/v1/auth/login`
+- Adicione `Authorization: Bearer {token}` no header
 
 ---
 
-**Nota:** Estes arquivos são gerados automaticamente e não devem ser editados manualmente.
+## 📚 Documentação Relacionada
+
+- **API Endpoints:** Ver `docs/API.md` (Task 6.8)
+- **Gerador de Dados:** Ver `tools/InsightEngine.DataGenerator/README.md`
+- **Profiling System:** Ver `docs/DIA2_DATASET_PROFILING.md`
+- **Architecture:** Ver `ARCHITECTURE.md`
+
+---
+
+**Nota:** Estes arquivos são gerados automaticamente e **não devem ser editados manualmente**. Para modificar a estrutura dos dados, edite os templates em `tools/InsightEngine.DataGenerator/Templates/`.
+
+---
+
+**Última atualização:** Dia 6 - Task 6.7 (Samples Enhancement)  
+**Status:** ✅ Pronto para produção
