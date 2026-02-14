@@ -7,6 +7,9 @@
     <Project Path="src/InsightEngine.Infra.Data/InsightEngine.Infra.Data.csproj" />
     <Project Path="src/InsightEngine.Infra.ExternalService/InsightEngine.Infra.ExternalService.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/InsightEngine.IntegrationTests/InsightEngine.IntegrationTests.csproj" />
+  </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/InsightEngine.DataGenerator/InsightEngine.DataGenerator.csproj" />
   </Folder>

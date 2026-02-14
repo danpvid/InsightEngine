@@ -112,7 +112,9 @@ public abstract class BaseController : ControllerBase
         
         if (firstError.Contains("validation") || firstError.Contains("invalid") || 
             firstError.Contains("validação") || firstError.Contains("inválido") ||
-            firstError.Contains("required") || firstError.Contains("obrigatório"))
+            firstError.Contains("required") || firstError.Contains("obrigatório") ||
+            firstError.Contains("must") || firstError.Contains("deve") ||
+            firstError.Contains("pattern") || firstError.Contains("formato"))
             return 400;
 
         // Erro genérico/interno

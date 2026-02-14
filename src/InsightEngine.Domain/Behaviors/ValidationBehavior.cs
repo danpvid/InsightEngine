@@ -60,8 +60,14 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
             if (responseType.IsGenericType && responseType.GetGenericTypeDefinition() == typeof(Result<>))
             {
                 var dataType = responseType.GetGenericArguments()[0];
+                // Obter o método genérico Failure<T>(List<string>) especificamente
                 var failureMethod = typeof(Result)
-                    .GetMethod(nameof(Result.Failure), new[] { typeof(List<string>) })
+                    .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                    .FirstOrDefault(m => 
+                        m.Name == nameof(Result.Failure) && 
+                        m.IsGenericMethodDefinition &&
+                        m.GetParameters().Length == 1 &&
+                        m.GetParameters()[0].ParameterType == typeof(List<string>))
                     ?.MakeGenericMethod(dataType);
                 
                 var result = failureMethod?.Invoke(null, new object[] { errors });
