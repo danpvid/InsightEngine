@@ -1,0 +1,204 @@
+<div class="container">
+  <app-page-header
+    title="Novo Dataset"
+    subtitle="Faça upload de um arquivo CSV para gerar visualizações automaticamente"
+    icon="upload_file">
+  </app-page-header>
+
+  <mat-card>
+    <mat-card-content>
+      <div class="upload-section">
+        <!-- Drag & Drop Zone -->
+        <div
+          class="drag-drop-zone"
+          [class.dragging]="isDragging"
+          [class.has-file]="selectedFile"
+          (dragover)="onDragOver($event)"
+          (dragleave)="onDragLeave($event)"
+          (drop)="onDrop($event)"
+          *ngIf="!selectedFile">
+          <div class="upload-icon">
+            <mat-icon color="primary">cloud_upload</mat-icon>
+          </div>
+          
+          <h3>Arraste e solte seu arquivo aqui</h3>
+          <p class="text-muted">ou</p>
+
+          <div class="file-input-wrapper">
+            <input
+              type="file"
+              accept=".csv"
+              (change)="onFileSelected($event)"
+              #fileInput
+              id="file-input"
+              class="file-input">
+            
+            <button
+              mat-raised-button
+              color="primary"
+              (click)="fileInput.click()"
+              [disabled]="loading">
+              <mat-icon>attach_file</mat-icon>
+              Selecionar Arquivo CSV
+            </button>
+          </div>
+
+          <p class="drag-hint">
+            <mat-icon>info</mat-icon>
+            Apenas arquivos CSV até 20MB
+          </p>
+        </div>
+
+        <div class="file-info" *ngIf="selectedFile">
+          <mat-icon class="file-icon">description</mat-icon>
+          <div class="file-details">
+            <p class="file-name">{{ selectedFile.name }}</p>
+            <p class="file-size">{{ getFileSizeText() }}</p>
+          </div>
+          <div class="file-actions">
+            <input
+              type="file"
+              accept=".csv"
+              (change)="onFileSelected($event)"
+              #fileInputChange
+              class="file-input">
+            <button
+              mat-icon-button
+              color="accent"
+              (click)="fileInputChange.click()"
+              [disabled]="loading"
+              matTooltip="Trocar arquivo">
+              <mat-icon>sync</mat-icon>
+            </button>
+            <button
+              mat-icon-button
+              color="warn"
+              (click)="clearFile()"
+              [disabled]="loading"
+              matTooltip="Remover arquivo">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        </div>
+
+        <!-- Upload Progress Bar -->
+        <div class="upload-progress" *ngIf="loading && uploadProgress > 0">
+          <mat-progress-bar mode="determinate" [value]="uploadProgress"></mat-progress-bar>
+          <p class="progress-text">Enviando... {{ uploadProgress }}%</p>
+        </div>
+
+        <app-loading-bar [loading]="loading && uploadProgress === 0"></app-loading-bar>
+        
+        <app-error-panel [error]="error"></app-error-panel>
+
+        <div class="upload-actions" *ngIf="selectedFile && !loading">
+          <button
+            mat-raised-button
+            color="accent"
+            (click)="uploadDataset()"
+            class="upload-button">
+            <mat-icon>send</mat-icon>
+            Enviar e Gerar Recomendações
+          </button>
+        </div>
+
+        <div class="upload-info">
+          <mat-icon>info</mat-icon>
+          <div>
+            <p><strong>Requisitos:</strong></p>
+            <ul>
+              <li>Formato: CSV (valores separados por vírgula)</li>
+              <li>Tamanho máximo: 20MB</li>
+              <li>Primeira linha deve conter os nomes das colunas</li>
+              <li>Codificação recomendada: UTF-8</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Datasets Carregados -->
+  <mat-card class="datasets-card" *ngIf="datasets.length > 0 || loadingDatasets">
+    <mat-card-header>
+      <mat-card-title>
+        <mat-icon>folder_open</mat-icon>
+        Datasets Carregados
+      </mat-card-title>
+      <mat-card-subtitle>Acessar datasets enviados anteriormente</mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <!-- Loading -->
+      <div *ngIf="loadingDatasets" class="datasets-loading">
+        <mat-spinner diameter="40"></mat-spinner>
+        <p>Carregando datasets...</p>
+      </div>
+
+      <!-- Grid de Datasets -->
+      <div *ngIf="!loadingDatasets && datasets.length > 0" class="datasets-grid">
+        <mat-card 
+          *ngFor="let dataset of datasets" 
+          class="dataset-card"
+          (click)="openDataset(dataset)">
+          <mat-card-header>
+            <mat-icon mat-card-avatar class="dataset-avatar">table_chart</mat-icon>
+            <mat-card-title class="dataset-title">{{ dataset.originalFileName }}</mat-card-title>
+            <mat-card-subtitle>
+              <mat-icon class="small-icon">schedule</mat-icon>
+              {{ formatDate(dataset.createdAt) }}
+            </mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div class="dataset-info">
+              <div class="info-item">
+                <mat-icon>storage</mat-icon>
+                <span>{{ formatFileSize(dataset.fileSizeInBytes) }}</span>
+              </div>
+            </div>
+          </mat-card-content>
+          <mat-card-actions>
+            <button mat-button color="primary">
+              <mat-icon>analytics</mat-icon>
+              Ver Recomendações
+            </button>
+          </mat-card-actions>
+        </mat-card>
+      </div>
+
+      <!-- Empty State -->
+      <div *ngIf="!loadingDatasets && datasets.length === 0" class="empty-state">
+        <mat-icon>folder_off</mat-icon>
+        <p>Nenhum dataset carregado ainda</p>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="samples-card">
+    <mat-card-header>
+      <mat-card-title>Exemplos de Datasets</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <p class="text-muted">Você pode testar a plataforma com nossos datasets de exemplo:</p>
+      <mat-list>
+        <mat-list-item>
+          <mat-icon matListItemIcon>shopping_cart</mat-icon>
+          <div matListItemTitle>ecommerce_sales.csv</div>
+          <div matListItemLine>Vendas de e-commerce com análises temporais</div>
+        </mat-list-item>
+        <mat-divider></mat-divider>
+        <mat-list-item>
+          <mat-icon matListItemIcon>person</mat-icon>
+          <div matListItemTitle>employee_records.csv</div>
+          <div matListItemLine>Registros de funcionários e análise salarial</div>
+        </mat-list-item>
+        <mat-divider></mat-divider>
+        <mat-list-item>
+          <mat-icon matListItemIcon>attach_money</mat-icon>
+          <div matListItemTitle>financial_transactions.csv</div>
+          <div matListItemLine>Transações financeiras e categorias</div>
+        </mat-list-item>
+      </mat-list>
+      <p class="text-muted mt-3">Os arquivos estão disponíveis na pasta <code>samples/</code> do projeto.</p>
+    </mat-card-content>
+  </mat-card>
+</div>

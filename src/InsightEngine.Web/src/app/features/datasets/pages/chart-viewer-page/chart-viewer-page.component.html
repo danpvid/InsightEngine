@@ -1,0 +1,266 @@
+<div class="container-wide">
+  <!-- Breadcrumb melhorado -->
+  <nav class="breadcrumb">
+    <a routerLink="/datasets/new" mat-button>
+      <mat-icon>upload_file</mat-icon>
+      Datasets
+    </a>
+    <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
+    <a [routerLink]="['/datasets', datasetId, 'recommendations']" mat-button>
+      <mat-icon>auto_awesome</mat-icon>
+      Recomendações
+    </a>
+    <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
+    <span class="breadcrumb-current">Gráfico</span>
+  </nav>
+
+  <!-- Navigation Controls -->
+  <div class="navigation-controls" *ngIf="recommendations.length > 0">
+    <button 
+      mat-button
+      (click)="goToPrevious()" 
+      [disabled]="!hasPrevious"
+      class="nav-btn">
+      <mat-icon>chevron_left</mat-icon>
+      Anterior
+    </button>
+
+    <mat-form-field appearance="outline" class="insight-selector">
+      <mat-label>Insight</mat-label>
+      <mat-select 
+        [value]="recommendationId" 
+        (selectionChange)="onRecommendationChange($event.value)">
+        <mat-option *ngFor="let rec of recommendations; let i = index" [value]="rec.id">
+          {{ i + 1 }}. {{ rec.title }}
+        </mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <button 
+      mat-button
+      (click)="goToNext()" 
+      [disabled]="!hasNext"
+      class="nav-btn">
+      Próximo
+      <mat-icon>chevron_right</mat-icon>
+    </button>
+  </div>
+
+  <app-page-header
+    [title]="getChartTitle()"
+    [subtitle]="'Dataset: ' + datasetId"
+    icon="bar_chart">
+  </app-page-header>
+
+  <app-loading-bar [loading]="loading"></app-loading-bar>
+  
+  <app-error-panel [error]="error"></app-error-panel>
+
+  <!-- Main Layout: Chart + Controls -->
+  <div class="chart-layout" *ngIf="!loading && chartOption">
+    <!-- Left: Chart Card -->
+    <mat-card class="chart-card">
+      <!-- Insight Summary -->
+      <div class="insight-summary" *ngIf="currentRecommendation">
+        <div class="insight-header">
+          <mat-icon>lightbulb</mat-icon>
+          <h3>Insight</h3>
+        </div>
+        <p class="insight-text">{{ getInsightSummary() }}</p>
+      </div>
+
+      <mat-card-header>
+        <mat-card-title>
+          Visualização Interativa
+          <span class="cached-badge" *ngIf="isCached">
+            <mat-icon>bolt</mat-icon> Cached
+          </span>
+        </mat-card-title>
+        <div class="header-actions">
+          <button 
+            mat-icon-button 
+            (click)="copyChartLink()" 
+            matTooltip="Copiar link do gráfico"
+            color="primary">
+            <mat-icon>link</mat-icon>
+          </button>
+          <button 
+            mat-icon-button 
+            (click)="exportChartPNG()" 
+            matTooltip="Exportar como PNG"
+            color="primary">
+            <mat-icon>download</mat-icon>
+          </button>
+          <button 
+            mat-icon-button 
+            (click)="refreshChart()" 
+            matTooltip="Recarregar gráfico"
+            color="primary">
+            <mat-icon>refresh</mat-icon>
+          </button>
+        </div>
+      </mat-card-header>
+      
+      <mat-card-content>
+        <!-- Skeleton loading -->
+        <div class="chart-skeleton" *ngIf="loading">
+          <div class="skeleton-axis-y"></div>
+          <div class="skeleton-bars">
+            <div class="skeleton-bar" *ngFor="let i of [1,2,3,4,5,6,7,8,9,10]" [style.height.%]="50 + (i * 5)"></div>
+          </div>
+          <div class="skeleton-axis-x"></div>
+          <div class="skeleton-legend"></div>
+        </div>
+
+        <!-- Actual chart -->
+        <div class="chart-wrapper" *ngIf="!loading">
+          <div
+            echarts
+            [options]="chartOption"
+            (chartInit)="onChartInit($event)"
+            class="chart">
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- Right: Controls Panel -->
+    <mat-card class="controls-card">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>tune</mat-icon>
+          Controles
+        </mat-card-title>
+      </mat-card-header>
+      
+      <mat-card-content>
+        <div class="controls-section">
+          <h3>Agregação</h3>
+          <mat-form-field appearance="outline">
+            <mat-label>Tipo</mat-label>
+            <mat-select 
+              [(ngModel)]="selectedAggregation" 
+              (selectionChange)="onAggregationChange()">
+              <mat-option *ngFor="let agg of availableAggregations" [value]="agg">
+                {{ agg }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+
+        <mat-divider></mat-divider>
+
+        <div class="controls-section">
+          <h3>Período</h3>
+          <mat-form-field appearance="outline">
+            <mat-label>Intervalo</mat-label>
+            <mat-select 
+              [(ngModel)]="selectedTimeBin" 
+              (selectionChange)="onTimeBinChange()">
+              <mat-option *ngFor="let bin of availableTimeBins" [value]="bin">
+                {{ bin }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+
+        <mat-divider></mat-divider>
+
+        <div class="controls-section">
+          <h3>Métrica Y</h3>
+          <mat-form-field appearance="outline">
+            <mat-label>Coluna</mat-label>
+            <mat-select 
+              [(ngModel)]="selectedMetric" 
+              (selectionChange)="onMetricChange()"
+              [disabled]="availableMetrics.length === 0">
+              <mat-option [value]="selectedMetric" *ngIf="selectedMetric">
+                {{ selectedMetric }}
+              </mat-option>
+            </mat-select>
+            <mat-hint *ngIf="availableMetrics.length === 0">
+              Baseado na recomendação
+            </mat-hint>
+          </mat-form-field>
+        </div>
+
+        <mat-divider></mat-divider>
+
+        <div class="controls-info">
+          <mat-icon>info</mat-icon>
+          <p>
+            Controles dinâmicos em desenvolvimento.
+            Os valores são baseados na recomendação original.
+          </p>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </div>
+
+  <mat-card *ngIf="!loading && chartMeta" class="meta-card">
+    <mat-card-header>
+      <mat-card-title>Informações de Execução</mat-card-title>
+    </mat-card-header>
+    
+    <mat-card-content>
+      <div class="meta-grid">
+        <div class="meta-item">
+          <mat-icon>dataset</mat-icon>
+          <div class="meta-content">
+            <span class="meta-label">Linhas Retornadas</span>
+            <span class="meta-value">{{ chartMeta.rowCountReturned }}</span>
+          </div>
+        </div>
+
+        <div class="meta-item" *ngIf="chartMeta.executionMs">
+          <mat-icon>speed</mat-icon>
+          <div class="meta-content">
+            <span class="meta-label">Tempo de Execução</span>
+            <span class="meta-value">{{ formatExecutionTime(chartMeta.executionMs) }}</span>
+          </div>
+        </div>
+
+        <div class="meta-item" *ngIf="chartMeta.chartType">
+          <mat-icon>insert_chart</mat-icon>
+          <div class="meta-content">
+            <span class="meta-label">Tipo de Gráfico</span>
+            <span class="meta-value">{{ chartMeta.chartType }}</span>
+          </div>
+        </div>
+
+        <div class="meta-item" *ngIf="chartMeta.generatedAt">
+          <mat-icon>schedule</mat-icon>
+          <div class="meta-content">
+            <span class="meta-label">Gerado em</span>
+            <span class="meta-value">{{ chartMeta.generatedAt | date:'short' }}</span>
+          </div>
+        </div>
+
+        <div class="meta-item" *ngIf="chartMeta.queryHash">
+          <mat-icon>tag</mat-icon>
+          <div class="meta-content">
+            <span class="meta-label">Query Hash</span>
+            <span class="meta-value hash">{{ chartMeta.queryHash }}</span>
+          </div>
+        </div>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <div class="chart-tips">
+    <mat-card>
+      <mat-card-content>
+        <div class="tips-header">
+          <mat-icon>info</mat-icon>
+          <strong>Dicas de Interação</strong>
+        </div>
+        <ul>
+          <li>Passe o mouse sobre os elementos para ver detalhes</li>
+          <li>Clique nos itens da legenda para mostrar/ocultar séries</li>
+          <li>Use a roda do mouse para zoom (quando disponível)</li>
+          <li>Arraste para navegar pelo gráfico</li>
+        </ul>
+      </mat-card-content>
+    </mat-card>
+  </div>
+</div>

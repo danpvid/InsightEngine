@@ -1,0 +1,344 @@
+.upload-section {
+  padding: 24px;
+  text-align: center;
+}
+
+// Drag & Drop Zone
+.drag-drop-zone {
+  border: 3px dashed #3f51b5;
+  border-radius: 12px;
+  padding: 48px 24px;
+  background-color: #fafafa;
+  transition: all 0.3s ease;
+  cursor: pointer;
+
+  &.dragging {
+    background-color: #e3f2fd;
+    border-color: #1976d2;
+    transform: scale(1.02);
+  }
+
+  h3 {
+    margin: 16px 0 8px;
+    color: #333;
+    font-weight: 500;
+  }
+
+  .text-muted {
+    color: #999;
+    margin: 8px 0;
+  }
+
+  .drag-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 24px;
+    color: #666;
+    font-size: 14px;
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+  }
+}
+
+.upload-icon {
+  margin-bottom: 24px;
+}
+
+.upload-icon mat-icon {
+  font-size: 80px;
+  width: 80px;
+  height: 80px;
+  color: #3f51b5;
+}
+
+.file-input-wrapper {
+  margin-bottom: 24px;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+  border-radius: 8px;
+  margin: 24px 0;
+  border: 2px solid #3f51b5;
+  box-shadow: 0 2px 8px rgba(63, 81, 181, 0.15);
+}
+
+.file-info .file-icon {
+  color: #3f51b5;
+  font-size: 40px;
+  width: 40px;
+  height: 40px;
+}
+
+.file-details {
+  flex: 1;
+  text-align: left;
+}
+
+.file-name {
+  font-weight: 500;
+  margin: 0;
+  color: #1a237e;
+  font-size: 16px;
+}
+
+.file-size {
+  font-size: 13px;
+  color: #5c6bc0;
+  margin: 4px 0 0 0;
+}
+
+.file-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.upload-actions {
+  margin: 24px 0;
+}
+
+.upload-button {
+  padding: 0 32px;
+  height: 48px;
+  font-size: 16px;
+}
+
+// Upload Progress
+.upload-progress {
+  margin: 24px 0;
+  padding: 16px;
+  background-color: #e3f2fd;
+  border-radius: 8px;
+
+  mat-progress-bar {
+    margin-bottom: 12px;
+    border-radius: 4px;
+    height: 8px;
+  }
+
+  .progress-text {
+    margin: 0;
+    color: #1976d2;
+    font-weight: 500;
+    font-size: 14px;
+    text-align: center;
+  }
+}
+
+.upload-info {
+  display: flex;
+  gap: 16px;
+  text-align: left;
+  margin-top: 32px;
+  padding: 16px;
+  background-color: #e3f2fd;
+  border-radius: 8px;
+}
+
+.upload-info mat-icon {
+  color: #1976d2;
+  margin-top: 4px;
+}
+
+.upload-info p {
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.upload-info ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #666;
+}
+
+.upload-info li {
+  margin-bottom: 4px;
+}
+
+.samples-card {
+  mat-card-title {
+    font-size: 18px;
+  }
+
+  code {
+    background-color: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+  }
+}
+
+.mt-3 {
+  margin-top: 16px;
+}
+
+// Datasets Carregados
+.datasets-card {
+  margin-top: 24px;
+
+  mat-card-header {
+    margin-bottom: 16px;
+
+    mat-card-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 20px;
+      color: #1a237e;
+
+      mat-icon {
+        color: #3f51b5;
+      }
+    }
+
+    mat-card-subtitle {
+      margin-left: 32px;
+      color: #666;
+    }
+  }
+}
+
+.datasets-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px;
+  color: #666;
+}
+
+.datasets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.dataset-card {
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+    border-color: #3f51b5;
+  }
+
+  mat-card-header {
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+
+  .dataset-avatar {
+    background-color: #e3f2fd;
+    color: #3f51b5;
+    border-radius: 8px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .dataset-title {
+    font-size: 16px;
+    font-weight: 500;
+    color: #1a237e;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+  }
+
+  ::ng-deep .dataset-card mat-card-header .mat-mdc-card-header-text {
+    overflow: hidden;
+    min-width: 0;
+    flex: 1;
+  }
+
+  mat-card-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+
+    .small-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+    }
+  }
+
+  .dataset-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+
+    .info-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #666;
+      font-size: 14px;
+
+      mat-icon {
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+        color: #5c6bc0;
+      }
+    }
+  }
+
+  mat-card-actions {
+    padding: 8px 16px;
+    border-top: 1px solid #e0e0e0;
+    margin: 0;
+
+    button {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px;
+  color: #999;
+
+  mat-icon {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+    color: #ccc;
+  }
+
+  p {
+    margin: 0;
+    font-size: 14px;
+  }
+}
+
