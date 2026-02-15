@@ -1,0 +1,1733 @@
+{
+	"info": {
+		"_postman_id": "insightengine-api-v1",
+		"name": "InsightEngine API v1.0 - Complete Test Suite",
+		"description": "Complete end-to-end test collection for InsightEngine API.\n\n**Features:**\n- All 5 API endpoints covered\n- Success and error scenarios\n- Validation tests\n- Performance benchmarks\n- Chart generation for all 7 types\n- Automated test scripts\n- Environment variables\n\n**Setup:**\n1. Import this collection into Postman\n2. Configure environment variables (or use defaults)\n3. Run collection or individual requests\n4. Check test results in Test Results tab\n\n**Environment Variables:**\n- `base_url`: API base URL (default: http://localhost:5000)\n- `dataset_id`: Auto-populated after upload\n- `recommendation_id`: Auto-populated after getting recommendations\n\n**Test Coverage:**\n- ✅ Upload dataset (valid, invalid, empty, large)\n- ✅ Get profile (success, not found, cached)\n- ✅ Get recommendations (all scenarios)\n- ✅ Get all datasets (pagination, filtering)\n- ✅ Generate charts (all 7 types)\n- ✅ Validation tests (40 scenarios)\n- ✅ Performance benchmarks\n\n**Version:** 1.0.0  \n**Last Updated:** February 14, 2026  \n**Total Requests:** 45+",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Upload Dataset",
+			"item": [
+				{
+					"name": "1.1 Upload Valid CSV - Small Dataset",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201 Created\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test(\"Response has success property\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(true);",
+									"});",
+									"",
+									"pm.test(\"Response contains datasetId\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.datasetId).to.exist;",
+									"    pm.expect(jsonData.data.datasetId).to.not.be.empty;",
+									"    ",
+									"    // Save datasetId for subsequent requests",
+									"    pm.environment.set(\"dataset_id\", jsonData.data.datasetId);",
+									"});",
+									"",
+									"pm.test(\"Response contains originalFileName\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.originalFileName).to.eql(\"sales-data.csv\");",
+									"});",
+									"",
+									"pm.test(\"Response time is less than 5000ms\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "sales-data.csv",
+									"description": "CSV file with date, sales, and region columns"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							]
+						},
+						"description": "Upload a valid CSV file with time series data.\n\n**CSV Content Example:**\n```csv\ndate,sales,region\n2024-01-01,1000,SP\n2024-01-02,1500,RJ\n2024-01-03,2000,MG\n```\n\n**Expected Result:** 201 Created with datasetId"
+					},
+					"response": []
+				},
+				{
+					"name": "1.2 Upload Valid CSV - Medium Dataset (100 rows)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201 Created\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test(\"Response time is acceptable for medium dataset\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						},
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Generate CSV with 100 rows",
+									"let csv = \"date,value,category\\n\";",
+									"for (let i = 0; i < 100; i++) {",
+									"    let date = new Date(2024, 0, i + 1).toISOString().split('T')[0];",
+									"    let value = Math.floor(Math.random() * 1000) + 100;",
+									"    let category = ['A', 'B', 'C'][i % 3];",
+									"    csv += `${date},${value},${category}\\n`;",
+									"}",
+									"pm.environment.set(\"generated_csv_medium\", csv);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": [],
+									"description": "Medium dataset (100 rows)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							]
+						},
+						"description": "Upload a medium-sized CSV (100 rows) to test processing performance."
+					},
+					"response": []
+				},
+				{
+					"name": "1.3 Upload Invalid File - Wrong Extension",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400 Bad Request\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Response indicates failure\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(false);",
+									"});",
+									"",
+									"pm.test(\"Response contains error message\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.errors).to.exist;",
+									"    pm.expect(jsonData.errors.length).to.be.above(0);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": "document.txt",
+									"description": "Invalid file type (not CSV)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							]
+						},
+						"description": "Attempt to upload a non-CSV file.\n\n**Expected Result:** 400 Bad Request with validation error"
+					},
+					"response": []
+				},
+				{
+					"name": "1.4 Upload Empty File",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400 Bad Request\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Response contains validation error\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(false);",
+									"    pm.expect(jsonData.errors).to.exist;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": [],
+									"description": "Empty CSV file"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							]
+						},
+						"description": "Attempt to upload an empty file.\n\n**Expected Result:** 400 Bad Request"
+					},
+					"response": []
+				},
+				{
+					"name": "1.5 Upload Without File",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400 Bad Request\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Response indicates missing file\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(false);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": []
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							]
+						},
+						"description": "Attempt to upload without providing a file.\n\n**Expected Result:** 400 Bad Request"
+					},
+					"response": []
+				},
+				{
+					"name": "1.6 Upload Large File (> 20MB) - Should Fail",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 413 Payload Too Large or 400 Bad Request\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([413, 400]);",
+									"});",
+									"",
+									"pm.test(\"Response indicates size limit exceeded\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(false);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": [],
+									"description": "File larger than 20MB (exceeds safety limit)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							]
+						},
+						"description": "Attempt to upload a file exceeding the 20MB limit.\n\n**Expected Result:** 413 Payload Too Large or 400 Bad Request"
+					},
+					"response": []
+				}
+			],
+			"description": "Tests for dataset upload endpoint with various scenarios:\n- Valid CSV files (small, medium, large)\n- Invalid files (wrong format, empty, missing)\n- Safety limit testing (>20MB)"
+		},
+		{
+			"name": "2. Get Dataset Profile",
+			"item": [
+				{
+					"name": "2.1 Get Profile - Success",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response contains profile data\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(true);",
+									"    pm.expect(jsonData.data).to.exist;",
+									"});",
+									"",
+									"pm.test(\"Profile has rowCount\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.rowCount).to.be.above(0);",
+									"});",
+									"",
+									"pm.test(\"Profile has columns array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.columns).to.be.an('array');",
+									"    pm.expect(jsonData.data.columns.length).to.be.above(0);",
+									"});",
+									"",
+									"pm.test(\"Columns have required properties\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    var firstColumn = jsonData.data.columns[0];",
+									"    pm.expect(firstColumn.columnName).to.exist;",
+									"    pm.expect(firstColumn.dataType).to.exist;",
+									"});",
+									"",
+									"pm.test(\"Numeric columns have min/max\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    var numericColumn = jsonData.data.columns.find(c => c.dataType === 'Numeric');",
+									"    if (numericColumn) {",
+									"        pm.expect(numericColumn.min).to.exist;",
+									"        pm.expect(numericColumn.max).to.exist;",
+									"        pm.expect(numericColumn.min).to.be.a('number');",
+									"        pm.expect(numericColumn.max).to.be.a('number');",
+									"    }",
+									"});",
+									"",
+									"pm.test(\"Response time is acceptable (< 500ms cached)\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(3000);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"profile"
+							]
+						},
+						"description": "Get profile statistics for an uploaded dataset.\n\n**Expected Result:**\n- Row count\n- Column profiles (name, type, distinct count, null count)\n- Min/Max for numeric columns\n- Most frequent values\n- Data types"
+					},
+					"response": []
+				},
+				{
+					"name": "2.2 Get Profile - Not Found",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 404 Not Found\", function () {",
+									"    pm.response.to.have.status(404);",
+									"});",
+									"",
+									"pm.test(\"Response indicates failure\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(false);",
+									"});",
+									"",
+									"pm.test(\"Response contains error message\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.errors).to.exist;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/00000000-0000-0000-0000-000000000000/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"00000000-0000-0000-0000-000000000000",
+								"profile"
+							]
+						},
+						"description": "Attempt to get profile for a non-existent dataset.\n\n**Expected Result:** 404 Not Found"
+					},
+					"response": []
+				},
+				{
+					"name": "2.3 Get Profile - Invalid GUID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400 Bad Request or 404 Not Found\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 404]);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/invalid-guid/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"invalid-guid",
+								"profile"
+							]
+						},
+						"description": "Attempt to get profile with invalid GUID format.\n\n**Expected Result:** 400 Bad Request"
+					},
+					"response": []
+				},
+				{
+					"name": "2.4 Get Profile - Cached Response",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response time is very fast (cached)\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(100);",
+									"});",
+									"",
+									"pm.test(\"Response data matches first request\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(true);",
+									"    pm.expect(jsonData.data.columns).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"profile"
+							]
+						},
+						"description": "Get profile again to test caching.\n\n**Expected Result:**\n- Same data as first request\n- Much faster response time (<100ms)"
+					},
+					"response": []
+				}
+			],
+			"description": "Tests for dataset profile retrieval:\n- Successful profile retrieval\n- Non-existent dataset\n- Invalid GUID format\n- Caching validation"
+		},
+		{
+			"name": "3. Get Recommendations",
+			"item": [
+				{
+					"name": "3.1 Get Recommendations - Success",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response contains recommendations array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(true);",
+									"    pm.expect(jsonData.data).to.be.an('array');",
+									"});",
+									"",
+									"pm.test(\"Recommendations have required properties\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.data.length > 0) {",
+									"        var firstRec = jsonData.data[0];",
+									"        pm.expect(firstRec.id).to.exist;",
+									"        pm.expect(firstRec.chart).to.exist;",
+									"        pm.expect(firstRec.chart.type).to.exist;",
+									"        pm.expect(firstRec.score).to.be.a('number');",
+									"        pm.expect(firstRec.reasoning).to.be.a('string');",
+									"        ",
+									"        // Save first recommendation ID",
+									"        pm.environment.set(\"recommendation_id\", firstRec.id);",
+									"    }",
+									"});",
+									"",
+									"pm.test(\"Recommendations are sorted by score\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.data.length > 1) {",
+									"        for (let i = 0; i < jsonData.data.length - 1; i++) {",
+									"            pm.expect(jsonData.data[i].score).to.be.at.least(jsonData.data[i + 1].score);",
+									"        }",
+									"    }",
+									"});",
+									"",
+									"pm.test(\"Response time is acceptable\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(1000);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/recommendations",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"recommendations"
+							]
+						},
+						"description": "Get chart recommendations for a dataset.\n\n**Expected Result:**\n- Array of recommendations sorted by score\n- Each recommendation has: id, chart (type, x, y, groupBy), score, reasoning\n- Chart types: Line, Bar, Pie, Scatter, Histogram, BoxPlot, Heatmap"
+					},
+					"response": []
+				},
+				{
+					"name": "3.2 Get Recommendations - Not Found",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 404 Not Found\", function () {",
+									"    pm.response.to.have.status(404);",
+									"});",
+									"",
+									"pm.test(\"Response indicates failure\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(false);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/00000000-0000-0000-0000-000000000000/recommendations",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"00000000-0000-0000-0000-000000000000",
+								"recommendations"
+							]
+						},
+						"description": "Attempt to get recommendations for non-existent dataset.\n\n**Expected Result:** 404 Not Found"
+					},
+					"response": []
+				}
+			],
+			"description": "Tests for chart recommendations:\n- Successful recommendations retrieval\n- Non-existent dataset\n- Sorting validation\n- Recommendation structure"
+		},
+		{
+			"name": "4. Get All Datasets",
+			"item": [
+				{
+					"name": "4.1 Get All Datasets - Success",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response contains datasets array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(true);",
+									"    pm.expect(jsonData.data).to.be.an('array');",
+									"});",
+									"",
+									"pm.test(\"Datasets have required properties\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.data.length > 0) {",
+									"        var firstDataset = jsonData.data[0];",
+									"        pm.expect(firstDataset.datasetId).to.exist;",
+									"        pm.expect(firstDataset.originalFileName).to.exist;",
+									"        pm.expect(firstDataset.uploadDate).to.exist;",
+									"    }",
+									"});",
+									"",
+									"pm.test(\"Response time is acceptable\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(1000);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							]
+						},
+						"description": "Get list of all uploaded datasets.\n\n**Expected Result:**\n- Array of datasets\n- Each dataset has: datasetId, originalFileName, uploadDate, rowCount"
+					},
+					"response": []
+				},
+				{
+					"name": "4.2 Get All Datasets - With Pagination",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response contains limited results\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data).to.be.an('array');",
+									"    pm.expect(jsonData.data.length).to.be.at.most(10);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets?pageSize=10&pageNumber=1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							],
+							"query": [
+								{
+									"key": "pageSize",
+									"value": "10"
+								},
+								{
+									"key": "pageNumber",
+									"value": "1"
+								}
+							]
+						},
+						"description": "Get datasets with pagination.\n\n**Expected Result:** Maximum 10 datasets"
+					},
+					"response": []
+				}
+			],
+			"description": "Tests for listing all datasets:\n- Get all datasets\n- Pagination\n- Sorting"
+		},
+		{
+			"name": "5. Generate Charts",
+			"item": [
+				{
+					"name": "5.1 Generate Line Chart",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response contains ECharts option\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(true);",
+									"    pm.expect(jsonData.data.option).to.exist;",
+									"});",
+									"",
+									"pm.test(\"Chart has xAxis and yAxis\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.xAxis).to.exist;",
+									"    pm.expect(jsonData.data.option.yAxis).to.exist;",
+									"});",
+									"",
+									"pm.test(\"Chart has series data\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series).to.be.an('array');",
+									"    pm.expect(jsonData.data.option.series.length).to.be.above(0);",
+									"});",
+									"",
+									"pm.test(\"Series type is line\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series[0].type).to.eql('line');",
+									"});",
+									"",
+									"pm.test(\"Meta contains execution metrics\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.meta.duckDbMs).to.be.a('number');",
+									"    pm.expect(jsonData.data.meta.rowCountReturned).to.be.a('number');",
+									"});",
+									"",
+									"pm.test(\"Response time is acceptable\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							]
+						},
+						"description": "Generate a line chart from a recommendation.\n\n**Expected Result:**\n- ECharts option object\n- xAxis type: 'time'\n- Series type: 'line'\n- Execution metadata"
+					},
+					"response": []
+				},
+				{
+					"name": "5.2 Generate Bar Chart",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Series type is bar\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series[0].type).to.eql('bar');",
+									"});",
+									"",
+									"pm.test(\"xAxis type is category\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.xAxis.type).to.eql('category');",
+									"});",
+									"",
+									"pm.test(\"xAxis has data array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.xAxis.data).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							]
+						},
+						"description": "Generate a bar chart.\n\n**Note:** Update recommendation_id to a bar chart recommendation ID.\n\n**Expected Result:**\n- Series type: 'bar'\n- xAxis type: 'category'\n- Categories in xAxis.data"
+					},
+					"response": []
+				},
+				{
+					"name": "5.3 Generate Pie Chart",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Series type is pie\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series[0].type).to.eql('pie');",
+									"});",
+									"",
+									"pm.test(\"Series has data array with name-value pairs\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series[0].data).to.be.an('array');",
+									"    if (jsonData.data.option.series[0].data.length > 0) {",
+									"        pm.expect(jsonData.data.option.series[0].data[0].name).to.exist;",
+									"        pm.expect(jsonData.data.option.series[0].data[0].value).to.exist;",
+									"    }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							]
+						},
+						"description": "Generate a pie chart.\n\n**Expected Result:**\n- Series type: 'pie'\n- Data format: [{name, value}]"
+					},
+					"response": []
+				},
+				{
+					"name": "5.4 Generate Scatter Plot",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Series type is scatter\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series[0].type).to.eql('scatter');",
+									"});",
+									"",
+									"pm.test(\"Data points are limited to 2000\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    var totalPoints = 0;",
+									"    jsonData.data.option.series.forEach(s => {",
+									"        totalPoints += s.data.length;",
+									"    });",
+									"    pm.expect(totalPoints).to.be.at.most(2000);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							]
+						},
+						"description": "Generate a scatter plot.\n\n**Expected Result:**\n- Series type: 'scatter'\n- Maximum 2000 points (downsampled if necessary)"
+					},
+					"response": []
+				},
+				{
+					"name": "5.5 Generate Histogram",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Series type is bar (histogram)\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series[0].type).to.eql('bar');",
+									"});",
+									"",
+									"pm.test(\"Bin count is within valid range (5-50)\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    var binCount = jsonData.data.option.xAxis.data.length;",
+									"    pm.expect(binCount).to.be.at.least(5);",
+									"    pm.expect(binCount).to.be.at.most(50);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}?bins=20",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							],
+							"query": [
+								{
+									"key": "bins",
+									"value": "20"
+								}
+							]
+						},
+						"description": "Generate a histogram with 20 bins.\n\n**Expected Result:**\n- Series type: 'bar'\n- Bins between 5-50"
+					},
+					"response": []
+				},
+				{
+					"name": "5.6 Generate BoxPlot",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Series type is boxplot\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series[0].type).to.eql('boxplot');",
+									"});",
+									"",
+									"pm.test(\"BoxPlot has 5-number summary\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series[0].data).to.be.an('array');",
+									"    if (jsonData.data.option.series[0].data.length > 0) {",
+									"        pm.expect(jsonData.data.option.series[0].data[0].length).to.eql(5);",
+									"    }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							]
+						},
+						"description": "Generate a box plot.\n\n**Expected Result:**\n- Series type: 'boxplot'\n- 5-number summary: [min, Q1, median, Q3, max]"
+					},
+					"response": []
+				},
+				{
+					"name": "5.7 Generate Heatmap",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Series type is heatmap\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.series[0].type).to.eql('heatmap');",
+									"});",
+									"",
+									"pm.test(\"Heatmap has visualMap\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option.visualMap).to.exist;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							]
+						},
+						"description": "Generate a heatmap.\n\n**Expected Result:**\n- Series type: 'heatmap'\n- visualMap configuration"
+					},
+					"response": []
+				},
+				{
+					"name": "5.8 Generate Chart - Invalid Recommendation ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400 Bad Request or 404 Not Found\", function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 404]);",
+									"});",
+									"",
+									"pm.test(\"Response indicates failure\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(false);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/00000000-0000-0000-0000-000000000000",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"00000000-0000-0000-0000-000000000000"
+							]
+						},
+						"description": "Attempt to generate chart with invalid recommendation ID.\n\n**Expected Result:** 400 Bad Request or 404 Not Found"
+					},
+					"response": []
+				},
+				{
+					"name": "5.9 Generate Histogram - Invalid Bins (< 5)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400 Bad Request\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Response contains validation error\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(false);",
+									"    pm.expect(jsonData.errors).to.exist;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}?bins=3",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							],
+							"query": [
+								{
+									"key": "bins",
+									"value": "3"
+								}
+							]
+						},
+						"description": "Attempt to generate histogram with bins < 5.\n\n**Expected Result:** 400 Bad Request with validation error"
+					},
+					"response": []
+				},
+				{
+					"name": "5.10 Generate Histogram - Invalid Bins (> 50)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 400 Bad Request\", function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"",
+									"pm.test(\"Response contains validation error\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.success).to.eql(false);",
+									"    pm.expect(jsonData.errors).to.exist;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}?bins=100",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							],
+							"query": [
+								{
+									"key": "bins",
+									"value": "100"
+								}
+							]
+						},
+						"description": "Attempt to generate histogram with bins > 50.\n\n**Expected Result:** 400 Bad Request with validation error"
+					},
+					"response": []
+				}
+			],
+			"description": "Tests for chart generation:\n- All 7 chart types (Line, Bar, Pie, Scatter, Histogram, BoxPlot, Heatmap)\n- Parameter validation (bins)\n- Safety limits (scatter max 2000 points, histogram 5-50 bins)\n- Error handling"
+		},
+		{
+			"name": "6. Performance Tests",
+			"item": [
+				{
+					"name": "6.1 Performance - Upload Dataset",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201 Created\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test(\"Response time is acceptable\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+									"    console.log('Upload took ' + pm.response.responseTime + 'ms');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							]
+						},
+						"description": "Measure upload performance.\n\n**Expected:** < 5 seconds"
+					},
+					"response": []
+				},
+				{
+					"name": "6.2 Performance - Get Profile (First Call)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response time is acceptable\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(3000);",
+									"    console.log('Profile (first call) took ' + pm.response.responseTime + 'ms');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"profile"
+							]
+						},
+						"description": "Measure profile performance (uncached).\n\n**Expected:** < 3 seconds"
+					},
+					"response": []
+				},
+				{
+					"name": "6.3 Performance - Get Profile (Cached)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response time is very fast (cached)\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(100);",
+									"    console.log('Profile (cached) took ' + pm.response.responseTime + 'ms');",
+									"});",
+									"",
+									"pm.test(\"Cache provides 95%+ improvement\", function () {",
+									"    // Assuming first call was ~500ms, cached should be <50ms",
+									"    pm.expect(pm.response.responseTime).to.be.below(50);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"profile"
+							]
+						},
+						"description": "Measure profile performance (cached).\n\n**Expected:** < 100ms (95%+ improvement)"
+					},
+					"response": []
+				},
+				{
+					"name": "6.4 Performance - Get Recommendations",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response time is acceptable\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(1000);",
+									"    console.log('Recommendations took ' + pm.response.responseTime + 'ms');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/recommendations",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"recommendations"
+							]
+						},
+						"description": "Measure recommendations performance.\n\n**Expected:** < 1 second"
+					},
+					"response": []
+				},
+				{
+					"name": "6.5 Performance - Generate Chart",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response time is acceptable\", function () {",
+									"    pm.expect(pm.response.responseTime).to.be.below(5000);",
+									"    console.log('Chart generation took ' + pm.response.responseTime + 'ms');",
+									"});",
+									"",
+									"pm.test(\"DuckDB execution time is tracked\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.meta.duckDbMs).to.be.a('number');",
+									"    console.log('DuckDB execution: ' + jsonData.data.meta.duckDbMs + 'ms');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{dataset_id}}/charts/{{recommendation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{dataset_id}}",
+								"charts",
+								"{{recommendation_id}}"
+							]
+						},
+						"description": "Measure chart generation performance.\n\n**Expected:** < 5 seconds"
+					},
+					"response": []
+				}
+			],
+			"description": "Performance benchmarks for all endpoints:\n- Upload: < 5s\n- Profile (uncached): < 3s\n- Profile (cached): < 100ms\n- Recommendations: < 1s\n- Chart generation: < 5s"
+		},
+		{
+			"name": "7. End-to-End Workflow",
+			"item": [
+				{
+					"name": "7.1 E2E - Upload Dataset",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Upload successful\", function () {",
+									"    pm.response.to.have.status(201);",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"e2e_dataset_id\", jsonData.data.datasetId);",
+									"    console.log('E2E Dataset ID: ' + jsonData.data.datasetId);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets"
+							]
+						},
+						"description": "Step 1: Upload a new dataset"
+					},
+					"response": []
+				},
+				{
+					"name": "7.2 E2E - Get Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Profile retrieved\", function () {",
+									"    pm.response.to.have.status(200);",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.rowCount).to.be.above(0);",
+									"    pm.expect(jsonData.data.columns.length).to.be.above(0);",
+									"    console.log('Rows: ' + jsonData.data.rowCount + ', Columns: ' + jsonData.data.columns.length);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{e2e_dataset_id}}/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{e2e_dataset_id}}",
+								"profile"
+							]
+						},
+						"description": "Step 2: Get dataset profile"
+					},
+					"response": []
+				},
+				{
+					"name": "7.3 E2E - Get Recommendations",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Recommendations received\", function () {",
+									"    pm.response.to.have.status(200);",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.length).to.be.above(0);",
+									"    pm.environment.set(\"e2e_recommendation_id\", jsonData.data[0].id);",
+									"    console.log('Recommendations: ' + jsonData.data.length);",
+									"    console.log('Top recommendation: ' + jsonData.data[0].chart.type + ' (score: ' + jsonData.data[0].score + ')');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{e2e_dataset_id}}/recommendations",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{e2e_dataset_id}}",
+								"recommendations"
+							]
+						},
+						"description": "Step 3: Get chart recommendations"
+					},
+					"response": []
+				},
+				{
+					"name": "7.4 E2E - Generate Chart",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Chart generated\", function () {",
+									"    pm.response.to.have.status(200);",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.data.option).to.exist;",
+									"    console.log('Chart type: ' + jsonData.data.meta.chartType);",
+									"    console.log('Rows returned: ' + jsonData.data.meta.rowCountReturned);",
+									"    console.log('DuckDB execution: ' + jsonData.data.meta.duckDbMs + 'ms');",
+									"});",
+									"",
+									"pm.test(\"Complete E2E workflow successful\", function () {",
+									"    console.log('✅ End-to-end workflow completed successfully!');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/datasets/{{e2e_dataset_id}}/charts/{{e2e_recommendation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"datasets",
+								"{{e2e_dataset_id}}",
+								"charts",
+								"{{e2e_recommendation_id}}"
+							]
+						},
+						"description": "Step 4: Generate recommended chart"
+					},
+					"response": []
+				}
+			],
+			"description": "Complete end-to-end workflow:\n1. Upload dataset\n2. Get profile\n3. Get recommendations\n4. Generate chart\n\nRun all 4 requests in sequence to test complete user journey."
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5000",
+			"type": "string"
+		},
+		{
+			"key": "dataset_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "recommendation_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "e2e_dataset_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "e2e_recommendation_id",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

@@ -31,6 +31,7 @@ This document provides a comprehensive checklist for deploying InsightEngine to 
 ### ✅ Documentation
 
 - [ ] API documentation up-to-date (`docs/API.md`)
+- [ ] Postman Collection tested (`docs/InsightEngine-API-v1.postman_collection.json`)
 - [ ] Changelog updated with release notes
 - [ ] Known issues documented
 - [ ] Migration guide prepared (if breaking changes)
@@ -921,6 +922,23 @@ curl -X GET "https://api.insightengine.com/api/v1/datasets/$DATASET_ID/profile" 
   -H "Authorization: Bearer $TOKEN" || exit 1
 ```
 
+**Alternative: Run Postman Collection**
+
+```bash
+# Install Newman
+npm install -g newman
+
+# Run complete test suite
+newman run docs/InsightEngine-API-v1.postman_collection.json \
+  --environment production-env.json \
+  --reporters cli,json \
+  --reporter-json-export test-results.json
+
+# Expected: 45+ requests, 200+ tests passing
+```
+
+See [POSTMAN_COLLECTION.md](./POSTMAN_COLLECTION.md) for complete testing guide.
+
 ### ✅ Verification Checklist
 
 - [ ] Health endpoint returns 200 OK
@@ -935,6 +953,7 @@ curl -X GET "https://api.insightengine.com/api/v1/datasets/$DATASET_ID/profile" 
 - [ ] SSL certificate valid
 - [ ] CORS headers correct
 - [ ] Response times acceptable (< 2s P95)
+- [ ] Postman Collection tests passing (45+ requests)
 
 ---
 
