@@ -2,12 +2,14 @@ using FluentValidation;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Core.Notifications;
 using MediatR;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace InsightEngine.Domain.Behaviors;
 
 /// <summary>
-/// Pipeline behavior that validates commands/queries using FluentValidation
-/// and integrates with DomainNotification system
+/// Pipeline behavior that validates commands/queries using FluentValidation,
+/// integrates with DomainNotification system, and provides structured logging
 /// </summary>
 public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
@@ -15,13 +17,16 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
 {
     private readonly IEnumerable<IValidator<TRequest>> _validators;
     private readonly IDomainNotificationHandler _notificationHandler;
+    private readonly ILogger<ValidationBehavior<TRequest, TResponse>> _logger;
 
     public ValidationBehavior(
         IEnumerable<IValidator<TRequest>> validators,
-        IDomainNotificationHandler notificationHandler)
+        IDomainNotificationHandler notificationHandler,
+        ILogger<ValidationBehavior<TRequest, TResponse>> logger)
     {
         _validators = validators;
         _notificationHandler = notificationHandler;
+        _logger = logger;
     }
 
     public async Task<TResponse> Handle(
@@ -29,8 +34,20 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
+        var requestName = typeof(TRequest).Name;
+        var stopwatch = Stopwatch.StartNew();
+
+        _logger.LogDebug(
+            "Validating {RequestName} with {ValidatorCount} validators",
+            requestName,
+            _validators.Count());
+
         if (!_validators.Any())
         {
+            _logger.LogDebug(
+                "No validators registered for {RequestName}, proceeding to handler",
+                requestName);
+            
             return await next();
         }
 
@@ -44,8 +61,17 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
             .Where(f => f != null)
             .ToList();
 
+        stopwatch.Stop();
+
         if (failures.Any())
         {
+            _logger.LogWarning(
+                "Validation failed for {RequestName} with {ErrorCount} error(s) in {ElapsedMs}ms: {Errors}",
+                requestName,
+                failures.Count,
+                stopwatch.ElapsedMilliseconds,
+                string.Join("; ", failures.Select(f => $"{f.PropertyName}: {f.ErrorMessage}")));
+
             // Add failures to DomainNotification
             foreach (var failure in failures)
             {
@@ -76,6 +102,11 @@ public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TReques
             
             return (TResponse)(object)Result.Failure(errors);
         }
+
+        _logger.LogDebug(
+            "Validation succeeded for {RequestName} in {ElapsedMs}ms",
+            requestName,
+            stopwatch.ElapsedMilliseconds);
 
         return await next();
     }

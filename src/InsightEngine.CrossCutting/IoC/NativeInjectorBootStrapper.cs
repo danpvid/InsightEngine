@@ -59,7 +59,9 @@ public static class NativeInjectorBootStrapper
         // Domain - FluentValidation
         services.AddValidatorsFromAssembly(typeof(InsightEngine.Domain.Commands.Command).Assembly);
 
-        // Domain - Pipeline Behaviors
+        // Domain - Pipeline Behaviors (order matters: Logging -> Performance -> Validation -> Handler)
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(PerformanceBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
         // Infra - External Services
