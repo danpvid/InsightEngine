@@ -31,7 +31,7 @@ O **InsightEngine** é uma plataforma analítica de próxima geração que democ
 
 ## 🎯 Status do Projeto
 
-### ✅ Concluído (v1.0 - MVP)
+### ✅ Concluído (v1.0 - MVP) — **Dia 7: Frontend Completo!** 🎉
 
 **Core Features:**
 - ✅ Upload de datasets com streaming eficiente (até 20MB)
@@ -48,6 +48,15 @@ O **InsightEngine** é uma plataforma analítica de próxima geração que democ
 - ✅ ECharts defaults (grid, auto dataZoom para >200 pontos)
 - ✅ JSON optimization (ignore nulls)
 - ✅ Debug SQL em Development
+
+**🆕 Frontend Angular (Dia 7):**
+- ✅ Interface web completa com Angular 17 + Material Design
+- ✅ Página de upload de CSV com validação
+- ✅ Visualização de recomendações em grid responsivo
+- ✅ Renderização de gráficos interativos com ECharts
+- ✅ Estados de loading e tratamento de erros
+- ✅ Navegação entre páginas (Upload → Recommendations → Chart)
+- ✅ CORS configurado para desenvolvimento
 - ✅ Documentação completa da API (docs/API_CONTRACTS.md)
 
 **Architecture:**
@@ -372,11 +381,83 @@ InsightEngine/
 
 ### Pré-requisitos
 
+**Backend:**
 - [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - IDE: [Visual Studio 2022](https://visualstudio.microsoft.com/) ou [VS Code](https://code.visualstudio.com/) + C# Extension
-- (Opcional) [Docker Desktop](https://www.docker.com/products/docker-desktop)
 
-### Instalação & Execução
+**Frontend (Novo!):**
+- [Node.js 18+](https://nodejs.org/) e npm
+- [Angular CLI 17+](https://angular.io/cli): `npm install -g @angular/cli`
+
+### 🎯 Início Rápido (Completo com Frontend)
+
+#### Opção 1: Scripts Automatizados (Windows)
+
+```bash
+# 1. Setup (apenas primeira vez)
+setup.bat
+
+# 2. Iniciar demo completa
+start-demo.bat
+```
+
+#### Opção 2: Comandos Manuais
+
+**1. Instalar Dependências do Frontend (primeira vez apenas)**
+```bash
+cd src/InsightEngine.Web
+npm install
+```
+
+**2. Iniciar Backend (Terminal 1)**
+```bash
+cd src/InsightEngine.API
+dotnet run
+```
+
+**3. Iniciar Frontend (Terminal 2)**
+```bash
+cd src/InsightEngine.Web
+npm start
+```
+
+**4. Acessar**
+- **Frontend (UI)**: http://localhost:4200
+- **Backend (API)**: https://localhost:5001
+- **Swagger UI**: https://localhost:5001/swagger
+
+### 📖 Guias Disponíveis
+
+- **[LEIA-PRIMEIRO.md](LEIA-PRIMEIRO.md)** - Resolução de erros iniciais
+- **[START-HERE.md](START-HERE.md)** - Guia de início rápido
+- **[QUICK-START-DEMO.md](QUICK-START-DEMO.md)** - Roteiro de teste completo
+- **[docs/DAY7_FRONTEND_SUMMARY.md](docs/DAY7_FRONTEND_SUMMARY.md)** - Documentação do frontend
+
+---
+
+## 🖥️ Como Usar a Interface Web
+
+### 1️⃣ Upload de Dataset
+1. Acesse http://localhost:4200/datasets/new
+2. Selecione um arquivo CSV (use os samples disponíveis em `samples/`)
+3. Clique em "Enviar e Gerar Recomendações"
+
+### 2️⃣ Visualizar Recomendações
+- Após o upload, você será redirecionado automaticamente
+- Veja as recomendações de gráficos geradas pela IA
+- Cada card mostra: tipo, eixos, e justificativa
+
+### 3️⃣ Visualizar Gráfico Interativo
+- Clique em qualquer recomendação
+- O gráfico ECharts será renderizado
+- Interaja: hover, zoom, clique na legenda
+- Veja metadados: tempo de execução, linhas retornadas, etc.
+
+---
+
+## 📊 Exemplos de Uso (Apenas API)
+
+### Instalação & Execução (Backend Standalone)
 
 1. **Clone o repositório**
 ```bash
