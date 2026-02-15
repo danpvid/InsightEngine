@@ -137,14 +137,17 @@ public class DataSetApplicationService : IDataSetApplicationService
 
     public async Task<Result<ChartExecutionResponse>> GetChartAsync(
         Guid datasetId, 
-        string recommendationId, 
+        string recommendationId,
+        string? aggregation = null,
+        string? timeBin = null,
+        string? yColumn = null,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Executing chart for dataset {DatasetId}, recommendation {RecommendationId}", 
-            datasetId, recommendationId);
+            "Executing chart for dataset {DatasetId}, recommendation {RecommendationId}, aggregation: {Aggregation}, timeBin: {TimeBin}, yColumn: {YColumn}", 
+            datasetId, recommendationId, aggregation, timeBin, yColumn);
 
-        var query = new GetDataSetChartQuery(datasetId, recommendationId);
+        var query = new GetDataSetChartQuery(datasetId, recommendationId, aggregation, timeBin, yColumn);
         var result = await _mediator.Send(query, cancellationToken);
 
         if (result.IsSuccess)

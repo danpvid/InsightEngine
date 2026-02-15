@@ -319,17 +319,21 @@ public class DataSetController : BaseController
     /// </summary>
     /// <param name="id">ID do dataset</param>
     /// <param name="recommendationId">ID da recomendação (ex: rec_001)</param>
+    /// <param name="aggregation">Opcional: Sobrescrever agregação (Sum, Avg, Count, Min, Max)</param>
+    /// <param name="timeBin">Opcional: Sobrescrever período (Day, Week, Month, Quarter, Year)</param>
+    /// <param name="yColumn">Opcional: Sobrescrever coluna Y</param>
     /// <returns>EChartsOption completo pronto para renderização</returns>
     /// <remarks>
     /// Exemplo de uso:
     /// 
     ///     GET /api/v1/datasets/{datasetId}/charts/rec_001
+    ///     GET /api/v1/datasets/{datasetId}/charts/rec_001?aggregation=Avg&amp;timeBin=Week
     ///     
-    /// Dia 4 MVP:
-    /// - Suporta apenas gráficos tipo Line (time series)
+    /// Dia 4 MVP + Controles Dinâmicos:
+    /// - Suporta gráficos Line, Bar, Scatter, Histogram
     /// - Suporta ECharts como biblioteca
     /// - Executa agregação via DuckDB
-    /// - Retorna option com series.data preenchido
+    /// - Permite sobrescrever agregação, período e métrica Y
     /// 
     /// Response envelope com telemetria:
     /// - datasetId: ID do dataset
@@ -343,11 +347,20 @@ public class DataSetController : BaseController
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetChart(Guid id, string recommendationId)
+    public async Task<IActionResult> GetChart(
+        Guid id, 
+        string recommendationId,
+        [FromQuery] string? aggregation = null,
+        [FromQuery] string? timeBin = null,
+        [FromQuery] string? yColumn = null)
     {
+        _logger.LogInformation(
+            "GetChart called - DatasetId: {DatasetId}, RecommendationId: {RecommendationId}, Aggregation: {Aggregation}, TimeBin: {TimeBin}, YColumn: {YColumn}",
+            id, recommendationId, aggregation ?? "null", timeBin ?? "null", yColumn ?? "null");
+
         try
         {
-            var result = await _dataSetApplicationService.GetChartAsync(id, recommendationId);
+            var result = await _dataSetApplicationService.GetChartAsync(id, recommendationId, aggregation, timeBin, yColumn);
 
             if (!result.IsSuccess)
             {

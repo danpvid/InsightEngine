@@ -94,6 +94,10 @@ public class ChartExecutionService : IChartExecutionService
     {
         var swDuckDb = Stopwatch.StartNew();
 
+        _logger.LogInformation(
+            "📈 ExecuteLineAsync - RecommendationId: {RecId}, Query.X.Bin: {Bin}, Query.Y.Aggregation: {Agg}, Query.Y.Column: {YCol}",
+            recommendation.Id, recommendation.Query.X.Bin, recommendation.Query.Y.Aggregation, recommendation.Query.Y.Column);
+
         try
         {
             // Validar eixos
@@ -789,11 +793,17 @@ ORDER BY 1;
         var bin = recommendation.Query.X.Bin!.Value;
         var agg = recommendation.Query.Y.Aggregation!.Value;
 
+        _logger.LogInformation(
+            "🔨 BuildTimeSeriesSQL - XCol: {XCol}, YCol: {YCol}, Bin: {Bin}, Agg: {Agg}",
+            xCol, yCol, bin, agg);
+
         // Mapear TimeBin para date_trunc
         var dateTruncPart = bin switch
         {
             TimeBin.Day => "day",
+            TimeBin.Week => "week",
             TimeBin.Month => "month",
+            TimeBin.Quarter => "quarter",
             TimeBin.Year => "year",
             _ => "day"
         };
@@ -808,6 +818,10 @@ ORDER BY 1;
             Aggregation.Max => "MAX",
             _ => "AVG"
         };
+
+        _logger.LogInformation(
+            "🔧 SQL Mapping - dateTruncPart: {DateTrunc}, aggFunction: {AggFunc}",
+            dateTruncPart, aggFunction);
 
         // Escapar o path do CSV (importante para segurança)
         // DuckDB aceita single quotes no path e escapa aspas internas duplicando-as
@@ -837,6 +851,8 @@ WHERE parsed_date IS NOT NULL AND parsed_value IS NOT NULL
 GROUP BY 1
 ORDER BY 1;
 ";
+
+        _logger.LogInformation("💾 Generated SQL:\n{SQL}", sql);
 
         return sql;
     }
@@ -908,6 +924,7 @@ ORDER BY 1;
                     ["name"] = $"{recommendation.Query.Y.Aggregation}({recommendation.Query.Y.Column})",
                     ["type"] = "line",
                     ["smooth"] = true,
+                    ["connectNulls"] = true,  // Conecta pontos mesmo com gaps
                     ["data"] = data.Select(p => new object?[] { p.TimestampMs, p.Value }).ToList()
                 }
             }

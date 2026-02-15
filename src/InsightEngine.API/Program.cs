@@ -100,6 +100,17 @@ builder.Services.AddCors(options =>
                    .AllowAnyMethod()
                    .AllowAnyHeader();
         });
+    
+    // Policy específica para o frontend Angular
+    options.AddPolicy("AllowAngular",
+        corsBuilder =>
+        {
+            corsBuilder.WithOrigins("http://localhost:4200", "https://localhost:4200")
+                   .AllowAnyMethod()
+                   .AllowAnyHeader()
+                   .AllowCredentials()
+                   .WithExposedHeaders("Content-Disposition");
+        });
 });
 
 // Register Token Service
@@ -121,7 +132,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowAll");
+// Use política mais permissiva em desenvolvimento, específica em produção
+app.UseCors(app.Environment.IsDevelopment() ? "AllowAll" : "AllowAngular");
 
 app.UseAuthentication();
 app.UseAuthorization();

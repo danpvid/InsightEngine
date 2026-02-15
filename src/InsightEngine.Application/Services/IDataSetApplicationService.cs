@@ -35,5 +35,17 @@ public interface IDataSetApplicationService
     /// <summary>
     /// Execute a chart recommendation and get complete response with telemetry
     /// </summary>
-    Task<Result<ChartExecutionResponse>> GetChartAsync(Guid datasetId, string recommendationId, CancellationToken cancellationToken = default);
+    /// <param name="datasetId">Dataset ID</param>
+    /// <param name="recommendationId">Recommendation ID</param>
+    /// <param name="aggregation">Optional: Override aggregation (Sum, Avg, Count, Min, Max)</param>
+    /// <param name="timeBin">Optional: Override time bin (Day, Week, Month, Quarter, Year)</param>
+    /// <param name="yColumn">Optional: Override Y metric column</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    Task<Result<ChartExecutionResponse>> GetChartAsync(
+        Guid datasetId, 
+        string recommendationId, 
+        string? aggregation = null,
+        string? timeBin = null,
+        string? yColumn = null,
+        CancellationToken cancellationToken = default);
 }

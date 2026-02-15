@@ -70,7 +70,9 @@ public static class GapFillHelper
             currentDate = timeBin switch
             {
                 TimeBin.Day => currentDate.AddDays(1),
+                TimeBin.Week => currentDate.AddDays(7),
                 TimeBin.Month => currentDate.AddMonths(1),
+                TimeBin.Quarter => currentDate.AddMonths(3),
                 TimeBin.Year => currentDate.AddYears(1),
                 _ => currentDate.AddDays(1)
             };
