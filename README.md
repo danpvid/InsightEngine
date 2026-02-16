@@ -16,7 +16,7 @@ InsightEngine is a local-first analytics platform that ingests CSV datasets, pro
 - Exploracao self-service (aggregation, time bin, metric, group by, filters).
 - Insight Summary heuristico com sinais (trend, volatility, outliers, seasonality).
 - Simulacao what-if (baseline vs simulated) com operacoes controladas.
-- AI opt-in (Local LLM first): AI Summary, Explain Chart, Ask (analysis plan).
+- AI opt-in (Local LLM first): AI Summary, Explain Chart, Ask (analysis plan), Deep Insights (evidence-grounded report).
 
 ### Principios de arquitetura do produto
 - Core flow nao depende de LLM e nao bloqueia renderizacao do grafico.
@@ -152,6 +152,16 @@ Arquivo principal: `src/InsightEngine.API/appsettings.json`.
       "BaseUrl": "http://localhost:11434",
       "Model": "llama3"
     },
+    "DeepInsights": {
+      "EvidenceVersion": "v1",
+      "MaxEvidenceSeriesPoints": 400,
+      "ForecastDefaultHorizon": 30,
+      "ForecastMaxHorizon": 90,
+      "ForecastMovingAverageWindow": 5,
+      "MaxBreakdownSegments": 10,
+      "MaxRequestsPerMinute": 12,
+      "CooldownSeconds": 4
+    },
     "Redaction": {
       "Enabled": true,
       "ColumnNamePatterns": ["email", "phone", "cpf", "ssn"]
@@ -180,6 +190,7 @@ Principais endpoints:
 - `GET /api/v1/datasets/{id}/charts/{recommendationId}` - chart + insightSummary + meta
 - `POST /api/v1/datasets/{id}/charts/{recommendationId}/ai-summary` - resumo AI on-demand
 - `POST /api/v1/datasets/{id}/charts/{recommendationId}/explain` - explicacao estruturada
+- `POST /api/v1/datasets/{id}/charts/{recommendationId}/deep-insights` - narrativa analitica profunda com citacoes de evidencias
 - `POST /api/v1/datasets/{id}/ask` - pergunta NL -> analysis plan (sem SQL execution)
 - `POST /api/v1/datasets/{id}/simulate` - simulacao
 - `POST /api/v1/datasets/cleanup` - cleanup manual (dev/admin)
@@ -234,6 +245,31 @@ Principais endpoints:
       "model": "llama3",
       "durationMs": 842,
       "cacheHit": false
+    }
+  }
+}
+```
+
+### Deep insights (resumido)
+```json
+{
+  "success": true,
+  "data": {
+    "report": {
+      "headline": "Demand is rising with concentrated segment influence",
+      "executiveSummary": "Evidence-grounded narrative generated from deterministic facts.",
+      "keyFindings": [{ "title": "Rising trend", "evidenceIds": ["TS_TREND_SLOPE"] }]
+    },
+    "meta": {
+      "provider": "LocalHttp",
+      "model": "llama3",
+      "durationMs": 1240,
+      "cacheHit": false,
+      "validationStatus": "ok"
+    },
+    "explainability": {
+      "evidenceUsedCount": 14,
+      "topEvidenceIdsUsed": ["TS_TREND_SLOPE", "DIST_MEAN_METRIC"]
     }
   }
 }
