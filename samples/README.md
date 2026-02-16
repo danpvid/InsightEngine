@@ -6,15 +6,95 @@ Este diretório contém CSVs gerados automaticamente pelo **InsightEngine.DataGe
 
 | Arquivo | Linhas | Colunas | Descrição | Melhor para |
 |---------|--------|---------|-----------|-------------|
-| `ecommerce_sales.csv` | 5.000 | 12 | Transações de e-commerce | Line, Bar, Scatter |
-| `employee_records.csv` | 8.000 | 12 | Registros de RH | Histogram, Bar |
-| `financial_transactions.csv` | 10.000 | 12 | Transações bancárias | Line, Histogram |
-| `healthcare_patients.csv` | 6.000 | 12 | Registros médicos | Histogram, Bar |
-| `logistics_shipments.csv` | 7.500 | 13 | Operações de logística | Scatter, Line |
+| `vendas_ecommerce.csv` | 5.000 | 19 | Vendas E-commerce (PT-BR) | Line, Bar, Scatter |
+| `controladoria_contabilidade.csv` | 5.000 | 17 | Lançamentos Contábeis | Line, Bar, Histogram |
+| `recursos_humanos.csv` | 5.000 | 19 | Dados de Funcionários | Histogram, Bar |
+| `logistica_entregas.csv` | 5.000 | 18 | Rastreamento de Entregas | Scatter, Line |
+| `marketing_digital.csv` | 5.000 | 18 | Campanhas de Marketing | Line, Bar, Scatter |
+| `producao_manufatura.csv` | 5.000 | 17 | Ordens de Produção | Bar, Line, Histogram |
+| `inventario_produtos.csv` | 5.000 | 17 | Controle de Estoque | Bar, Histogram |
+| `dados_clientes.csv` | 5.000 | 19 | Cadastro de Clientes | Histogram, Bar |
+| `fornecedores_compras.csv` | 5.000 | 18 | Dados de Fornecedores | Bar, Scatter |
+| `financas_fluxo_caixa.csv` | 5.000 | 17 | Movimentações Financeiras | Line, Histogram |
+| `ecommerce_sales.csv` | 5.000 | 12 | Transações de e-commerce (EN) | Line, Bar, Scatter |
+| `employee_records.csv` | 8.000 | 12 | Registros de RH (EN) | Histogram, Bar |
+| `financial_transactions.csv` | 10.000 | 12 | Transações bancárias (EN) | Line, Histogram |
+| `healthcare_patients.csv` | 6.000 | 12 | Registros médicos (EN) | Histogram, Bar |
+| `logistics_shipments.csv` | 7.500 | 13 | Operações de logística (EN) | Scatter, Line |
 
-**Total:** 36.500 linhas, 61 colunas
+**Total:** 71.500 linhas, ~200 colunas
 
-### 🎯 Recomendações de Uso por Dataset
+### � Novos Arquivos Gerados (2026)
+
+Os arquivos marcados com **(PT-BR)** foram gerados recentemente com dados em português brasileiro, contendo distribuições mais realistas e maior diversidade de colunas. Estes arquivos simulam cenários empresariais completos com:
+
+- **Distribuições não-homogêneas** (dados reais têm variações)
+- **Relações causais** entre colunas
+- **Dados faltantes** em proporções realistas
+- **Valores extremos** (outliers) controlados
+- **Dependências temporais** (datas sequenciais)
+
+#### 📈 Características Especiais dos Novos Datasets
+
+**Vendas E-commerce:**
+- Distribuição sazonal de vendas
+- Correlação entre desconto e volume
+- Variação de frete por região
+- Taxas realistas de cancelamento/devolução
+
+**Controladoria:**
+- Lançamentos contábeis balanceados (débito/crédito)
+- Moedas estrangeiras com taxas de câmbio
+- Centros de custo com pesos realistas
+- Competências fiscais corretas
+
+**Recursos Humanos:**
+- Distribuição etária gaussiana
+- Salários log-normais (com caudas longas)
+- Dependentes correlacionados com idade
+- Taxas de turnover realistas
+
+**Logística:**
+- Tempos de entrega com atrasos controlados
+- Correlação peso x volume
+- Performance variável por transportadora
+- Tentativas de entrega realistas
+
+**Marketing Digital:**
+- ROI calculado realisticamente
+- CTR decrescente com tempo
+- Conversões em funil de vendas
+- Segmentação por idade/gênero
+
+**Produção:**
+- Eficiências com variações controladas
+- Defeitos correlacionados com operadores
+- Tempos de produção realistas
+- Custos materiais vs mão de obra
+
+**Inventário:**
+- Saldos com movimentações realistas
+- Vencimentos distribuídos
+- Categorias com pesos de mercado
+- Responsáveis por setor
+
+**Clientes:**
+- RFV (Recência, Frequência, Valor) calculado
+- Scores de crédito gaussianos
+- Canais de aquisição com pesos
+- Inativos com padrões realistas
+
+**Fornecedores:**
+- Avaliações com distribuição normal
+- Prazos de pagamento negociais
+- Descontos por volume
+- Categorias B2B realistas
+
+**Fluxo de Caixa:**
+- Saldo acumulado consistente
+- Entradas vs saídas balanceadas
+- Moedas com volatilidade
+- Previsões vs realizados
 
 **E-commerce Sales** - Melhor para:
 - Line Chart: `order_date` x `total_amount` (tendências de vendas)
@@ -97,6 +177,68 @@ Veja `test-upload.http` na raiz do projeto para exemplos completos.
 ```bash
 ./test-api.sh
 ```
+
+### 🎯 Recomendações de Uso por Dataset (Novos Arquivos PT-BR)
+
+**Vendas E-commerce** - Melhor para:
+- Line Chart: `Data_Pedido` x `Total` (tendências de vendas)
+- Bar Chart: `Categoria_Produto` x `COUNT(*)` (produtos mais vendidos)
+- Scatter: `Desconto` x `Total` (impacto de descontos)
+- Histogram: `Preco_Unitario` (distribuição de preços)
+
+**Controladoria** - Melhor para:
+- Line Chart: `Data_Lancamento` x `Valor` (fluxo contábil)
+- Bar Chart: `Tipo_Lancamento` x `SUM(Valor)` (receitas vs despesas)
+- Histogram: `Valor` (distribuição de lançamentos)
+- Bar Chart: `Centro_Custo` x `COUNT(*)` (atividade por centro)
+
+**Recursos Humanos** - Melhor para:
+- Histogram: `Salario` (distribuição salarial)
+- Bar Chart: `Departamento` x `COUNT(*)` (tamanho dos departamentos)
+- Histogram: `Idade` (pirâmide etária)
+- Scatter: `Idade` x `Salario` (correlação experiência/remuneração)
+
+**Logística** - Melhor para:
+- Scatter: `Peso_Kg` x `Data_Entrega` (relação peso/tempo)
+- Line Chart: `Data_Saida` x `COUNT(*)` (volume de envios)
+- Bar Chart: `Transportadora` x `AVG(Valor_Frete)` (custos por transportadora)
+- Histogram: `Valor_Frete` (distribuição de custos)
+
+**Marketing Digital** - Melhor para:
+- Line Chart: `Data_Inicio` x `Investimento` (orçamento ao longo do tempo)
+- Scatter: `Impressoes` x `Cliques` (efetividade de campanhas)
+- Bar Chart: `Canal` x `ROI` (performance por canal)
+- Histogram: `CPA` (distribuição de custos de aquisição)
+
+**Produção** - Melhor para:
+- Line Chart: `Data_Inicio` x `Quantidade_Produzida` (produtividade temporal)
+- Bar Chart: `Maquina` x `Eficiencia` (performance de equipamentos)
+- Histogram: `Custo_Materia_Prima` (distribuição de custos)
+- Scatter: `Tempo_Producao_Min` x `Defeitos` (qualidade vs velocidade)
+
+**Inventário** - Melhor para:
+- Bar Chart: `Categoria` x `SUM(Quantidade_Estoque)` (estoque por categoria)
+- Histogram: `Valor_Unitario` (preços de produtos)
+- Line Chart: `Data_Ultima_Movimentacao` x `Quantidade_Movimentada` (atividade de estoque)
+- Scatter: `Quantidade_Estoque` x `Valor_Total` (valorização de estoque)
+
+**Clientes** - Melhor para:
+- Histogram: `Idade` (faixa etária de clientes)
+- Bar Chart: `Genero` x `COUNT(*)` (distribuição por gênero)
+- Scatter: `Numero_Pedidos` x `Valor_Total_Compras` (RFV analysis)
+- Bar Chart: `Canal_Aquisicao` x `COUNT(*)` (efetividade de canais)
+
+**Fornecedores** - Melhor para:
+- Bar Chart: `Categoria` x `AVG(Avaliacao)` (performance por categoria)
+- Histogram: `Valor_Total_Compras` (distribuição de compras)
+- Scatter: `Prazo_Pagamento` x `Desconto_Medio` (negociação vs prazo)
+- Line Chart: `Data_Cadastro` x `Valor_Total_Compras` (crescimento de fornecedores)
+
+**Fluxo de Caixa** - Melhor para:
+- Line Chart: `Data` x `Saldo_Apos` (evolução do saldo)
+- Bar Chart: `Tipo` x `SUM(Valor)` (entradas vs saídas)
+- Histogram: `Valor` (distribuição de movimentações)
+- Line Chart: `Data` x `Valor` (fluxo diário)
 
 ## 📊 Exemplos de Charts por Tipo
 
