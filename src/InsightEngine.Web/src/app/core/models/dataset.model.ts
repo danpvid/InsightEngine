@@ -35,6 +35,9 @@ export interface RawDatasetRowsResponse {
   columns: string[];
   rowCountTotal: number;
   rowCountReturned: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
   truncated: boolean;
   rows: RawDatasetRow[];
 }

@@ -5,6 +5,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgxEchartsModule } from 'ngx-echarts';
 import { ECharts, EChartsOption } from 'echarts';
 import { catchError, forkJoin, map, of } from 'rxjs';
+import { PageEvent } from '@angular/material/paginator';
+import { Sort } from '@angular/material/sort';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
 import { ToastService } from '../../../../core/services/toast.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
@@ -61,11 +63,6 @@ interface ChartTableRow {
   [key: string]: string | number | null;
 }
 
-interface RawSortRule {
-  column: string;
-  direction: 'asc' | 'desc';
-}
-
 @Component({
   selector: 'app-chart-viewer-page',
   standalone: true,
@@ -95,6 +92,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   private echartsInstance?: ECharts;
   private simulationEchartsInstance?: ECharts;
   private filterTimer?: number;
+  private rawSearchTimer?: number;
   private zoomTimer?: number;
   private chartLoadVersion: number = 0;
 
@@ -142,10 +140,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   rawDataSearch: string = '';
   rawDataLoading: boolean = false;
   rawDataError: string | null = null;
-  rawSortRules: RawSortRule[] = [];
-  rawSortColumnDraft: string = '';
-  rawSortDirectionDraft: 'asc' | 'desc' = 'asc';
-  readonly sortDirections: Array<'asc' | 'desc'> = ['asc', 'desc'];
+  rawTotalRows: number = 0;
+  rawTotalPages: number = 0;
+  rawPageIndex: number = 0;
+  rawPageSize: number = 100;
+  readonly rawPageSizeOptions: number[] = [50, 100, 250, 500];
+  rawSortColumn: string = '';
+  rawSortDirection: 'asc' | 'desc' = 'asc';
 
   filterPreviewPending: boolean = false;
 
@@ -269,38 +270,6 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       }));
   }
 
-  get filteredRawDataRows(): RawDatasetRow[] {
-    const term = this.rawDataSearch.trim().toLowerCase();
-    let rows = this.rawDataRows;
-
-    if (term) {
-      rows = rows.filter(row =>
-        this.rawDataColumns.some(column => `${row[column] ?? ''}`.toLowerCase().includes(term)));
-    }
-
-    if (this.rawSortRules.length === 0) {
-      return rows;
-    }
-
-    const sorted = [...rows];
-    sorted.sort((left, right) => {
-      for (const rule of this.rawSortRules) {
-        const compare = this.compareRawValues(left[rule.column], right[rule.column], rule.direction);
-        if (compare !== 0) {
-          return compare;
-        }
-      }
-
-      return 0;
-    });
-
-    return sorted;
-  }
-
-  get canAddRawSortRule(): boolean {
-    return !!this.rawSortColumnDraft && this.rawSortRules.length < 3;
-  }
-
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -329,7 +298,6 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.loadDatasetName();
     this.loadProfile();
     this.loadRecommendations();
-    this.loadRawDataRows();
 
     const queryParams = this.route.snapshot.queryParamMap;
     const aggFromUrl = queryParams.get('aggregation');
@@ -360,6 +328,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     if (filtersFromUrl.length > 0) {
       this.filterRules = this.parseFiltersFromUrl(filtersFromUrl);
     }
+
+    this.loadRawDataRows(true);
 
     if (metricYFromUrl.length > 0) {
       this.selectedMetricsY = this.distinctValues(metricYFromUrl);
@@ -396,6 +366,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.filterTimer) {
       window.clearTimeout(this.filterTimer);
+    }
+
+    if (this.rawSearchTimer) {
+      window.clearTimeout(this.rawSearchTimer);
     }
 
     if (this.zoomTimer) {
@@ -610,6 +584,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     });
 
     this.loadChart();
+    this.rawPageIndex = 0;
+    this.loadRawDataRows(true);
   }
 
   onChartInit(ec: ECharts): void {
@@ -790,14 +766,14 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     this.pendingDrilldownCategory = null;
-    this.reloadChartWithCurrentParameters();
+    this.reloadChartWithCurrentParameters(true);
   }
 
   clearDrilldownSelection(): void {
     this.pendingDrilldownCategory = null;
   }
 
-  private reloadChartWithCurrentParameters(): void {
+  private reloadChartWithCurrentParameters(refreshRawData: boolean = false): void {
     const options = this.buildLoadOptionsFromState();
     this.filterPreviewPending = false;
 
@@ -808,6 +784,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     });
 
     this.loadChart(options);
+    if (refreshRawData) {
+      this.rawPageIndex = 0;
+      this.loadRawDataRows(true);
+    }
   }
 
   private syncUrlWithoutReload(): void {
@@ -906,7 +886,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   applyFilterChanges(): void {
     this.filterPreviewPending = false;
-    this.reloadChartWithCurrentParameters();
+    this.reloadChartWithCurrentParameters(true);
   }
 
   private scheduleFiltersRefresh(): void {
@@ -922,6 +902,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   private previewFilters(): void {
     this.filterPreviewPending = true;
     this.loadChart(this.buildLoadOptionsFromState());
+    if (this.activeTab === 1) {
+      this.rawPageIndex = 0;
+      this.loadRawDataRows(true);
+    }
   }
 
   private buildFilterParams(): string[] {
@@ -1327,34 +1311,28 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.selectedPointModalOpen = false;
   }
 
-  addRawSortRule(): void {
-    if (!this.canAddRawSortRule) {
-      return;
+  onRawSearchChange(): void {
+    if (this.rawSearchTimer) {
+      window.clearTimeout(this.rawSearchTimer);
     }
 
-    this.rawSortRules = [
-      ...this.rawSortRules,
-      {
-        column: this.rawSortColumnDraft,
-        direction: this.rawSortDirectionDraft
-      }
-    ];
-
-    this.rawSortColumnDraft = '';
-    this.rawSortDirectionDraft = 'asc';
+    this.rawSearchTimer = window.setTimeout(() => {
+      this.rawPageIndex = 0;
+      this.loadRawDataRows();
+    }, 300);
   }
 
-  removeRawSortRule(index: number): void {
-    this.rawSortRules.splice(index, 1);
-    this.rawSortRules = [...this.rawSortRules];
+  onRawSortChange(event: Sort): void {
+    this.rawSortColumn = event.active || this.rawSortColumn;
+    this.rawSortDirection = (event.direction || 'asc') as 'asc' | 'desc';
+    this.rawPageIndex = 0;
+    this.loadRawDataRows();
   }
 
-  clearRawSortRules(): void {
-    this.rawSortRules = [];
-  }
-
-  sortDirectionLabel(direction: 'asc' | 'desc'): string {
-    return direction === 'asc' ? 'Ascendente' : 'Descendente';
+  onRawPageChange(event: PageEvent): void {
+    this.rawPageIndex = event.pageIndex;
+    this.rawPageSize = event.pageSize;
+    this.loadRawDataRows();
   }
 
   private loadDatasetName(): void {
@@ -1377,11 +1355,27 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     });
   }
 
-  private loadRawDataRows(): void {
+  private loadRawDataRows(resetPage: boolean = false): void {
+    if (resetPage) {
+      this.rawPageIndex = 0;
+    }
+
     this.rawDataLoading = true;
     this.rawDataError = null;
 
-    this.datasetApi.getRawRows(this.datasetId).subscribe({
+    const sort = this.rawSortColumn
+      ? [`${this.rawSortColumn}|${this.rawSortDirection}`]
+      : [];
+    const filters = this.buildFilterParams();
+    const search = this.rawDataSearch.trim();
+
+    this.datasetApi.getRawRows(this.datasetId, {
+      page: this.rawPageIndex + 1,
+      pageSize: this.rawPageSize,
+      sort,
+      search: search.length > 0 ? search : undefined,
+      filters: filters.length > 0 ? filters : undefined
+    }).subscribe({
       next: response => {
         this.rawDataLoading = false;
 
@@ -1393,12 +1387,19 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         const payload = response.data as RawDatasetRowsResponse;
         this.rawDataColumns = payload.columns || [];
         this.rawDataRows = payload.rows || [];
-        if (!this.rawSortColumnDraft && this.rawDataColumns.length > 0) {
-          this.rawSortColumnDraft = this.rawDataColumns[0];
+        this.rawTotalRows = payload.rowCountTotal || 0;
+        this.rawTotalPages = payload.totalPages || 0;
+        this.rawPageSize = payload.pageSize || this.rawPageSize;
+        this.rawPageIndex = Math.max((payload.page || 1) - 1, 0);
+
+        if (!this.rawSortColumn && this.rawDataColumns.length > 0) {
+          this.rawSortColumn = this.rawDataColumns[0];
         }
 
-        if (payload.truncated) {
-          this.toast.info(`Mostrando ${payload.rowCountReturned} de ${payload.rowCountTotal} linhas brutas.`);
+        if (this.rawPageIndex >= this.rawTotalPages && this.rawTotalPages > 0) {
+          this.rawPageIndex = this.rawTotalPages - 1;
+          this.loadRawDataRows();
+          return;
         }
 
         this.refreshPointDataFromRawRows();
@@ -1475,6 +1476,12 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     const mergedOption = this.cloneOption(baseOption) as Record<string, unknown>;
     const baseSeries = this.readSeriesList(mergedOption);
     const allSeries: Record<string, unknown>[] = [];
+    const metricOrder = this.distinctValues([
+      primaryMetric,
+      ...additional.map(item => item.metric)
+    ]);
+    const yAxisByMetric = new Map<string, number>();
+    metricOrder.forEach((metric, index) => yAxisByMetric.set(metric, index));
 
     for (const series of baseSeries) {
       const namedSeries = { ...series };
@@ -1482,6 +1489,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       namedSeries['name'] = this.selectedMetricsY.length > 1
         ? `${primaryMetric} - ${originalName}`
         : originalName;
+      namedSeries['yAxisIndex'] = yAxisByMetric.get(primaryMetric) ?? 0;
       allSeries.push(namedSeries);
     }
 
@@ -1496,12 +1504,35 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         const namedSeries = { ...series };
         const originalName = `${namedSeries['name'] ?? extra.metric}`;
         namedSeries['name'] = `${extra.metric} - ${originalName}`;
+        namedSeries['yAxisIndex'] = yAxisByMetric.get(extra.metric) ?? 0;
         allSeries.push(namedSeries);
       }
     }
 
     mergedOption['series'] = allSeries;
+    mergedOption['yAxis'] = this.buildMetricYAxis(mergedOption, metricOrder);
     return mergedOption as EChartsOption;
+  }
+
+  private buildMetricYAxis(option: Record<string, unknown>, metrics: string[]): Record<string, unknown>[] {
+    const yAxisRaw = option['yAxis'];
+    const template = Array.isArray(yAxisRaw)
+      ? this.asObject(yAxisRaw[0])
+      : this.asObject(yAxisRaw);
+    const baseAxis = template || { type: 'value' };
+
+    return metrics.map((metric, index) => {
+      const axis = { ...baseAxis };
+      const columnPair = Math.floor(index / 2);
+
+      axis['type'] = axis['type'] || 'value';
+      axis['name'] = metric;
+      axis['position'] = index % 2 === 0 ? 'left' : 'right';
+      axis['offset'] = columnPair === 0 ? 0 : columnPair * 56;
+      axis['alignTicks'] = true;
+
+      return axis;
+    });
   }
 
   private applyPresentationTransforms(option: EChartsOption): EChartsOption {
@@ -1511,8 +1542,26 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.ensureLegend(mutable);
     this.ensureToolbox(mutable);
     this.ensureZoomWindow(mutable);
+    this.ensureGridSpacing(mutable);
 
     return mutable as EChartsOption;
+  }
+
+  private ensureGridSpacing(option: Record<string, unknown>): void {
+    const yAxisRaw = option['yAxis'];
+    const yAxisCount = Array.isArray(yAxisRaw) ? yAxisRaw.length : (yAxisRaw ? 1 : 0);
+    if (yAxisCount <= 1) {
+      return;
+    }
+
+    const leftColumns = Math.ceil(yAxisCount / 2);
+    const rightColumns = Math.floor(yAxisCount / 2);
+
+    const grid = this.asObject(option['grid']) || {};
+    grid['containLabel'] = true;
+    grid['left'] = `${Math.min(28, 8 + (leftColumns - 1) * 7)}%`;
+    grid['right'] = `${Math.min(28, 8 + (rightColumns - 1) * 7)}%`;
+    option['grid'] = grid;
   }
 
   private applyChartTypeTransform(option: Record<string, unknown>): void {
@@ -1891,32 +1940,6 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     return null;
-  }
-
-  private compareRawValues(left: string | null | undefined, right: string | null | undefined, direction: 'asc' | 'desc'): number {
-    const normalizedLeft = left ?? '';
-    const normalizedRight = right ?? '';
-
-    const leftNumber = Number(normalizedLeft);
-    const rightNumber = Number(normalizedRight);
-    if (!Number.isNaN(leftNumber) && !Number.isNaN(rightNumber)) {
-      const numericCompare = leftNumber - rightNumber;
-      return direction === 'asc' ? numericCompare : -numericCompare;
-    }
-
-    const leftDate = Date.parse(normalizedLeft);
-    const rightDate = Date.parse(normalizedRight);
-    if (!Number.isNaN(leftDate) && !Number.isNaN(rightDate)) {
-      const dateCompare = leftDate - rightDate;
-      return direction === 'asc' ? dateCompare : -dateCompare;
-    }
-
-    const textCompare = normalizedLeft.localeCompare(normalizedRight, undefined, {
-      sensitivity: 'base',
-      numeric: true
-    });
-
-    return direction === 'asc' ? textCompare : -textCompare;
   }
 
   private tryParsePercentage(raw: string | null): number | null {

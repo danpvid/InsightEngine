@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using CsvHelper;
 using CsvHelper.Configuration;
+using DuckDB.NET.Data;
 using System.Globalization;
 
 namespace InsightEngine.API.Controllers.V1;
@@ -280,11 +281,16 @@ public class DataSetController : BaseController
 
     [HttpGet("{id:guid}/rows")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetRawRows(
         Guid id,
-        [FromQuery] int? maxRows = null)
+        [FromQuery] int? page = null,
+        [FromQuery] int? pageSize = null,
+        [FromQuery] string[]? sort = null,
+        [FromQuery] string[]? filters = null,
+        [FromQuery] string? search = null)
     {
         var csvPath = _fileStorageService.GetFullPath($"{id}.csv");
         if (!System.IO.File.Exists(csvPath))
@@ -296,24 +302,13 @@ public class DataSetController : BaseController
             });
         }
 
-        var effectiveMaxRows = Math.Clamp(maxRows ?? 50000, 1, 200000);
-        var rows = new List<Dictionary<string, string?>>();
-        string[] columns = Array.Empty<string>();
-        var rowCountTotal = 0;
+        var effectivePage = Math.Max(page ?? 1, 1);
+        var effectivePageSize = Math.Clamp(pageSize ?? 100, 1, 1000);
 
         try
         {
-            await using var stream = System.IO.File.OpenRead(csvPath);
-            using var reader = new StreamReader(stream);
-            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-            {
-                BadDataFound = null,
-                MissingFieldFound = null,
-                HeaderValidated = null
-            };
-            using var csv = new CsvReader(reader, config);
-
-            if (!await csv.ReadAsync())
+            var columns = await ReadCsvHeadersAsync(csvPath);
+            if (columns.Length == 0)
             {
                 return Ok(new
                 {
@@ -321,34 +316,102 @@ public class DataSetController : BaseController
                     data = new
                     {
                         datasetId = id,
-                        columns = Array.Empty<string>(),
+                        columns,
                         rowCountTotal = 0,
                         rowCountReturned = 0,
+                        page = effectivePage,
+                        pageSize = effectivePageSize,
+                        totalPages = 0,
                         truncated = false,
-                        rows
+                        rows = Array.Empty<Dictionary<string, string?>>()
                     }
                 });
             }
 
-            csv.ReadHeader();
-            columns = csv.HeaderRecord ?? Array.Empty<string>();
+            var columnLookup = columns
+                .ToDictionary(c => c, c => c, StringComparer.OrdinalIgnoreCase);
 
-            while (await csv.ReadAsync())
+            var errors = new List<string>();
+            var rawFilters = ParseFilters(filters, errors);
+            var parsedFilters = new List<ChartFilter>();
+            foreach (var filter in rawFilters)
             {
-                rowCountTotal++;
-                if (rows.Count >= effectiveMaxRows)
+                if (!columnLookup.ContainsKey(filter.Column))
                 {
+                    errors.Add($"Invalid filter column '{filter.Column}'.");
                     continue;
                 }
 
-                var row = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-                foreach (var column in columns)
+                parsedFilters.Add(new ChartFilter
                 {
-                    row[column] = csv.GetField(column);
-                }
-
-                rows.Add(row);
+                    Column = columnLookup[filter.Column],
+                    Operator = filter.Operator,
+                    Values = filter.Values
+                });
             }
+
+            var sortRules = ParseRawSort(sort, columnLookup, errors);
+            if (errors.Count > 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    errors
+                });
+            }
+
+            var escapedPath = csvPath.Replace("'", "''");
+            var whereClause = BuildRawRowsWhereClause(parsedFilters, search, columns);
+            var orderClause = BuildRawRowsOrderClause(sortRules, columns);
+            var offset = (effectivePage - 1) * effectivePageSize;
+            var selectColumns = string.Join(", ", columns.Select(c =>
+                $"CAST({EscapeIdentifier(c)} AS VARCHAR) AS {EscapeIdentifier(c)}"));
+
+            var countSql = $@"
+SELECT COUNT(*)
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause};
+";
+
+            var dataSql = $@"
+SELECT {selectColumns}
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause}
+{orderClause}
+LIMIT {effectivePageSize}
+OFFSET {offset};
+";
+
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            connection.Open();
+
+            long rowCountTotal;
+            using (var countCommand = connection.CreateCommand())
+            {
+                countCommand.CommandText = countSql;
+                var countResult = countCommand.ExecuteScalar();
+                rowCountTotal = Convert.ToInt64(countResult ?? 0);
+            }
+
+            var rows = new List<Dictionary<string, string?>>();
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = dataSql;
+                using var reader = command.ExecuteReader();
+
+                while (reader.Read())
+                {
+                    var row = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+                    for (var i = 0; i < columns.Length; i++)
+                    {
+                        row[columns[i]] = reader.IsDBNull(i) ? null : reader.GetValue(i)?.ToString();
+                    }
+
+                    rows.Add(row);
+                }
+            }
+
+            var totalPages = rowCountTotal == 0
+                ? 0
+                : (int)Math.Ceiling(rowCountTotal / (double)effectivePageSize);
 
             return Ok(new
             {
@@ -359,7 +422,10 @@ public class DataSetController : BaseController
                     columns,
                     rowCountTotal,
                     rowCountReturned = rows.Count,
-                    truncated = rowCountTotal > rows.Count,
+                    page = effectivePage,
+                    pageSize = effectivePageSize,
+                    totalPages,
+                    truncated = (offset + rows.Count) < rowCountTotal,
                     rows
                 }
             });
@@ -650,8 +716,224 @@ public class DataSetController : BaseController
         return parsed;
     }
 
+    private static List<RawSortRule> ParseRawSort(
+        string[]? sort,
+        IReadOnlyDictionary<string, string> columnLookup,
+        List<string> errors)
+    {
+        var result = new List<RawSortRule>();
+        if (sort == null || sort.Length == 0)
+        {
+            return result;
+        }
+
+        foreach (var raw in sort.Take(3))
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            var parts = raw.Split('|', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 1)
+            {
+                continue;
+            }
+
+            var column = parts[0].Trim();
+            if (!columnLookup.TryGetValue(column, out var resolvedColumn))
+            {
+                errors.Add($"Invalid sort column '{column}'.");
+                continue;
+            }
+
+            var directionRaw = parts.Length > 1 ? parts[1].Trim() : "asc";
+            var descending = string.Equals(directionRaw, "desc", StringComparison.OrdinalIgnoreCase);
+            if (!descending && !string.Equals(directionRaw, "asc", StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add($"Invalid sort direction '{directionRaw}' for column '{column}'.");
+                continue;
+            }
+
+            result.Add(new RawSortRule(resolvedColumn, descending));
+        }
+
+        return result;
+    }
+
+    private static string BuildRawRowsWhereClause(
+        IReadOnlyCollection<ChartFilter> filters,
+        string? search,
+        IReadOnlyCollection<string> columns)
+    {
+        var expressions = new List<string>();
+
+        foreach (var filter in filters)
+        {
+            var expression = BuildRawFilterExpression(filter);
+            if (!string.IsNullOrWhiteSpace(expression))
+            {
+                expressions.Add(expression);
+            }
+        }
+
+        var trimmedSearch = search?.Trim();
+        if (!string.IsNullOrWhiteSpace(trimmedSearch) && columns.Count > 0)
+        {
+            var searchLiteral = ToSqlLiteral($"%{trimmedSearch}%");
+            var searchExpressions = columns
+                .Select(column => $"CAST({EscapeIdentifier(column)} AS VARCHAR) ILIKE {searchLiteral}")
+                .ToList();
+
+            expressions.Add($"({string.Join(" OR ", searchExpressions)})");
+        }
+
+        return expressions.Count > 0
+            ? $"\nWHERE {string.Join(" AND ", expressions)}"
+            : string.Empty;
+    }
+
+    private static string BuildRawRowsOrderClause(
+        IReadOnlyCollection<RawSortRule> sortRules,
+        IReadOnlyList<string> columns)
+    {
+        if (sortRules.Count == 0)
+        {
+            if (columns.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return $"\nORDER BY {EscapeIdentifier(columns[0])} ASC";
+        }
+
+        var segments = sortRules
+            .Select(rule => $"{EscapeIdentifier(rule.Column)} {(rule.Descending ? "DESC" : "ASC")}")
+            .ToList();
+
+        return $"\nORDER BY {string.Join(", ", segments)}";
+    }
+
+    private static string BuildRawFilterExpression(ChartFilter filter)
+    {
+        var columnExpr = $"CAST({EscapeIdentifier(filter.Column)} AS VARCHAR)";
+        return filter.Operator switch
+        {
+            FilterOperator.Eq => BuildRawComparisonExpression(columnExpr, "=", filter.Values),
+            FilterOperator.NotEq => BuildRawComparisonExpression(columnExpr, "<>", filter.Values),
+            FilterOperator.In => BuildRawInExpression(columnExpr, filter.Values),
+            FilterOperator.Between => BuildRawBetweenExpression(columnExpr, filter.Values),
+            FilterOperator.Contains => $"{columnExpr} ILIKE {ToSqlLiteral($"%{filter.Values[0]}%")}",
+            _ => string.Empty
+        };
+    }
+
+    private static string BuildRawComparisonExpression(string columnExpr, string op, IReadOnlyList<string> values)
+    {
+        if (values.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        if (TryParseNumericValues(values, out var numericValues))
+        {
+            var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
+            return $"{numericExpr} {op} {numericValues[0].ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        return $"{columnExpr} {op} {ToSqlLiteral(values[0])}";
+    }
+
+    private static string BuildRawInExpression(string columnExpr, IReadOnlyList<string> values)
+    {
+        if (values.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        if (TryParseNumericValues(values, out var numericValues))
+        {
+            var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
+            var numericList = string.Join(", ", numericValues.Select(v => v.ToString(CultureInfo.InvariantCulture)));
+            return $"{numericExpr} IN ({numericList})";
+        }
+
+        var literalList = string.Join(", ", values.Select(ToSqlLiteral));
+        return $"{columnExpr} IN ({literalList})";
+    }
+
+    private static string BuildRawBetweenExpression(string columnExpr, IReadOnlyList<string> values)
+    {
+        if (values.Count < 2)
+        {
+            return string.Empty;
+        }
+
+        if (TryParseNumericValues(values, out var numericValues) && numericValues.Count >= 2)
+        {
+            var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
+            return $"{numericExpr} BETWEEN {numericValues[0].ToString(CultureInfo.InvariantCulture)} AND {numericValues[1].ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        return $"{columnExpr} BETWEEN {ToSqlLiteral(values[0])} AND {ToSqlLiteral(values[1])}";
+    }
+
+    private static bool TryParseNumericValues(IReadOnlyList<string> values, out List<double> numbers)
+    {
+        numbers = new List<double>();
+
+        foreach (var value in values)
+        {
+            var normalized = value.Replace(",", ".", StringComparison.Ordinal);
+            if (!double.TryParse(normalized, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+            {
+                numbers.Clear();
+                return false;
+            }
+
+            numbers.Add(parsed);
+        }
+
+        return numbers.Count > 0;
+    }
+
+    private static async Task<string[]> ReadCsvHeadersAsync(string csvPath)
+    {
+        await using var stream = System.IO.File.OpenRead(csvPath);
+        using var reader = new StreamReader(stream);
+        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            BadDataFound = null,
+            MissingFieldFound = null,
+            HeaderValidated = null
+        };
+        using var csv = new CsvReader(reader, config);
+
+        if (!await csv.ReadAsync())
+        {
+            return Array.Empty<string>();
+        }
+
+        csv.ReadHeader();
+        return csv.HeaderRecord ?? Array.Empty<string>();
+    }
+
+    private static string EscapeIdentifier(string identifier)
+    {
+        var escaped = identifier.Replace("\"", "\"\"", StringComparison.Ordinal);
+        return $"\"{escaped}\"";
+    }
+
+    private static string ToSqlLiteral(string value)
+    {
+        var escaped = value.Replace("'", "''", StringComparison.Ordinal);
+        return $"'{escaped}'";
+    }
+
     private static bool TryParseFilterOperator(string input, out FilterOperator op)
     {
         return Enum.TryParse(input, true, out op);
     }
+
+    private readonly record struct RawSortRule(string Column, bool Descending);
 }

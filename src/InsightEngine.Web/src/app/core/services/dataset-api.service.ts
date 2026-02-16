@@ -88,10 +88,35 @@ export class DatasetApiService {
     );
   }
 
-  getRawRows(datasetId: string, maxRows: number = 50000): Observable<ApiResponse<RawDatasetRowsResponse>> {
-    const safeMaxRows = Math.max(1, Math.min(200000, maxRows));
+  getRawRows(
+    datasetId: string,
+    options?: {
+      page?: number;
+      pageSize?: number;
+      sort?: string[];
+      search?: string;
+      filters?: string[];
+    }): Observable<ApiResponse<RawDatasetRowsResponse>> {
+    const page = Math.max(1, options?.page ?? 1);
+    const pageSize = Math.max(1, Math.min(1000, options?.pageSize ?? 100));
+    const params = new URLSearchParams();
+    params.append('page', page.toString());
+    params.append('pageSize', pageSize.toString());
+
+    if (options?.search) {
+      params.append('search', options.search);
+    }
+
+    if (options?.sort && options.sort.length > 0) {
+      options.sort.forEach(sort => params.append('sort', sort));
+    }
+
+    if (options?.filters && options.filters.length > 0) {
+      options.filters.forEach(filter => params.append('filters', filter));
+    }
+
     return this.http.get<ApiResponse<RawDatasetRowsResponse>>(
-      `${this.baseUrl}/api/v1/datasets/${datasetId}/rows?maxRows=${safeMaxRows}`
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/rows?${params.toString()}`
     );
   }
 

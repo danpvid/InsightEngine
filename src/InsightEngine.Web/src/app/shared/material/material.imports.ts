@@ -16,6 +16,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatPaginatorModule } from '@angular/material/paginator';
+import { MatSortModule } from '@angular/material/sort';
 
 export const MATERIAL_MODULES = [
   MatToolbarModule,
@@ -35,5 +37,7 @@ export const MATERIAL_MODULES = [
   MatTooltipModule,
   MatSidenavModule,
   MatTabsModule,
-  MatSlideToggleModule
+  MatSlideToggleModule,
+  MatPaginatorModule,
+  MatSortModule
 ];
