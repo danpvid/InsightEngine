@@ -14,6 +14,9 @@ public class InsightEngineSettings
     public int QueryResultMaxRows { get; set; } = 1000;
     public int CacheTtlSeconds { get; set; } = 300;
     public int DefaultTimeoutSeconds { get; set; } = 30;
+    public int RawTopValuesLimit { get; set; } = 12;
+    public int RawTopRangesLimit { get; set; } = 8;
+    public int RawRangeBinCount { get; set; } = 8;
     public int RetentionDays { get; set; } = 30;
     public int CleanupIntervalMinutes { get; set; } = 60;
 }

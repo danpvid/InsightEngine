@@ -227,16 +227,43 @@ public class ScenarioSimulationService : IScenarioSimulationService
 
             if (filter.Operator == FilterOperator.Between)
             {
-                if (filter.Values.Count != 2)
+                if (filter.Values.Count < 2 || filter.Values.Count % 2 != 0)
                 {
-                    errors.Add($"Invalid filter '{filter.Column}': between requires exactly 2 values.");
+                    errors.Add($"Invalid filter '{filter.Column}': between requires an even number of values (2, 4, 6...).");
                     continue;
                 }
+            }
 
-                if (!double.TryParse(filter.Values[0], NumberStyles.Any, CultureInfo.InvariantCulture, out _) ||
-                    !double.TryParse(filter.Values[1], NumberStyles.Any, CultureInfo.InvariantCulture, out _))
+            if ((filter.Operator == FilterOperator.Eq ||
+                 filter.Operator == FilterOperator.NotEq ||
+                 filter.Operator == FilterOperator.Gt ||
+                 filter.Operator == FilterOperator.Gte ||
+                 filter.Operator == FilterOperator.Lt ||
+                 filter.Operator == FilterOperator.Lte ||
+                 filter.Operator == FilterOperator.Contains) && filter.Values.Count != 1)
+            {
+                errors.Add($"Invalid filter '{filter.Column}': operator '{filter.Operator}' expects a single value.");
+                continue;
+            }
+
+            if ((filter.Operator == FilterOperator.Gt ||
+                 filter.Operator == FilterOperator.Gte ||
+                 filter.Operator == FilterOperator.Lt ||
+                 filter.Operator == FilterOperator.Lte) &&
+                !double.TryParse(filter.Values[0], NumberStyles.Any, CultureInfo.InvariantCulture, out _) &&
+                !DateTime.TryParse(filter.Values[0], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _))
+            {
+                errors.Add($"Invalid filter '{filter.Column}': operator '{filter.Operator}' expects a numeric or date value.");
+                continue;
+            }
+
+            if (filter.Operator == FilterOperator.Between)
+            {
+                var hasNumeric = TryParseNumericValues(filter.Values, out _);
+                var hasDate = TryParseDateValues(filter.Values, out _);
+                if (!hasNumeric && !hasDate)
                 {
-                    errors.Add($"Invalid filter '{filter.Column}': between values must be numeric.");
+                    errors.Add($"Invalid filter '{filter.Column}': between values must be numeric or date.");
                     continue;
                 }
             }
@@ -245,7 +272,8 @@ public class ScenarioSimulationService : IScenarioSimulationService
             {
                 Column = column.Name,
                 Operator = filter.Operator,
-                Values = filter.Values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToList()
+                Values = filter.Values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToList(),
+                LogicalOperator = filter.LogicalOperator
             });
         }
 
@@ -364,8 +392,8 @@ public class ScenarioSimulationService : IScenarioSimulationService
         var baseMetricExpression = "metric_value";
         var simulatedMetricExpression = baseMetricExpression;
 
-        var baselinePredicates = BuildFilterExpressions(request.Filters);
-        var scenarioPredicates = new List<string>(baselinePredicates);
+        var baselineFilterExpression = BuildCombinedFilterExpression(request.Filters, BuildFilterExpression);
+        var scenarioPredicates = new List<string>();
 
         foreach (var operation in request.Operations)
         {
@@ -389,8 +417,18 @@ public class ScenarioSimulationService : IScenarioSimulationService
             }
         }
 
-        var baselineWhere = baselinePredicates.Count == 0 ? string.Empty : " AND " + string.Join(" AND ", baselinePredicates);
-        var scenarioWhere = scenarioPredicates.Count == 0 ? string.Empty : " AND " + string.Join(" AND ", scenarioPredicates);
+        var baselineWhere = string.IsNullOrWhiteSpace(baselineFilterExpression)
+            ? string.Empty
+            : $" AND {baselineFilterExpression}";
+
+        if (!string.IsNullOrWhiteSpace(baselineFilterExpression))
+        {
+            scenarioPredicates.Insert(0, baselineFilterExpression);
+        }
+
+        var scenarioWhere = scenarioPredicates.Count == 0
+            ? string.Empty
+            : " AND " + string.Join(" AND ", scenarioPredicates.Select(predicate => $"({predicate})"));
 
         return $@"
 WITH source AS (
@@ -452,36 +490,188 @@ LIMIT {maxRows};
         };
     }
 
-    private static List<string> BuildFilterExpressions(IReadOnlyCollection<ChartFilter> filters)
+    private static string BuildFilterExpression(ChartFilter filter)
     {
-        var expressions = new List<string>();
+        if (filter.Values == null || filter.Values.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var escapedColumn = EscapeIdentifier(filter.Column);
+        var columnExpr = $"CAST(\"{escapedColumn}\" AS VARCHAR)";
+
+        return filter.Operator switch
+        {
+            FilterOperator.Eq => BuildComparisonExpression(columnExpr, "=", filter.Values),
+            FilterOperator.NotEq => BuildComparisonExpression(columnExpr, "<>", filter.Values),
+            FilterOperator.Gt => BuildComparisonExpression(columnExpr, ">", filter.Values),
+            FilterOperator.Gte => BuildComparisonExpression(columnExpr, ">=", filter.Values),
+            FilterOperator.Lt => BuildComparisonExpression(columnExpr, "<", filter.Values),
+            FilterOperator.Lte => BuildComparisonExpression(columnExpr, "<=", filter.Values),
+            FilterOperator.Contains => $"{columnExpr} ILIKE '%{EscapeSqlLiteral(filter.Values[0])}%'",
+            FilterOperator.In => $"{columnExpr} IN ({string.Join(", ", filter.Values.Select(v => $"'{EscapeSqlLiteral(v)}'"))})",
+            FilterOperator.Between => BuildBetweenExpression(columnExpr, filter.Values),
+            _ => string.Empty
+        };
+    }
+
+    private static string BuildComparisonExpression(string columnExpr, string op, IReadOnlyList<string> values)
+    {
+        if (values.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        if (TryParseNumericValues(values, out var numbers))
+        {
+            var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
+            return $"{numericExpr} {op} {numbers[0].ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        if (TryParseDateValues(values, out var dates))
+        {
+            var parsedDateExpr = BuildParsedDateExpression(columnExpr);
+            var timestamp = dates[0].ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            return $"{parsedDateExpr} {op} TIMESTAMP '{timestamp}'";
+        }
+
+        return $"{columnExpr} {op} '{EscapeSqlLiteral(values[0])}'";
+    }
+
+    private static string BuildBetweenExpression(string columnExpr, IReadOnlyList<string> values)
+    {
+        if (values.Count < 2)
+        {
+            return string.Empty;
+        }
+
+        if (TryParseNumericValues(values, out var numbers))
+        {
+            var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
+            var ranges = BuildRangeExpressions(
+                numbers,
+                (left, right) => $"{numericExpr} BETWEEN {left.ToString(CultureInfo.InvariantCulture)} AND {right.ToString(CultureInfo.InvariantCulture)}");
+
+            return ranges.Count == 0
+                ? string.Empty
+                : ranges.Count == 1
+                    ? ranges[0]
+                    : $"({string.Join(" OR ", ranges)})";
+        }
+
+        if (TryParseDateValues(values, out var dates))
+        {
+            var parsedDateExpr = BuildParsedDateExpression(columnExpr);
+            var ranges = BuildRangeExpressions(
+                dates,
+                (left, right) =>
+                    $"{parsedDateExpr} BETWEEN TIMESTAMP '{left:yyyy-MM-dd HH:mm:ss}' AND TIMESTAMP '{right:yyyy-MM-dd HH:mm:ss}'");
+
+            return ranges.Count == 0
+                ? string.Empty
+                : ranges.Count == 1
+                    ? ranges[0]
+                    : $"({string.Join(" OR ", ranges)})";
+        }
+
+        var textRanges = BuildRangeExpressions(
+            values,
+            (left, right) => $"{columnExpr} BETWEEN '{EscapeSqlLiteral(left)}' AND '{EscapeSqlLiteral(right)}'");
+
+        return textRanges.Count == 0
+            ? string.Empty
+            : textRanges.Count == 1
+                ? textRanges[0]
+                : $"({string.Join(" OR ", textRanges)})";
+    }
+
+    private static string BuildCombinedFilterExpression(
+        IReadOnlyCollection<ChartFilter> filters,
+        Func<ChartFilter, string> expressionBuilder)
+    {
+        string? combined = null;
+
         foreach (var filter in filters)
         {
-            if (filter.Values == null || filter.Values.Count == 0)
+            var expression = expressionBuilder(filter);
+            if (string.IsNullOrWhiteSpace(expression))
             {
                 continue;
             }
 
-            var escapedColumn = EscapeIdentifier(filter.Column);
-            var escapedValues = filter.Values.Select(EscapeSqlLiteral).ToList();
-
-            var expression = filter.Operator switch
+            if (combined == null)
             {
-                FilterOperator.Eq => $"CAST(\"{escapedColumn}\" AS VARCHAR) = '{escapedValues[0]}'",
-                FilterOperator.NotEq => $"CAST(\"{escapedColumn}\" AS VARCHAR) <> '{escapedValues[0]}'",
-                FilterOperator.Contains => $"CAST(\"{escapedColumn}\" AS VARCHAR) ILIKE '%{escapedValues[0]}%'",
-                FilterOperator.In => $"CAST(\"{escapedColumn}\" AS VARCHAR) IN ({string.Join(", ", escapedValues.Select(v => $"'{v}'"))})",
-                FilterOperator.Between => $"TRY_CAST(REPLACE(CAST(\"{escapedColumn}\" AS VARCHAR), ',', '') AS DOUBLE) BETWEEN {ToInvariant(filter.Values[0])} AND {ToInvariant(filter.Values[1])}",
-                _ => string.Empty
-            };
-
-            if (!string.IsNullOrWhiteSpace(expression))
-            {
-                expressions.Add(expression);
+                combined = $"({expression})";
+                continue;
             }
+
+            var logicalOperator = filter.LogicalOperator == FilterLogicalOperator.Or ? "OR" : "AND";
+            combined = $"({combined} {logicalOperator} ({expression}))";
+        }
+
+        return combined ?? string.Empty;
+    }
+
+    private static bool TryParseNumericValues(IReadOnlyList<string> values, out List<double> parsedValues)
+    {
+        parsedValues = new List<double>();
+        foreach (var value in values)
+        {
+            if (!double.TryParse(value.Replace(",", "."), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+            {
+                parsedValues.Clear();
+                return false;
+            }
+
+            parsedValues.Add(parsed);
+        }
+
+        return parsedValues.Count > 0;
+    }
+
+    private static bool TryParseDateValues(IReadOnlyList<string> values, out List<DateTime> parsedDates)
+    {
+        parsedDates = new List<DateTime>();
+        foreach (var value in values)
+        {
+            if (!DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed) &&
+                !DateTime.TryParse(value, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal, out parsed))
+            {
+                parsedDates.Clear();
+                return false;
+            }
+
+            parsedDates.Add(parsed);
+        }
+
+        return parsedDates.Count > 0;
+    }
+
+    private static List<string> BuildRangeExpressions<T>(IReadOnlyList<T> values, Func<T, T, string> rangeBuilder)
+    {
+        var expressions = new List<string>();
+        if (values.Count < 2)
+        {
+            return expressions;
+        }
+
+        for (var index = 0; index + 1 < values.Count; index += 2)
+        {
+            expressions.Add(rangeBuilder(values[index], values[index + 1]));
         }
 
         return expressions;
+    }
+
+    private static string BuildParsedDateExpression(string columnExpr)
+    {
+        return $@"COALESCE(
+            TRY_CAST({columnExpr} AS TIMESTAMP),
+            TRY_STRPTIME({columnExpr}, '%Y%m%d'),
+            TRY_STRPTIME({columnExpr}, '%d/%m/%Y'),
+            TRY_STRPTIME({columnExpr}, '%Y-%m-%d'),
+            TRY_STRPTIME({columnExpr}, '%m/%d/%Y')
+        )";
     }
 
     private static string BuildNotInPredicate(string column, IReadOnlyCollection<string> values)

@@ -867,17 +867,8 @@ ORDER BY 1;
             return string.Empty;
         }
 
-        var clauses = new List<string>();
-        foreach (var filter in filters)
-        {
-            var clause = BuildFilterExpression(filter);
-            if (!string.IsNullOrWhiteSpace(clause))
-            {
-                clauses.Add(clause);
-            }
-        }
-
-        return clauses.Count == 0 ? string.Empty : " AND " + string.Join(" AND ", clauses);
+        var combined = BuildCombinedFilterExpression(filters, BuildFilterExpression);
+        return string.IsNullOrWhiteSpace(combined) ? string.Empty : $" AND {combined}";
     }
 
     private string BuildFilterExpression(ChartFilter filter)
@@ -898,6 +889,14 @@ ORDER BY 1;
                 return BuildComparison(columnExpr, "=", filter.Values);
             case FilterOperator.NotEq:
                 return BuildComparison(columnExpr, "<>", filter.Values);
+            case FilterOperator.Gt:
+                return BuildComparison(columnExpr, ">", filter.Values);
+            case FilterOperator.Gte:
+                return BuildComparison(columnExpr, ">=", filter.Values);
+            case FilterOperator.Lt:
+                return BuildComparison(columnExpr, "<", filter.Values);
+            case FilterOperator.Lte:
+                return BuildComparison(columnExpr, "<=", filter.Values);
             case FilterOperator.In:
                 return BuildInClause(columnExpr, filter.Values);
             case FilterOperator.Between:
@@ -913,6 +912,13 @@ ORDER BY 1;
         {
             var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
             return $"{numericExpr} {op} {numbers[0].ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        if (TryParseDateList(values, out var dates))
+        {
+            var parsedDateExpr = BuildParsedDateExpression(columnExpr);
+            var timestamp = dates[0].ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            return $"{parsedDateExpr} {op} TIMESTAMP {ToSqlLiteral(timestamp)}";
         }
 
         return $"{columnExpr} {op} {ToSqlLiteral(values[0])}";
@@ -941,10 +947,41 @@ ORDER BY 1;
         if (TryParseNumericList(values, out var numbers) && numbers.Count >= 2)
         {
             var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
-            return $"{numericExpr} BETWEEN {numbers[0].ToString(CultureInfo.InvariantCulture)} AND {numbers[1].ToString(CultureInfo.InvariantCulture)}";
+            var ranges = BuildRangeExpressions(
+                numbers,
+                (left, right) => $"{numericExpr} BETWEEN {left.ToString(CultureInfo.InvariantCulture)} AND {right.ToString(CultureInfo.InvariantCulture)}");
+
+            return ranges.Count == 0
+                ? string.Empty
+                : ranges.Count == 1
+                    ? ranges[0]
+                    : $"({string.Join(" OR ", ranges)})";
         }
 
-        return $"{columnExpr} BETWEEN {ToSqlLiteral(values[0])} AND {ToSqlLiteral(values[1])}";
+        if (TryParseDateList(values, out var dates) && dates.Count >= 2)
+        {
+            var parsedDateExpr = BuildParsedDateExpression(columnExpr);
+            var ranges = BuildRangeExpressions(
+                dates,
+                (left, right) =>
+                    $"{parsedDateExpr} BETWEEN TIMESTAMP {ToSqlLiteral(left.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))} AND TIMESTAMP {ToSqlLiteral(right.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))}");
+
+            return ranges.Count == 0
+                ? string.Empty
+                : ranges.Count == 1
+                    ? ranges[0]
+                    : $"({string.Join(" OR ", ranges)})";
+        }
+
+        var textRanges = BuildRangeExpressions(
+            values,
+            (left, right) => $"{columnExpr} BETWEEN {ToSqlLiteral(left)} AND {ToSqlLiteral(right)}");
+
+        return textRanges.Count == 0
+            ? string.Empty
+            : textRanges.Count == 1
+                ? textRanges[0]
+                : $"({string.Join(" OR ", textRanges)})";
     }
 
     private static bool TryParseNumericList(List<string> values, out List<double> numbers)
@@ -964,6 +1001,79 @@ ORDER BY 1;
         }
 
         return numbers.Count > 0;
+    }
+
+    private static bool TryParseDateList(IReadOnlyList<string> values, out List<DateTime> dates)
+    {
+        dates = new List<DateTime>();
+
+        foreach (var raw in values)
+        {
+            if (!DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed) &&
+                !DateTime.TryParse(raw, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal, out parsed))
+            {
+                dates.Clear();
+                return false;
+            }
+
+            dates.Add(parsed);
+        }
+
+        return dates.Count > 0;
+    }
+
+    private static List<string> BuildRangeExpressions<T>(IReadOnlyList<T> values, Func<T, T, string> rangeBuilder)
+    {
+        var expressions = new List<string>();
+        if (values.Count < 2)
+        {
+            return expressions;
+        }
+
+        for (var index = 0; index + 1 < values.Count; index += 2)
+        {
+            expressions.Add(rangeBuilder(values[index], values[index + 1]));
+        }
+
+        return expressions;
+    }
+
+    private static string BuildCombinedFilterExpression(
+        IReadOnlyCollection<ChartFilter> filters,
+        Func<ChartFilter, string> expressionBuilder)
+    {
+        string? combined = null;
+
+        foreach (var filter in filters)
+        {
+            var expression = expressionBuilder(filter);
+            if (string.IsNullOrWhiteSpace(expression))
+            {
+                continue;
+            }
+
+            if (combined == null)
+            {
+                combined = $"({expression})";
+                continue;
+            }
+
+            var logicalOperator = filter.LogicalOperator == FilterLogicalOperator.Or ? "OR" : "AND";
+            combined = $"({combined} {logicalOperator} ({expression}))";
+        }
+
+        return combined ?? string.Empty;
+    }
+
+    private static string BuildParsedDateExpression(string columnExpr)
+    {
+        return $@"COALESCE(
+            TRY_CAST({columnExpr} AS TIMESTAMP),
+            TRY_STRPTIME({columnExpr}, '%Y%m%d'),
+            TRY_STRPTIME({columnExpr}, '%d/%m/%Y'),
+            TRY_STRPTIME({columnExpr}, '%Y-%m-%d'),
+            TRY_STRPTIME({columnExpr}, '%m/%d/%Y')
+        )";
     }
 
     private static string ToSqlLiteral(string value)

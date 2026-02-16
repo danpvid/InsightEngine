@@ -10,4 +10,7 @@ public class RuntimeConfigResponse
     public int QueryResultMaxRows { get; set; }
     public int CacheTtlSeconds { get; set; }
     public int DefaultTimeoutSeconds { get; set; }
+    public int RawTopValuesLimit { get; set; }
+    public int RawTopRangesLimit { get; set; }
+    public int RawRangeBinCount { get; set; }
 }

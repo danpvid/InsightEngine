@@ -2,6 +2,7 @@ using InsightEngine.API.Models;
 using InsightEngine.Application.Services;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Core.Notifications;
+using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Settings;
@@ -32,6 +33,10 @@ public class DataSetController : BaseController
     private readonly ILogger<DataSetController> _logger;
     private readonly IWebHostEnvironment _environment;
     private readonly InsightEngineSettings _runtimeSettings;
+    private const int RawRangeDistinctThreshold = 20;
+    private int RawTopValuesLimit => Math.Clamp(_runtimeSettings.RawTopValuesLimit, 3, 50);
+    private int RawTopRangesLimit => Math.Clamp(_runtimeSettings.RawTopRangesLimit, 3, 20);
+    private int RawRangeBinCount => Math.Clamp(_runtimeSettings.RawRangeBinCount, 4, 20);
 
     public DataSetController(
         IDataSetApplicationService dataSetApplicationService,
@@ -258,7 +263,12 @@ public class DataSetController : BaseController
                         inferredType = c.InferredType.ToString(),
                         nullRate = Math.Round(c.NullRate, 4),
                         distinctCount = c.DistinctCount,
-                        topValues = c.TopValues
+                        topValues = c.TopValues,
+                        topValueStats = c.TopValueStats.Select(item => new
+                        {
+                            value = item.Value,
+                            count = item.Count
+                        })
                     })
                 }
             });
@@ -284,7 +294,8 @@ public class DataSetController : BaseController
         [FromQuery] int? pageSize = null,
         [FromQuery] string[]? sort = null,
         [FromQuery] string[]? filters = null,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] string? fieldStatsColumn = null)
     {
         var csvPath = _fileStorageService.GetFullPath($"{id}.csv");
         if (!System.IO.File.Exists(csvPath))
@@ -313,6 +324,7 @@ public class DataSetController : BaseController
                         pageSize = effectivePageSize,
                         totalPages = 0,
                         truncated = false,
+                        fieldStats = (object?)null,
                         rows = Array.Empty<Dictionary<string, string?>>()
                     }
                 });
@@ -397,6 +409,13 @@ OFFSET {offset};
                 }
             }
 
+            object? fieldStats = null;
+            var requestedField = ResolveRequestedField(fieldStatsColumn, columns);
+            if (!string.IsNullOrWhiteSpace(requestedField))
+            {
+                fieldStats = BuildRawFieldStats(connection, escapedPath, whereClause, requestedField!);
+            }
+
             var totalPages = rowCountTotal == 0
                 ? 0
                 : (int)Math.Ceiling(rowCountTotal / (double)effectivePageSize);
@@ -414,6 +433,7 @@ OFFSET {offset};
                     pageSize = effectivePageSize,
                     totalPages,
                     truncated = (offset + rows.Count) < rowCountTotal,
+                    fieldStats,
                     rows
                 }
             });
@@ -442,7 +462,10 @@ OFFSET {offset};
             HistogramBinsMax = _runtimeSettings.HistogramBinsMax,
             QueryResultMaxRows = _runtimeSettings.QueryResultMaxRows,
             CacheTtlSeconds = _runtimeSettings.CacheTtlSeconds,
-            DefaultTimeoutSeconds = _runtimeSettings.DefaultTimeoutSeconds
+            DefaultTimeoutSeconds = _runtimeSettings.DefaultTimeoutSeconds,
+            RawTopValuesLimit = RawTopValuesLimit,
+            RawTopRangesLimit = RawTopRangesLimit,
+            RawRangeBinCount = RawRangeBinCount
         };
 
         return Ok(new ApiResponse<RuntimeConfigResponse>(payload, traceId));
@@ -540,21 +563,96 @@ OFFSET {offset};
         [FromQuery] string? yColumn = null,
         [FromQuery] string? metricY = null,
         [FromQuery] string? groupBy = null,
-        [FromQuery] string[]? filters = null)
+        [FromQuery] string[]? filters = null,
+        [FromQuery] string? view = null,
+        [FromQuery] string? percentile = null,
+        [FromQuery] string? mode = null,
+        [FromQuery] string? percentileTarget = null)
     {
         var resolvedMetricY = !string.IsNullOrWhiteSpace(metricY) ? metricY : yColumn;
+        var resolvedView = ChartViewKind.Base;
+        var resolvedMode = PercentileMode.None;
+        PercentileKind? resolvedPercentile = null;
 
         _logger.LogInformation(
-            "GetChart called - DatasetId: {DatasetId}, RecommendationId: {RecommendationId}, Aggregation: {Aggregation}, TimeBin: {TimeBin}, YColumn: {YColumn}, GroupBy: {GroupBy}, Filters: {FilterCount}",
-            id, recommendationId, aggregation ?? "null", timeBin ?? "null", resolvedMetricY ?? "null", groupBy ?? "null", filters?.Length ?? 0);
+            "GetChart called - DatasetId: {DatasetId}, RecommendationId: {RecommendationId}, Aggregation: {Aggregation}, TimeBin: {TimeBin}, YColumn: {YColumn}, GroupBy: {GroupBy}, Filters: {FilterCount}, View: {View}, Percentile: {Percentile}, Mode: {Mode}",
+            id, recommendationId, aggregation ?? "null", timeBin ?? "null", resolvedMetricY ?? "null", groupBy ?? "null", filters?.Length ?? 0, view ?? "base", percentile ?? "null", mode ?? "none");
 
         try
         {
+            if (!string.IsNullOrWhiteSpace(view) && !Enum.TryParse(view, true, out resolvedView))
+            {
+                return ResponseResult(Result.Failure<object>(new List<string>
+                {
+                    $"Invalid view '{view}'. Allowed values: Base, Percentile."
+                }));
+            }
+
+            if (!string.IsNullOrWhiteSpace(mode) && !Enum.TryParse(mode, true, out resolvedMode))
+            {
+                return ResponseResult(Result.Failure<object>(new List<string>
+                {
+                    $"Invalid mode '{mode}'. Allowed values: None, Bucket, Overall."
+                }));
+            }
+
+            if (!string.IsNullOrWhiteSpace(percentile))
+            {
+                if (Enum.TryParse(percentile, true, out PercentileKind parsedPercentile))
+                {
+                    resolvedPercentile = parsedPercentile;
+                }
+                else
+                {
+                    return ResponseResult(Result.Failure<object>(new List<string>
+                    {
+                        $"Invalid percentile '{percentile}'. Allowed values: P5, P10, P90, P95."
+                    }));
+                }
+            }
+
+            if (resolvedView == ChartViewKind.Percentile && !resolvedPercentile.HasValue)
+            {
+                return ResponseResult(Result.Failure<object>(new List<string>
+                {
+                    "Percentile view requires percentile=P5|P10|P90|P95."
+                }));
+            }
+
             var filterErrors = new List<string>();
             var parsedFilters = ParseFilters(filters, filterErrors);
             if (filterErrors.Count > 0)
             {
                 return ResponseResult(Result.Failure<object>(filterErrors));
+            }
+
+            if (!string.IsNullOrWhiteSpace(groupBy))
+            {
+                const int maxAllowedGroups = 50;
+                var profileResult = await _dataSetApplicationService.GetProfileAsync(id);
+                if (!profileResult.IsSuccess || profileResult.Data == null)
+                {
+                    return ResponseResult(Result.Failure<object>(profileResult.Errors));
+                }
+
+                var groupByColumn = profileResult.Data.Columns
+                    .FirstOrDefault(column => string.Equals(column.Name, groupBy, StringComparison.OrdinalIgnoreCase));
+
+                if (groupByColumn == null)
+                {
+                    return ResponseResult(Result.Failure<object>(new List<string>
+                    {
+                        $"Invalid groupBy column '{groupBy}'."
+                    }));
+                }
+
+                if (groupByColumn.DistinctCount > maxAllowedGroups)
+                {
+                    return ResponseResult(Result.Failure<object>(new List<string>
+                    {
+                        $"Grouping by '{groupByColumn.Name}' is not allowed because it has {groupByColumn.DistinctCount} distinct groups. Maximum allowed is {maxAllowedGroups}."
+                    }));
+                }
             }
 
             var result = await _dataSetApplicationService.GetChartAsync(
@@ -564,7 +662,11 @@ OFFSET {offset};
                 timeBin,
                 resolvedMetricY,
                 groupBy,
-                parsedFilters);
+                parsedFilters,
+                resolvedView,
+                resolvedMode,
+                resolvedPercentile,
+                percentileTarget);
 
             if (!result.IsSuccess)
             {
@@ -588,7 +690,9 @@ OFFSET {offset};
                         .GetValueOrDefault("type")?.ToString() ?? "Line",
                     GeneratedAt = DateTime.UtcNow,
                     QueryHash = domainResponse.QueryHash,
-                    CacheHit = domainResponse.CacheHit
+                    CacheHit = domainResponse.CacheHit,
+                    Percentiles = domainResponse.Percentiles,
+                    View = domainResponse.View
                 },
                 DebugSql = _environment.IsDevelopment() ? domainResponse.ExecutionResult.GeneratedSql : null
             };
@@ -868,7 +972,7 @@ OFFSET {offset};
                 continue;
             }
 
-            var parts = raw.Split('|', 3, StringSplitOptions.None);
+            var parts = raw.Split('|', StringSplitOptions.None);
             if (parts.Length < 3)
             {
                 errors.Add($"Invalid filter format '{raw}'. Use column|operator|value.");
@@ -877,7 +981,16 @@ OFFSET {offset};
 
             var column = parts[0].Trim();
             var opRaw = parts[1].Trim();
-            var valueRaw = parts[2].Trim();
+            var logicalOperator = FilterLogicalOperator.And;
+            var valueParts = parts.Skip(2).ToList();
+            if (valueParts.Count > 1 &&
+                TryParseFilterLogicalOperator(valueParts[^1], out var parsedLogicalOperator))
+            {
+                logicalOperator = parsedLogicalOperator;
+                valueParts.RemoveAt(valueParts.Count - 1);
+            }
+
+            var valueRaw = string.Join("|", valueParts).Trim();
 
             if (string.IsNullOrWhiteSpace(column) || string.IsNullOrWhiteSpace(opRaw))
             {
@@ -903,9 +1016,21 @@ OFFSET {offset};
                 continue;
             }
 
-            if (op == FilterOperator.Between && values.Count != 2)
+            if (op == FilterOperator.Between)
             {
-                errors.Add($"Filter '{raw}' must provide exactly 2 values for 'between'.");
+                if (values.Count < 2 || values.Count % 2 != 0)
+                {
+                    errors.Add($"Filter '{raw}' must provide an even number of values (2, 4, 6...) for 'between'.");
+                    continue;
+                }
+            }
+
+            if ((op == FilterOperator.Gt ||
+                 op == FilterOperator.Gte ||
+                 op == FilterOperator.Lt ||
+                 op == FilterOperator.Lte) && values.Count != 1)
+            {
+                errors.Add($"Filter '{raw}' must provide a single value for '{opRaw}'.");
                 continue;
             }
 
@@ -925,7 +1050,8 @@ OFFSET {offset};
             {
                 Column = column,
                 Operator = op,
-                Values = values
+                Values = values,
+                LogicalOperator = logicalOperator
             });
         }
 
@@ -1016,6 +1142,301 @@ OFFSET {offset};
         return result;
     }
 
+    private static string? ResolveRequestedField(string? requestedField, IReadOnlyCollection<string> columns)
+    {
+        if (columns.Count == 0)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(requestedField))
+        {
+            return columns.FirstOrDefault();
+        }
+
+        return columns.FirstOrDefault(column =>
+            string.Equals(column, requestedField, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private object BuildRawFieldStats(
+        DuckDBConnection connection,
+        string escapedPath,
+        string whereClause,
+        string column)
+    {
+        var escapedColumn = EscapeIdentifier(column);
+        var columnExpr = $"CAST({escapedColumn} AS VARCHAR)";
+        var parsedDateExpr = BuildParsedDateExpression(columnExpr);
+
+        var summarySql = $@"
+SELECT
+    COUNT(*) AS total_count,
+    SUM(CASE WHEN COALESCE(TRIM({columnExpr}), '') = '' THEN 1 ELSE 0 END) AS null_count,
+    COUNT(DISTINCT CASE WHEN COALESCE(TRIM({columnExpr}), '') = '' THEN NULL ELSE {columnExpr} END) AS distinct_count,
+    SUM(CASE WHEN TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE) IS NOT NULL THEN 1 ELSE 0 END) AS numeric_count,
+    SUM(CASE WHEN {parsedDateExpr} IS NOT NULL THEN 1 ELSE 0 END) AS date_count
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause};
+";
+
+        long totalCount = 0;
+        long nullCount = 0;
+        long distinctCount = 0;
+        long numericCount = 0;
+        long dateCount = 0;
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = summarySql;
+            command.CommandTimeout = Math.Max(1, _runtimeSettings.DefaultTimeoutSeconds);
+            using var reader = command.ExecuteReader();
+            if (reader.Read())
+            {
+                totalCount = reader.IsDBNull(0) ? 0 : reader.GetInt64(0);
+                nullCount = reader.IsDBNull(1) ? 0 : reader.GetInt64(1);
+                distinctCount = reader.IsDBNull(2) ? 0 : reader.GetInt64(2);
+                numericCount = reader.IsDBNull(3) ? 0 : reader.GetInt64(3);
+                dateCount = reader.IsDBNull(4) ? 0 : reader.GetInt64(4);
+            }
+        }
+
+        var topValues = new List<RawDistinctStat>();
+        var topValuesSql = $@"
+SELECT
+    {columnExpr} AS value,
+    COUNT(*) AS frequency
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){AppendWherePredicate(whereClause, $"COALESCE(TRIM({columnExpr}), '') <> ''")}
+GROUP BY 1
+ORDER BY frequency DESC, value ASC
+LIMIT {RawTopValuesLimit};
+";
+
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = topValuesSql;
+            command.CommandTimeout = Math.Max(1, _runtimeSettings.DefaultTimeoutSeconds);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                topValues.Add(new RawDistinctStat(
+                    reader.IsDBNull(0) ? string.Empty : reader.GetValue(0)?.ToString() ?? string.Empty,
+                    reader.IsDBNull(1) ? 0 : Convert.ToInt64(reader.GetValue(1) ?? 0)));
+            }
+        }
+
+        var nonNullCount = Math.Max(totalCount - nullCount, 0);
+        var numericRatio = nonNullCount == 0 ? 0 : numericCount / (double)nonNullCount;
+        var dateRatio = nonNullCount == 0 ? 0 : dateCount / (double)nonNullCount;
+
+        var inferredType = "String";
+        if (numericRatio >= 0.9)
+        {
+            inferredType = "Number";
+        }
+        else if (dateRatio >= 0.9)
+        {
+            inferredType = "Date";
+        }
+        else if (distinctCount <= 50)
+        {
+            inferredType = "Category";
+        }
+
+        var topRanges = new List<RawRangeStat>();
+        if (distinctCount > RawRangeDistinctThreshold)
+        {
+            if (string.Equals(inferredType, "Number", StringComparison.OrdinalIgnoreCase))
+            {
+                topRanges = LoadNumericTopRanges(connection, escapedPath, whereClause, columnExpr);
+            }
+            else if (string.Equals(inferredType, "Date", StringComparison.OrdinalIgnoreCase))
+            {
+                topRanges = LoadDateTopRanges(connection, escapedPath, whereClause, columnExpr);
+            }
+        }
+
+        return new
+        {
+            column,
+            inferredType,
+            distinctCount,
+            nullCount,
+            topValues = topValues.Select(item => new
+            {
+                value = item.Value,
+                count = item.Count
+            }),
+            topRanges = topRanges.Select(item => new
+            {
+                label = item.Label,
+                from = item.From,
+                to = item.To,
+                count = item.Count
+            })
+        };
+    }
+
+    private List<RawRangeStat> LoadNumericTopRanges(
+        DuckDBConnection connection,
+        string escapedPath,
+        string whereClause,
+        string columnExpr)
+    {
+        var sql = $@"
+WITH values_cte AS (
+    SELECT TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE) AS numeric_value
+    FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause}
+),
+normalized AS (
+    SELECT numeric_value
+    FROM values_cte
+    WHERE numeric_value IS NOT NULL
+),
+stats AS (
+    SELECT
+        MIN(numeric_value) AS min_value,
+        MAX(numeric_value) AS max_value
+    FROM normalized
+),
+bucketed AS (
+    SELECT
+        CASE
+            WHEN stats.max_value = stats.min_value THEN 0
+            ELSE LEAST({RawRangeBinCount - 1},
+                GREATEST(0, CAST(FLOOR((normalized.numeric_value - stats.min_value) / NULLIF((stats.max_value - stats.min_value) / {RawRangeBinCount}, 0)) AS INTEGER)))
+        END AS bucket_index,
+        normalized.numeric_value
+    FROM normalized
+    CROSS JOIN stats
+)
+SELECT
+    bucket_index,
+    COUNT(*) AS frequency,
+    MIN(numeric_value) AS range_min,
+    MAX(numeric_value) AS range_max
+FROM bucketed
+GROUP BY bucket_index
+ORDER BY frequency DESC, bucket_index
+LIMIT {RawTopRangesLimit};
+";
+
+        var ranges = new List<RawRangeStat>();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = Math.Max(1, _runtimeSettings.DefaultTimeoutSeconds);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.IsDBNull(2) || reader.IsDBNull(3))
+            {
+                continue;
+            }
+
+            var min = Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture);
+            var max = Convert.ToDouble(reader.GetValue(3), CultureInfo.InvariantCulture);
+            var count = reader.IsDBNull(1) ? 0 : Convert.ToInt64(reader.GetValue(1) ?? 0);
+
+            var minText = min.ToString("0.####", CultureInfo.InvariantCulture);
+            var maxText = max.ToString("0.####", CultureInfo.InvariantCulture);
+            ranges.Add(new RawRangeStat(
+                $"{minText} - {maxText}",
+                minText,
+                maxText,
+                count));
+        }
+
+        return ranges;
+    }
+
+    private List<RawRangeStat> LoadDateTopRanges(
+        DuckDBConnection connection,
+        string escapedPath,
+        string whereClause,
+        string columnExpr)
+    {
+        var parsedDateExpr = BuildParsedDateExpression(columnExpr);
+        var sql = $@"
+WITH values_cte AS (
+    SELECT {parsedDateExpr} AS ts_value
+    FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause}
+),
+normalized AS (
+    SELECT ts_value, EXTRACT(EPOCH FROM ts_value) AS epoch_value
+    FROM values_cte
+    WHERE ts_value IS NOT NULL
+),
+stats AS (
+    SELECT
+        MIN(epoch_value) AS min_value,
+        MAX(epoch_value) AS max_value
+    FROM normalized
+),
+bucketed AS (
+    SELECT
+        CASE
+            WHEN stats.max_value = stats.min_value THEN 0
+            ELSE LEAST({RawRangeBinCount - 1},
+                GREATEST(0, CAST(FLOOR((normalized.epoch_value - stats.min_value) / NULLIF((stats.max_value - stats.min_value) / {RawRangeBinCount}, 0)) AS INTEGER)))
+        END AS bucket_index,
+        normalized.ts_value
+    FROM normalized
+    CROSS JOIN stats
+)
+SELECT
+    bucket_index,
+    COUNT(*) AS frequency,
+    MIN(ts_value) AS range_min,
+    MAX(ts_value) AS range_max
+FROM bucketed
+GROUP BY bucket_index
+ORDER BY frequency DESC, bucket_index
+LIMIT {RawTopRangesLimit};
+";
+
+        var ranges = new List<RawRangeStat>();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = Math.Max(1, _runtimeSettings.DefaultTimeoutSeconds);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.IsDBNull(2) || reader.IsDBNull(3))
+            {
+                continue;
+            }
+
+            var min = Convert.ToDateTime(reader.GetValue(2), CultureInfo.InvariantCulture);
+            var max = Convert.ToDateTime(reader.GetValue(3), CultureInfo.InvariantCulture);
+            var count = reader.IsDBNull(1) ? 0 : Convert.ToInt64(reader.GetValue(1) ?? 0);
+
+            var minText = min.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            var maxText = max.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            ranges.Add(new RawRangeStat(
+                $"{min:yyyy-MM-dd} - {max:yyyy-MM-dd}",
+                minText,
+                maxText,
+                count));
+        }
+
+        return ranges;
+    }
+
+    private static string AppendWherePredicate(string whereClause, string predicate)
+    {
+        if (string.IsNullOrWhiteSpace(predicate))
+        {
+            return whereClause;
+        }
+
+        if (string.IsNullOrWhiteSpace(whereClause))
+        {
+            return $"\nWHERE {predicate}";
+        }
+
+        return $"{whereClause} AND {predicate}";
+    }
+
     private static string BuildRawRowsWhereClause(
         IReadOnlyCollection<ChartFilter> filters,
         string? search,
@@ -1023,13 +1444,10 @@ OFFSET {offset};
     {
         var expressions = new List<string>();
 
-        foreach (var filter in filters)
+        var filterExpression = BuildCombinedFilterExpression(filters, BuildRawFilterExpression);
+        if (!string.IsNullOrWhiteSpace(filterExpression))
         {
-            var expression = BuildRawFilterExpression(filter);
-            if (!string.IsNullOrWhiteSpace(expression))
-            {
-                expressions.Add(expression);
-            }
+            expressions.Add(filterExpression);
         }
 
         var trimmedSearch = search?.Trim();
@@ -1076,6 +1494,10 @@ OFFSET {offset};
         {
             FilterOperator.Eq => BuildRawComparisonExpression(columnExpr, "=", filter.Values),
             FilterOperator.NotEq => BuildRawComparisonExpression(columnExpr, "<>", filter.Values),
+            FilterOperator.Gt => BuildRawComparisonExpression(columnExpr, ">", filter.Values),
+            FilterOperator.Gte => BuildRawComparisonExpression(columnExpr, ">=", filter.Values),
+            FilterOperator.Lt => BuildRawComparisonExpression(columnExpr, "<", filter.Values),
+            FilterOperator.Lte => BuildRawComparisonExpression(columnExpr, "<=", filter.Values),
             FilterOperator.In => BuildRawInExpression(columnExpr, filter.Values),
             FilterOperator.Between => BuildRawBetweenExpression(columnExpr, filter.Values),
             FilterOperator.Contains => $"{columnExpr} ILIKE {ToSqlLiteral($"%{filter.Values[0]}%")}",
@@ -1094,6 +1516,13 @@ OFFSET {offset};
         {
             var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
             return $"{numericExpr} {op} {numericValues[0].ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        if (TryParseDateValues(values, out var dateValues))
+        {
+            var parsedDateExpr = BuildParsedDateExpression(columnExpr);
+            var timestamp = dateValues[0].ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            return $"{parsedDateExpr} {op} TIMESTAMP {ToSqlLiteral(timestamp)}";
         }
 
         return $"{columnExpr} {op} {ToSqlLiteral(values[0])}";
@@ -1127,10 +1556,41 @@ OFFSET {offset};
         if (TryParseNumericValues(values, out var numericValues) && numericValues.Count >= 2)
         {
             var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
-            return $"{numericExpr} BETWEEN {numericValues[0].ToString(CultureInfo.InvariantCulture)} AND {numericValues[1].ToString(CultureInfo.InvariantCulture)}";
+            var ranges = BuildRangeExpressions(
+                numericValues,
+                (left, right) => $"{numericExpr} BETWEEN {left.ToString(CultureInfo.InvariantCulture)} AND {right.ToString(CultureInfo.InvariantCulture)}");
+
+            return ranges.Count == 0
+                ? string.Empty
+                : ranges.Count == 1
+                    ? ranges[0]
+                    : $"({string.Join(" OR ", ranges)})";
         }
 
-        return $"{columnExpr} BETWEEN {ToSqlLiteral(values[0])} AND {ToSqlLiteral(values[1])}";
+        if (TryParseDateValues(values, out var dateValues) && dateValues.Count >= 2)
+        {
+            var parsedDateExpr = BuildParsedDateExpression(columnExpr);
+            var ranges = BuildRangeExpressions(
+                dateValues,
+                (left, right) =>
+                    $"{parsedDateExpr} BETWEEN TIMESTAMP {ToSqlLiteral(left.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))} AND TIMESTAMP {ToSqlLiteral(right.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))}");
+
+            return ranges.Count == 0
+                ? string.Empty
+                : ranges.Count == 1
+                    ? ranges[0]
+                    : $"({string.Join(" OR ", ranges)})";
+        }
+
+        var textRanges = BuildRangeExpressions(
+            values,
+            (left, right) => $"{columnExpr} BETWEEN {ToSqlLiteral(left)} AND {ToSqlLiteral(right)}");
+
+        return textRanges.Count == 0
+            ? string.Empty
+            : textRanges.Count == 1
+                ? textRanges[0]
+                : $"({string.Join(" OR ", textRanges)})";
     }
 
     private static bool TryParseNumericValues(IReadOnlyList<string> values, out List<double> numbers)
@@ -1150,6 +1610,79 @@ OFFSET {offset};
         }
 
         return numbers.Count > 0;
+    }
+
+    private static bool TryParseDateValues(IReadOnlyList<string> values, out List<DateTime> parsedDates)
+    {
+        parsedDates = new List<DateTime>();
+
+        foreach (var value in values)
+        {
+            if (!DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed) &&
+                !DateTime.TryParse(value, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal, out parsed))
+            {
+                parsedDates.Clear();
+                return false;
+            }
+
+            parsedDates.Add(parsed);
+        }
+
+        return parsedDates.Count > 0;
+    }
+
+    private static List<string> BuildRangeExpressions<T>(IReadOnlyList<T> values, Func<T, T, string> rangeBuilder)
+    {
+        var expressions = new List<string>();
+        if (values.Count < 2)
+        {
+            return expressions;
+        }
+
+        for (var index = 0; index + 1 < values.Count; index += 2)
+        {
+            expressions.Add(rangeBuilder(values[index], values[index + 1]));
+        }
+
+        return expressions;
+    }
+
+    private static string BuildCombinedFilterExpression(
+        IReadOnlyCollection<ChartFilter> filters,
+        Func<ChartFilter, string> expressionBuilder)
+    {
+        string? combined = null;
+
+        foreach (var filter in filters)
+        {
+            var expression = expressionBuilder(filter);
+            if (string.IsNullOrWhiteSpace(expression))
+            {
+                continue;
+            }
+
+            if (combined == null)
+            {
+                combined = $"({expression})";
+                continue;
+            }
+
+            var logicalOperator = filter.LogicalOperator == FilterLogicalOperator.Or ? "OR" : "AND";
+            combined = $"({combined} {logicalOperator} ({expression}))";
+        }
+
+        return combined ?? string.Empty;
+    }
+
+    private static string BuildParsedDateExpression(string columnExpr)
+    {
+        return $@"COALESCE(
+            TRY_CAST({columnExpr} AS TIMESTAMP),
+            TRY_STRPTIME({columnExpr}, '%Y%m%d'),
+            TRY_STRPTIME({columnExpr}, '%d/%m/%Y'),
+            TRY_STRPTIME({columnExpr}, '%Y-%m-%d'),
+            TRY_STRPTIME({columnExpr}, '%m/%d/%Y')
+        )";
     }
 
     private static async Task<string[]> ReadCsvHeadersAsync(string csvPath)
@@ -1190,5 +1723,12 @@ OFFSET {offset};
         return Enum.TryParse(input, true, out op);
     }
 
+    private static bool TryParseFilterLogicalOperator(string input, out FilterLogicalOperator logicalOperator)
+    {
+        return Enum.TryParse(input, true, out logicalOperator);
+    }
+
     private readonly record struct RawSortRule(string Column, bool Descending);
+    private readonly record struct RawDistinctStat(string Value, long Count);
+    private readonly record struct RawRangeStat(string Label, string From, string To, long Count);
 }
