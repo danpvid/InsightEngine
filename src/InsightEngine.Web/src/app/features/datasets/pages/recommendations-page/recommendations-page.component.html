@@ -104,6 +104,14 @@
       </mat-card-header>
 
       <mat-card-content>
+        <div class="chart-preview">
+          <div
+            echarts
+            class="chart-preview-canvas"
+            [options]="getPreviewOption(rec)">
+          </div>
+        </div>
+
         <div class="chart-type-badge">
           <mat-chip [color]="getChartTypeColor(getChartType(rec))" highlighted>
             {{ getChartType(rec) }}

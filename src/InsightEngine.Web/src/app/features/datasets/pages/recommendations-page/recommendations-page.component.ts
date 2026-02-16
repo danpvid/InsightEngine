@@ -2,6 +2,8 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { NgxEchartsModule } from 'ngx-echarts';
+import { EChartsOption } from 'echarts';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
 import { ToastService } from '../../../../core/services/toast.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
@@ -20,6 +22,7 @@ import { ApiError } from '../../../../core/models/api-response.model';
     CommonModule,
     FormsModule,
     RouterLink,
+    NgxEchartsModule,
     ...MATERIAL_MODULES,
     LoadingBarComponent,
     ErrorPanelComponent,
@@ -39,6 +42,7 @@ export class RecommendationsPageComponent implements OnInit {
 
   selectedChartType: string = 'All';
   sortBy: string = 'score';
+  private previewOptionCache: Record<string, EChartsOption> = {};
 
   chartTypes: string[] = ['All', 'Line', 'Bar', 'Scatter', 'Histogram'];
 
@@ -215,6 +219,82 @@ export class RecommendationsPageComponent implements OnInit {
     });
 
     this.filteredRecommendations = decorated.map(item => item.rec);
+  }
+
+  getPreviewOption(rec: ChartRecommendation): EChartsOption {
+    const cacheKey = rec.id;
+    if (this.previewOptionCache[cacheKey]) {
+      return this.previewOptionCache[cacheKey];
+    }
+
+    const type = this.getChartType(rec);
+    const commonOption: EChartsOption = {
+      animation: false,
+      tooltip: { show: false },
+      grid: { left: 2, right: 2, top: 4, bottom: 4, containLabel: false },
+      xAxis: { type: 'category', show: false },
+      yAxis: { type: 'value', show: false }
+    };
+
+    const optionByType: Record<string, EChartsOption> = {
+      Line: {
+        ...commonOption,
+        series: [{
+          type: 'line',
+          data: [14, 18, 16, 22, 20, 26, 24],
+          showSymbol: false,
+          smooth: true,
+          lineStyle: { width: 3, color: '#3f51b5' },
+          areaStyle: { color: 'rgba(63, 81, 181, 0.15)' }
+        }]
+      },
+      Bar: {
+        ...commonOption,
+        series: [{
+          type: 'bar',
+          data: [9, 16, 11, 22, 15, 19],
+          barWidth: '48%',
+          itemStyle: {
+            borderRadius: [4, 4, 0, 0],
+            color: '#ff7043'
+          }
+        }]
+      },
+      Scatter: {
+        ...commonOption,
+        xAxis: { type: 'value', show: false },
+        series: [{
+          type: 'scatter',
+          data: [
+            [5, 11],
+            [9, 13],
+            [12, 18],
+            [16, 15],
+            [20, 24],
+            [24, 23],
+            [28, 31]
+          ],
+          symbolSize: 8,
+          itemStyle: { color: '#26a69a' }
+        }]
+      },
+      Histogram: {
+        ...commonOption,
+        series: [{
+          type: 'bar',
+          data: [3, 8, 15, 20, 14, 9, 4],
+          barWidth: '90%',
+          itemStyle: {
+            borderRadius: [2, 2, 0, 0],
+            color: '#7e57c2'
+          }
+        }]
+      }
+    };
+
+    const option = optionByType[type] || optionByType['Line'];
+    this.previewOptionCache[cacheKey] = option;
+    return option;
   }
 
   private compareStable(
