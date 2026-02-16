@@ -20,6 +20,7 @@ var builder = WebApplication.CreateBuilder(args);
 var runtimeSettingsSection = builder.Configuration.GetSection(InsightEngineSettings.SectionName);
 var runtimeSettings = runtimeSettingsSection.Get<InsightEngineSettings>() ?? new InsightEngineSettings();
 builder.Services.Configure<InsightEngineSettings>(runtimeSettingsSection);
+builder.Services.Configure<LLMSettings>(builder.Configuration.GetSection(LLMSettings.SectionName));
 
 // Configurar Kestrel para suportar uploads com limite centralizado
 builder.Services.Configure<KestrelServerOptions>(options =>
