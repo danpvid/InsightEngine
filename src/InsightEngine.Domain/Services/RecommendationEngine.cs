@@ -32,7 +32,16 @@ public class RecommendationEngine
         // 4. Scatter - até 2
         recommendations.AddRange(GenerateScatterRecommendations(measureColumns, ref recCounter, maxCount: 2));
 
-        var finalRecommendations = recommendations.Take(MaxRecommendations).ToList();
+        ApplyScores(recommendations, profile);
+
+        var finalRecommendations = recommendations
+            .Select((rec, index) => new { rec, index })
+            .OrderByDescending(x => x.rec.Score)
+            .ThenByDescending(x => x.rec.ImpactScore)
+            .ThenBy(x => x.index)
+            .Take(MaxRecommendations)
+            .Select(x => x.rec)
+            .ToList();
 
         // Gerar optionTemplate para cada recomendação
         foreach (var rec in finalRecommendations)
@@ -41,6 +50,123 @@ public class RecommendationEngine
         }
 
         return finalRecommendations;
+    }
+
+    private static void ApplyScores(List<ChartRecommendation> recommendations, DatasetProfile profile)
+    {
+        var columns = profile.Columns.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+        var sampleSize = Math.Max(1, profile.SampleSize);
+        var lowCardinalityLimit = Math.Max(20, (int)(sampleSize * 0.05));
+
+        foreach (var recommendation in recommendations)
+        {
+            var criteria = new List<string>();
+            var score = GetChartTypeBaseScore(recommendation.Chart.Type, criteria);
+
+            if (columns.TryGetValue(recommendation.Query.Y.Column, out var yColumn))
+            {
+                var coverage = Math.Clamp(1.0 - yColumn.NullRate, 0.0, 1.0);
+                var distinctRatio = Math.Clamp(yColumn.DistinctCount / (double)sampleSize, 0.0, 1.0);
+
+                score += 0.18 * coverage;
+                score += 0.22 * distinctRatio;
+
+                criteria.Add($"Y coverage {(coverage * 100):F0}%");
+                criteria.Add($"Y distinct ratio {(distinctRatio * 100):F0}%");
+            }
+
+            if (columns.TryGetValue(recommendation.Query.X.Column, out var xColumn))
+            {
+                if (xColumn.InferredType == InferredType.Date)
+                {
+                    score += 0.14;
+                    criteria.Add("Time dimension detected");
+                }
+                else if (xColumn.DistinctCount <= lowCardinalityLimit)
+                {
+                    score += 0.08;
+                    criteria.Add($"Low-cardinality X ({xColumn.DistinctCount})");
+                }
+                else
+                {
+                    score -= 0.04;
+                    criteria.Add($"High-cardinality X ({xColumn.DistinctCount})");
+                }
+            }
+
+            if (recommendation.Query.Y.Aggregation == Aggregation.Sum ||
+                recommendation.Query.Y.Aggregation == Aggregation.Avg)
+            {
+                score += 0.05;
+                criteria.Add($"Aggregation {recommendation.Query.Y.Aggregation}");
+            }
+
+            score = Math.Clamp(score, 0.0, 1.0);
+            recommendation.Score = Math.Round(score, 3);
+
+            var impactScore = ComputeImpactScore(recommendation, columns, sampleSize, lowCardinalityLimit, criteria);
+            recommendation.ImpactScore = Math.Round(Math.Clamp(impactScore, 0.0, 1.0), 3);
+            recommendation.ScoreCriteria = criteria.Take(5).ToList();
+        }
+    }
+
+    private static double GetChartTypeBaseScore(ChartType chartType, List<string> criteria)
+    {
+        var baseScore = chartType switch
+        {
+            ChartType.Line => 0.52,
+            ChartType.Bar => 0.5,
+            ChartType.Scatter => 0.46,
+            ChartType.Histogram => 0.42,
+            _ => 0.4
+        };
+
+        criteria.Add($"Chart type {chartType}");
+        return baseScore;
+    }
+
+    private static double ComputeImpactScore(
+        ChartRecommendation recommendation,
+        Dictionary<string, ColumnProfile> columns,
+        int sampleSize,
+        int lowCardinalityLimit,
+        List<string> criteria)
+    {
+        var impact = recommendation.Chart.Type switch
+        {
+            ChartType.Line => 0.45,
+            ChartType.Scatter => 0.42,
+            ChartType.Bar => 0.38,
+            ChartType.Histogram => 0.34,
+            _ => 0.32
+        };
+
+        if (columns.TryGetValue(recommendation.Query.Y.Column, out var yColumn))
+        {
+            var distinctRatio = Math.Clamp(yColumn.DistinctCount / (double)sampleSize, 0.0, 1.0);
+            var completeness = Math.Clamp(1.0 - yColumn.NullRate, 0.0, 1.0);
+            impact += (distinctRatio * 0.3) + (completeness * 0.15);
+        }
+
+        if (recommendation.Query.Series != null)
+        {
+            impact += 0.08;
+            criteria.Add("Grouped view enabled");
+        }
+
+        if (columns.TryGetValue(recommendation.Query.X.Column, out var xColumn))
+        {
+            if (xColumn.InferredType == InferredType.Date)
+            {
+                impact += 0.08;
+            }
+            else if (xColumn.DistinctCount <= lowCardinalityLimit)
+            {
+                impact += 0.04;
+            }
+        }
+
+        return impact;
     }
 
     private List<ColumnRole> DetectColumnRoles(DatasetProfile profile)

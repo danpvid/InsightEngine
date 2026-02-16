@@ -3,6 +3,7 @@ using InsightEngine.Application.Services;
 using InsightEngine.Domain.Behaviors;
 using InsightEngine.Domain.Core.Notifications;
 using InsightEngine.Domain.Interfaces;
+using InsightEngine.Domain.Settings;
 using InsightEngine.Infra.Data.Configuration;
 using InsightEngine.Infra.Data.Context;
 using InsightEngine.Infra.Data.Repositories;
@@ -24,6 +25,8 @@ public static class NativeInjectorBootStrapper
 
         // Configuration - Settings
         services.Configure<ChartExecutionSettings>(configuration.GetSection("ChartExecution"));
+        services.Configure<ChartCacheSettings>(configuration.GetSection("ChartCache"));
+        services.Configure<ScenarioSimulationSettings>(configuration.GetSection("ScenarioSimulation"));
 
         // Infra - Data
         services.AddDbContext<InsightEngineContext>(options =>
@@ -39,7 +42,11 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddScoped<ICsvProfiler, CsvProfiler>();
         services.AddScoped<IChartExecutionService, ChartExecutionService>();
+        services.AddScoped<IScenarioSimulationService, ScenarioSimulationService>();
         services.AddScoped<InsightEngine.Domain.Services.RecommendationEngine>();
+
+        services.AddMemoryCache();
+        services.AddSingleton<IChartQueryCache, ChartQueryCacheService>();
         
         // Task 6.4: Metadata cache service
         services.AddSingleton<IMetadataCacheService, MetadataCacheService>();

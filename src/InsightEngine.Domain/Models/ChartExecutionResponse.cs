@@ -8,6 +8,7 @@ public class ChartExecutionResponse
     public Guid DatasetId { get; set; }
     public string RecommendationId { get; set; } = string.Empty;
     public ChartExecutionResult ExecutionResult { get; set; } = null!;
+    public InsightSummary? InsightSummary { get; set; }
     public long TotalExecutionMs { get; set; }
     public string QueryHash { get; set; } = string.Empty;
 }

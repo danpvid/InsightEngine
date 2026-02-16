@@ -7,6 +7,9 @@ public class ChartRecommendation
     public string Id { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
+    public double Score { get; set; }
+    public double ImpactScore { get; set; }
+    public List<string> ScoreCriteria { get; set; } = new();
     public ChartMeta Chart { get; set; } = new();
     public ChartQuery Query { get; set; } = new();
     public Dictionary<string, object> OptionTemplate { get; set; } = new();

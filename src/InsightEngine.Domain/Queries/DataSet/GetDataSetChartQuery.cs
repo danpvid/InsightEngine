@@ -15,15 +15,26 @@ public class GetDataSetChartQuery : Query<ChartExecutionResponse>
     public string? Aggregation { get; set; }
     public string? TimeBin { get; set; }
     public string? YColumn { get; set; }
+    public string? GroupBy { get; set; }
+    public List<ChartFilter> Filters { get; set; } = new();
 
     public GetDataSetChartQuery() { }
 
-    public GetDataSetChartQuery(Guid datasetId, string recommendationId, string? aggregation = null, string? timeBin = null, string? yColumn = null)
+    public GetDataSetChartQuery(
+        Guid datasetId,
+        string recommendationId,
+        string? aggregation = null,
+        string? timeBin = null,
+        string? yColumn = null,
+        string? groupBy = null,
+        List<ChartFilter>? filters = null)
     {
         DatasetId = datasetId;
         RecommendationId = recommendationId;
         Aggregation = aggregation;
         TimeBin = timeBin;
         YColumn = yColumn;
+        GroupBy = groupBy;
+        Filters = filters ?? new List<ChartFilter>();
     }
 }

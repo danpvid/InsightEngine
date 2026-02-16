@@ -132,6 +132,9 @@ public class DataSetIntegrationTests : IAsyncLifetime
         firstRec.Title.Should().NotBeNullOrEmpty();
         firstRec.Chart.Should().NotBeNull();
         firstRec.Chart.Type.Should().BeOneOf(ChartType.Line, ChartType.Bar, ChartType.Scatter, ChartType.Histogram);
+        firstRec.Score.Should().BeInRange(0, 1);
+        firstRec.ImpactScore.Should().BeInRange(0, 1);
+        firstRec.ScoreCriteria.Should().NotBeNull();
     }
 
     [Fact]

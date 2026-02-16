@@ -28,6 +28,11 @@ public class ChartExecutionResponse
     public ChartExecutionMeta Meta { get; set; } = new();
 
     /// <summary>
+    /// Insight summary heuristico (sem LLM)
+    /// </summary>
+    public InsightSummary? InsightSummary { get; set; }
+
+    /// <summary>
     /// SQL gerado (apenas em Development)
     /// </summary>
     public string? DebugSql { get; set; }

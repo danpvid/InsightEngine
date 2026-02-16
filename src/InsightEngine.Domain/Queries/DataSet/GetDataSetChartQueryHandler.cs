@@ -1,9 +1,12 @@
+using System;
 using System.Diagnostics;
+using System.Linq;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Services;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -17,17 +20,20 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
     private readonly IFileStorageService _fileStorageService;
     private readonly ICsvProfiler _csvProfiler;
     private readonly IChartExecutionService _chartExecutionService;
+    private readonly IChartQueryCache _chartQueryCache;
     private readonly ILogger<GetDataSetChartQueryHandler> _logger;
 
     public GetDataSetChartQueryHandler(
         IFileStorageService fileStorageService,
         ICsvProfiler csvProfiler,
         IChartExecutionService chartExecutionService,
+        IChartQueryCache chartQueryCache,
         ILogger<GetDataSetChartQueryHandler> logger)
     {
         _fileStorageService = fileStorageService;
         _csvProfiler = csvProfiler;
         _chartExecutionService = chartExecutionService;
+        _chartQueryCache = chartQueryCache;
         _logger = logger;
     }
 
@@ -67,6 +73,71 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                     $"Recommendation '{request.RecommendationId}' not found. Available recommendations: {string.Join(", ", recommendations.Select(r => r.Id))}");
             }
 
+            var columnLookup = profile.Columns
+                .ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+            var invalidColumns = new List<string>();
+
+            string? resolvedYColumn = null;
+            if (!string.IsNullOrWhiteSpace(request.YColumn))
+            {
+                if (!columnLookup.TryGetValue(request.YColumn, out var yProfile))
+                {
+                    invalidColumns.Add(request.YColumn);
+                }
+                else
+                {
+                    resolvedYColumn = yProfile.Name;
+                    if (yProfile.InferredType != InferredType.Number)
+                    {
+                        return Result.Failure<ChartExecutionResponse>(
+                            $"YColumn '{resolvedYColumn}' must be numeric.");
+                    }
+                }
+            }
+
+            string? resolvedGroupBy = null;
+            if (!string.IsNullOrWhiteSpace(request.GroupBy))
+            {
+                if (!columnLookup.TryGetValue(request.GroupBy, out var groupProfile))
+                {
+                    invalidColumns.Add(request.GroupBy);
+                }
+                else
+                {
+                    var maxDistinct = Math.Max(20, (int)(profile.SampleSize * 0.05));
+                    if (groupProfile.DistinctCount > maxDistinct)
+                    {
+                        return Result.Failure<ChartExecutionResponse>(
+                            $"GroupBy '{groupProfile.Name}' has high cardinality (distinct {groupProfile.DistinctCount}).");
+                    }
+
+                    resolvedGroupBy = groupProfile.Name;
+                }
+            }
+
+            var resolvedFilters = new List<ChartFilter>();
+            foreach (var filter in request.Filters)
+            {
+                if (!columnLookup.TryGetValue(filter.Column, out var filterProfile))
+                {
+                    invalidColumns.Add(filter.Column);
+                    continue;
+                }
+
+                resolvedFilters.Add(new ChartFilter
+                {
+                    Column = filterProfile.Name,
+                    Operator = filter.Operator,
+                    Values = filter.Values
+                });
+            }
+
+            if (invalidColumns.Count > 0)
+            {
+                return Result.Failure<ChartExecutionResponse>(
+                    $"Invalid column(s): {string.Join(", ", invalidColumns.Distinct(StringComparer.OrdinalIgnoreCase))}");
+            }
+
             _logger.LogInformation(
                 "📋 Original recommendation - Agg: {OrigAgg}, TimeBin: {OrigTime}, YCol: {OrigY}",
                 recommendation.Aggregation, recommendation.TimeBin, recommendation.YColumn);
@@ -74,10 +145,18 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
             // 4.1. Aplicar overrides dos parâmetros (controles dinâmicos do frontend)
             if (!string.IsNullOrWhiteSpace(request.Aggregation) || 
                 !string.IsNullOrWhiteSpace(request.TimeBin) || 
-                !string.IsNullOrWhiteSpace(request.YColumn))
+                !string.IsNullOrWhiteSpace(request.YColumn) ||
+                !string.IsNullOrWhiteSpace(request.GroupBy) ||
+                resolvedFilters.Count > 0)
             {
                 _logger.LogInformation("🔧 Applying dynamic overrides...");
-                recommendation = ApplyDynamicOverrides(recommendation, request.Aggregation, request.TimeBin, request.YColumn);
+                recommendation = ApplyDynamicOverrides(
+                    recommendation,
+                    request.Aggregation,
+                    request.TimeBin,
+                    resolvedYColumn,
+                    resolvedGroupBy,
+                    resolvedFilters);
                 
                 _logger.LogInformation(
                     "✅ After override - Agg: {NewAgg}, TimeBin: {NewTime}, YCol: {NewY}",
@@ -89,6 +168,27 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
             }
 
             // 5. Executar a recomendação via DuckDB
+            var queryHash = QueryHashHelper.ComputeQueryHash(recommendation, request.DatasetId);
+
+            var cachedResponse = await _chartQueryCache.GetAsync(
+                request.DatasetId,
+                request.RecommendationId,
+                queryHash);
+
+            if (cachedResponse != null)
+            {
+                sw.Stop();
+                cachedResponse.TotalExecutionMs = sw.ElapsedMilliseconds;
+
+                _logger.LogInformation(
+                    "Cache hit for chart {RecommendationId} - DatasetId: {DatasetId}, QueryHash: {QueryHash}",
+                    request.RecommendationId,
+                    request.DatasetId,
+                    queryHash);
+
+                return Result.Success(cachedResponse);
+            }
+
             var executionResult = await _chartExecutionService.ExecuteAsync(
                 request.DatasetId,
                 recommendation,
@@ -104,8 +204,15 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
 
             sw.Stop();
 
-            // 6. Calcular hash da query
-            var queryHash = QueryHashHelper.ComputeQueryHash(recommendation, request.DatasetId);
+            InsightSummary? insightSummary = null;
+            try
+            {
+                insightSummary = InsightSummaryBuilder.Build(recommendation, executionResult.Data!);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to build insight summary for {RecommendationId}", request.RecommendationId);
+            }
 
             // 7. Montar resposta com telemetria
             var response = new ChartExecutionResponse
@@ -113,9 +220,16 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 DatasetId = request.DatasetId,
                 RecommendationId = request.RecommendationId,
                 ExecutionResult = executionResult.Data!,
+                InsightSummary = insightSummary,
                 TotalExecutionMs = sw.ElapsedMilliseconds,
                 QueryHash = queryHash
             };
+
+            await _chartQueryCache.SetAsync(
+                request.DatasetId,
+                request.RecommendationId,
+                queryHash,
+                response);
 
             _logger.LogInformation(
                 "Chart executed successfully: {DatasetId}/{RecommendationId}, TotalMs: {TotalMs}, DuckDbMs: {DuckDbMs}, RowCount: {RowCount}, QueryHash: {QueryHash}",
@@ -141,7 +255,9 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         ChartRecommendation original, 
         string? aggregation, 
         string? timeBin, 
-        string? yColumn)
+        string? yColumn,
+        string? groupBy,
+        List<ChartFilter> filters)
     {
         _logger.LogInformation("🔍 ApplyDynamicOverrides called - Input: Agg={Agg}, TimeBin={TimeBin}, YCol={YCol}",
             aggregation ?? "null", timeBin ?? "null", yColumn ?? "null");
@@ -175,6 +291,23 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
             }
         }
 
+        var seriesSpec = original.Query.Series != null ? new FieldSpec
+        {
+            Column = original.Query.Series.Column,
+            Role = original.Query.Series.Role,
+            Aggregation = original.Query.Series.Aggregation,
+            Bin = original.Query.Series.Bin
+        } : null;
+
+        if (!string.IsNullOrWhiteSpace(groupBy))
+        {
+            seriesSpec = new FieldSpec
+            {
+                Column = groupBy,
+                Role = AxisRole.Category
+            };
+        }
+
         // Clone do Query com overrides
         var newQuery = new ChartQuery
         {
@@ -192,14 +325,9 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 Aggregation = aggEnum ?? original.Query.Y.Aggregation,  // Apply override se presente
                 Bin = original.Query.Y.Bin
             },
-            Series = original.Query.Series != null ? new FieldSpec
-            {
-                Column = original.Query.Series.Column,
-                Role = original.Query.Series.Role,
-                Aggregation = original.Query.Series.Aggregation,
-                Bin = original.Query.Series.Bin
-            } : null,
-            TopN = original.Query.TopN
+            Series = seriesSpec,
+            TopN = original.Query.TopN,
+            Filters = filters.Count > 0 ? filters : original.Query.Filters
         };
 
         // Clone do ChartRecommendation completo

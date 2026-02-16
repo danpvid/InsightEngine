@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 
 namespace InsightEngine.Infra.Data.Services;
 
@@ -115,21 +116,58 @@ public class ChartExecutionService : IChartExecutionService
 
             // Gerar e executar SQL
             var sql = BuildTimeSeriesSQL(csvPath, recommendation);
-            var dataResult = await ExecuteQueryAsync(sql, ct);
+            var maxPoints = _settings.TimeSeriesMaxPoints > 0 ? _settings.TimeSeriesMaxPoints : 2000;
+
+            if (recommendation.Query.Series != null)
+            {
+                var dataResult = await ExecuteGroupedTimeSeriesQueryAsync(sql, ct);
+                swDuckDb.Stop();
+
+                if (!dataResult.IsSuccess)
+                    return Result.Failure<ChartExecutionResult>(dataResult.Errors);
+
+                var grouped = dataResult.Data!;
+                var seriesData = new Dictionary<string, List<(long TimestampMs, double? Value)>>();
+
+                foreach (var group in grouped.GroupBy(p => string.IsNullOrWhiteSpace(p.Series) ? "Unknown" : p.Series))
+                {
+                    var rawPoints = group
+                        .Select(p => new TimeSeriesPoint(p.TimestampMs, p.Value))
+                        .ToList();
+
+                    var processed = ApplyGapFilling(rawPoints, recommendation.Query.X.Bin!.Value);
+                    processed = DownsampleSeries(processed, maxPoints);
+                    seriesData[group.Key] = processed;
+                }
+
+                var option = BuildEChartsOption(recommendation, seriesData);
+                var rowCount = seriesData.Sum(s => s.Value.Count);
+
+                return Result.Success(new ChartExecutionResult
+                {
+                    Option = option,
+                    DuckDbMs = swDuckDb.ElapsedMilliseconds,
+                    GeneratedSql = sql,
+                    RowCount = rowCount
+                });
+            }
+
+            var singleResult = await ExecuteQueryAsync(sql, ct);
             swDuckDb.Stop();
 
-            if (!dataResult.IsSuccess)
-                return Result.Failure<ChartExecutionResult>(dataResult.Errors);
+            if (!singleResult.IsSuccess)
+                return Result.Failure<ChartExecutionResult>(singleResult.Errors);
 
             // Aplicar gap filling
-            var processedPoints = ApplyGapFilling(dataResult.Data!, recommendation.Query.X.Bin!.Value);
+            var processedPoints = ApplyGapFilling(singleResult.Data!, recommendation.Query.X.Bin!.Value);
+            processedPoints = DownsampleSeries(processedPoints, maxPoints);
 
             // Montar ECharts option
-            var option = BuildEChartsOption(recommendation, processedPoints);
+            var optionSingle = BuildEChartsOption(recommendation, processedPoints);
 
             return Result.Success(new ChartExecutionResult
             {
-                Option = option,
+                Option = optionSingle,
                 DuckDbMs = swDuckDb.ElapsedMilliseconds,
                 GeneratedSql = sql,
                 RowCount = processedPoints.Count
@@ -167,20 +205,41 @@ public class ChartExecutionService : IChartExecutionService
 
             // Gerar e executar SQL
             var sql = BuildBarSQL(csvPath, recommendation);
-            var dataResult = await ExecuteBarQueryAsync(sql, ct);
+
+            if (recommendation.Query.Series != null)
+            {
+                var dataResult = await ExecuteGroupedBarQueryAsync(sql, ct);
+                swDuckDb.Stop();
+
+                if (!dataResult.IsSuccess)
+                    return Result.Failure<ChartExecutionResult>(dataResult.Errors);
+
+                var grouped = dataResult.Data!;
+                var option = BuildBarEChartsOption(recommendation, grouped);
+
+                return Result.Success(new ChartExecutionResult
+                {
+                    Option = option,
+                    DuckDbMs = swDuckDb.ElapsedMilliseconds,
+                    GeneratedSql = sql,
+                    RowCount = grouped.Count
+                });
+            }
+
+            var singleResult = await ExecuteBarQueryAsync(sql, ct);
             swDuckDb.Stop();
 
-            if (!dataResult.IsSuccess)
-                return Result.Failure<ChartExecutionResult>(dataResult.Errors);
+            if (!singleResult.IsSuccess)
+                return Result.Failure<ChartExecutionResult>(singleResult.Errors);
 
-            var categories = dataResult.Data!;
+            var categories = singleResult.Data!;
 
             // Montar ECharts option
-            var option = BuildBarEChartsOption(recommendation, categories);
+            var optionSingle = BuildBarEChartsOption(recommendation, categories);
 
             return Result.Success(new ChartExecutionResult
             {
-                Option = option,
+                Option = optionSingle,
                 DuckDbMs = swDuckDb.ElapsedMilliseconds,
                 GeneratedSql = sql,
                 RowCount = categories.Count
@@ -198,6 +257,7 @@ public class ChartExecutionService : IChartExecutionService
         var xCol = recommendation.Query.X.Column;
         var yCol = recommendation.Query.Y.Column;
         var agg = recommendation.Query.Y.Aggregation!.Value;
+        var seriesCol = recommendation.Query.Series?.Column;
 
         var aggFunction = agg switch
         {
@@ -210,23 +270,38 @@ public class ChartExecutionService : IChartExecutionService
         };
 
         var escapedPath = csvPath.Replace("'", "''");
+        var filterClause = BuildFilterClause(recommendation.Query.Filters);
 
         // TopN configurável (default 20)
         var topN = _settings.BarChartTopN > 0 ? _settings.BarChartTopN : 20;
 
         // GROUP BY + agregação + ORDER BY + LIMIT
-        var sql = $@"
+        if (string.IsNullOrWhiteSpace(seriesCol))
+        {
+            return $@"
 SELECT 
     CAST(""{xCol}"" AS VARCHAR) AS category,
     {aggFunction}(CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE)) AS value
 FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL
+WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL{filterClause}
 GROUP BY 1
 ORDER BY 2 DESC
 LIMIT {topN};
 ";
+        }
 
-        return sql;
+        var groupedLimit = topN * 5;
+        return $@"
+SELECT 
+    CAST(""{xCol}"" AS VARCHAR) AS category,
+    CAST(""{seriesCol}"" AS VARCHAR) AS series,
+    {aggFunction}(CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE)) AS value
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
+WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL AND ""{seriesCol}"" IS NOT NULL{filterClause}
+GROUP BY 1, 2
+ORDER BY 3 DESC
+LIMIT {groupedLimit};
+";
     }
 
     private async Task<Result<List<CategoryValue>>> ExecuteBarQueryAsync(
@@ -268,6 +343,49 @@ LIMIT {topN};
         {
             _logger.LogError(ex, "DuckDB Bar query execution failed");
             return Result.Failure<List<CategoryValue>>($"Bar query execution failed: {ex.Message}");
+        }
+    }
+
+    private async Task<Result<List<CategorySeriesValue>>> ExecuteGroupedBarQueryAsync(
+        string sql,
+        CancellationToken ct)
+    {
+        await Task.CompletedTask;
+
+        var values = new List<CategorySeriesValue>();
+
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            connection.Open();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+
+            _logger.LogDebug("Executing DuckDB grouped Bar query: {SQL}", sql);
+
+            using var reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                if (ct.IsCancellationRequested)
+                    break;
+
+                var category = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+                var series = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                var value = reader.IsDBNull(2) ? 0.0 : reader.GetDouble(2);
+
+                values.Add(new CategorySeriesValue(category, series, value));
+            }
+
+            _logger.LogInformation("DuckDB grouped Bar query returned {RowCount} rows", values.Count);
+
+            return Result.Success(values);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "DuckDB grouped Bar query execution failed");
+            return Result.Failure<List<CategorySeriesValue>>($"Bar query execution failed: {ex.Message}");
         }
     }
 
@@ -384,6 +502,7 @@ LIMIT {topN};
         var yCol = recommendation.Query.Y.Column;
 
         var escapedPath = csvPath.Replace("'", "''");
+        var filterClause = BuildFilterClause(recommendation.Query.Filters);
 
         // Task 6.5: Enforce safety limit for scatter points (max 2000)
         var maxPoints = _settings.ScatterMaxPoints > 0 ? _settings.ScatterMaxPoints : 2000;
@@ -396,7 +515,7 @@ SELECT
     CAST(REPLACE(CAST(""{xCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS x,
     CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS y
 FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL
+WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL{filterClause}
 ORDER BY random()
 LIMIT {maxPoints};
 ";
@@ -557,6 +676,7 @@ LIMIT {maxPoints};
 
         var xCol = recommendation.Query.X.Column;
         var escapedPath = csvPath.Replace("'", "''");
+        var filterClause = BuildFilterClause(recommendation.Query.Filters);
         
         // Task 6.5: Enforce safety limits for bins (5-50)
         var numBins = _settings.HistogramBins > 0 ? _settings.HistogramBins : 20;
@@ -579,7 +699,7 @@ SELECT
     MIN(CAST(REPLACE(CAST(""{xCol}"" AS VARCHAR), ',', '') AS DOUBLE)) AS min_val,
     MAX(CAST(REPLACE(CAST(""{xCol}"" AS VARCHAR), ',', '') AS DOUBLE)) AS max_val
 FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-WHERE ""{xCol}"" IS NOT NULL;
+WHERE ""{xCol}"" IS NOT NULL{filterClause};
 ";
 
             double minVal, maxVal;
@@ -618,7 +738,7 @@ SELECT
 FROM (
     SELECT CAST(REPLACE(CAST(""{xCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS value
     FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-    WHERE ""{xCol}"" IS NOT NULL
+    WHERE ""{xCol}"" IS NOT NULL{filterClause}
 )
 WHERE value >= {minValStr} AND value <= {maxValStr}
 GROUP BY 1
@@ -740,6 +860,118 @@ ORDER BY 1;
     // HELPERS
     // ===========================
 
+    private string BuildFilterClause(IReadOnlyCollection<ChartFilter> filters)
+    {
+        if (filters == null || filters.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var clauses = new List<string>();
+        foreach (var filter in filters)
+        {
+            var clause = BuildFilterExpression(filter);
+            if (!string.IsNullOrWhiteSpace(clause))
+            {
+                clauses.Add(clause);
+            }
+        }
+
+        return clauses.Count == 0 ? string.Empty : " AND " + string.Join(" AND ", clauses);
+    }
+
+    private string BuildFilterExpression(ChartFilter filter)
+    {
+        if (filter.Values.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var columnExpr = $"CAST(\"{filter.Column}\" AS VARCHAR)";
+
+        switch (filter.Operator)
+        {
+            case FilterOperator.Contains:
+                var pattern = $"%{filter.Values[0]}%";
+                return $"LOWER({columnExpr}) LIKE {ToSqlLiteral(pattern.ToLowerInvariant())}";
+            case FilterOperator.Eq:
+                return BuildComparison(columnExpr, "=", filter.Values);
+            case FilterOperator.NotEq:
+                return BuildComparison(columnExpr, "<>", filter.Values);
+            case FilterOperator.In:
+                return BuildInClause(columnExpr, filter.Values);
+            case FilterOperator.Between:
+                return BuildBetweenClause(columnExpr, filter.Values);
+            default:
+                return string.Empty;
+        }
+    }
+
+    private string BuildComparison(string columnExpr, string op, List<string> values)
+    {
+        if (TryParseNumericList(values, out var numbers))
+        {
+            var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
+            return $"{numericExpr} {op} {numbers[0].ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        return $"{columnExpr} {op} {ToSqlLiteral(values[0])}";
+    }
+
+    private string BuildInClause(string columnExpr, List<string> values)
+    {
+        if (TryParseNumericList(values, out var numbers))
+        {
+            var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
+            var list = string.Join(", ", numbers.Select(n => n.ToString(CultureInfo.InvariantCulture)));
+            return $"{numericExpr} IN ({list})";
+        }
+
+        var literals = string.Join(", ", values.Select(ToSqlLiteral));
+        return $"{columnExpr} IN ({literals})";
+    }
+
+    private string BuildBetweenClause(string columnExpr, List<string> values)
+    {
+        if (values.Count < 2)
+        {
+            return string.Empty;
+        }
+
+        if (TryParseNumericList(values, out var numbers) && numbers.Count >= 2)
+        {
+            var numericExpr = $"TRY_CAST(REPLACE({columnExpr}, ',', '') AS DOUBLE)";
+            return $"{numericExpr} BETWEEN {numbers[0].ToString(CultureInfo.InvariantCulture)} AND {numbers[1].ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        return $"{columnExpr} BETWEEN {ToSqlLiteral(values[0])} AND {ToSqlLiteral(values[1])}";
+    }
+
+    private static bool TryParseNumericList(List<string> values, out List<double> numbers)
+    {
+        numbers = new List<double>();
+
+        foreach (var raw in values)
+        {
+            var normalized = raw.Replace(",", ".");
+            if (!double.TryParse(normalized, NumberStyles.Any, CultureInfo.InvariantCulture, out var number))
+            {
+                numbers.Clear();
+                return false;
+            }
+
+            numbers.Add(number);
+        }
+
+        return numbers.Count > 0;
+    }
+
+    private static string ToSqlLiteral(string value)
+    {
+        var escaped = value.Replace("'", "''");
+        return $"'{escaped}'";
+    }
+
     private async Task<Result<List<TimeSeriesPoint>>> ExecuteQueryAsync(
         string sql,
         CancellationToken ct)
@@ -786,12 +1018,58 @@ ORDER BY 1;
         }
     }
 
+    private async Task<Result<List<GroupedTimeSeriesPoint>>> ExecuteGroupedTimeSeriesQueryAsync(
+        string sql,
+        CancellationToken ct)
+    {
+        await Task.CompletedTask;
+
+        var points = new List<GroupedTimeSeriesPoint>();
+
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            connection.Open();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+
+            _logger.LogDebug("Executing DuckDB grouped query: {SQL}", sql);
+
+            using var reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                if (ct.IsCancellationRequested)
+                    break;
+
+                var timestamp = reader.GetDateTime(0);
+                var timestampMs = new DateTimeOffset(timestamp, TimeSpan.Zero).ToUnixTimeMilliseconds();
+                var series = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                var value = reader.IsDBNull(2) ? 0.0 : reader.GetDouble(2);
+
+                points.Add(new GroupedTimeSeriesPoint(timestampMs, series, value));
+            }
+
+            _logger.LogInformation("DuckDB grouped query returned {RowCount} points", points.Count);
+
+            return Result.Success(points);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "DuckDB grouped query execution failed");
+            return Result.Failure<List<GroupedTimeSeriesPoint>>($"Query execution failed: {ex.Message}");
+        }
+    }
+
     private string BuildTimeSeriesSQL(string csvPath, ChartRecommendation recommendation)
     {
         var xCol = recommendation.Query.X.Column;
         var yCol = recommendation.Query.Y.Column;
         var bin = recommendation.Query.X.Bin!.Value;
         var agg = recommendation.Query.Y.Aggregation!.Value;
+        var seriesCol = recommendation.Query.Series?.Column;
+        var filterClause = BuildFilterClause(recommendation.Query.Filters);
 
         _logger.LogInformation(
             "🔨 BuildTimeSeriesSQL - XCol: {XCol}, YCol: {YCol}, Bin: {Bin}, Agg: {Agg}",
@@ -830,7 +1108,10 @@ ORDER BY 1;
         // Montar SQL com path do CSV inline (DuckDB não suporta parâmetros em read_csv_auto)
         // Usa COALESCE com TRY_STRPTIME para tentar múltiplos formatos de data comuns em CSVs brasileiros
         // CAST para VARCHAR primeiro para evitar erro "Binder Error: No function matches... BIGINT"
-        var sql = $@"
+        string sql;
+        if (string.IsNullOrWhiteSpace(seriesCol))
+        {
+            sql = $@"
 SELECT 
     date_trunc('{dateTruncPart}', parsed_date) AS x,
     {aggFunction}(parsed_value) AS y
@@ -845,12 +1126,39 @@ FROM (
         ) AS parsed_date,
         CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS parsed_value
     FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-    WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL
+    WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL{filterClause}
 )
 WHERE parsed_date IS NOT NULL AND parsed_value IS NOT NULL
 GROUP BY 1
 ORDER BY 1;
 ";
+        }
+        else
+        {
+            sql = $@"
+SELECT 
+    date_trunc('{dateTruncPart}', parsed_date) AS x,
+    series,
+    {aggFunction}(parsed_value) AS y
+FROM (
+    SELECT 
+        COALESCE(
+            TRY_CAST(""{xCol}"" AS TIMESTAMP),
+            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%Y%m%d'),
+            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%d/%m/%Y'),
+            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%Y-%m-%d'),
+            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%m/%d/%Y')
+        ) AS parsed_date,
+        CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS parsed_value,
+        CAST(""{seriesCol}"" AS VARCHAR) AS series
+    FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
+    WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL AND ""{seriesCol}"" IS NOT NULL{filterClause}
+)
+WHERE parsed_date IS NOT NULL AND parsed_value IS NOT NULL AND series IS NOT NULL
+GROUP BY 1, 2
+ORDER BY 1, 2;
+";
+        }
 
         _logger.LogInformation("💾 Generated SQL:\n{SQL}", sql);
 
@@ -874,6 +1182,191 @@ ORDER BY 1;
         
         // Aplicar gap filling
         return GapFillHelper.FillGaps(inputPoints, _settings.GapFillMode, timeBin);
+    }
+
+    private List<(long TimestampMs, double? Value)> DownsampleSeries(
+        List<(long TimestampMs, double? Value)> data,
+        int maxPoints)
+    {
+        if (maxPoints <= 0 || data.Count <= maxPoints)
+        {
+            return data;
+        }
+
+        var step = (int)Math.Ceiling(data.Count / (double)maxPoints);
+        var sampled = new List<(long TimestampMs, double? Value)>();
+
+        for (var i = 0; i < data.Count; i += step)
+        {
+            sampled.Add(data[i]);
+        }
+
+        return sampled;
+    }
+
+    private EChartsOption BuildEChartsOption(
+        ChartRecommendation recommendation,
+        Dictionary<string, List<(long TimestampMs, double? Value)>> seriesData)
+    {
+        var option = new EChartsOption
+        {
+            Title = new Dictionary<string, object>
+            {
+                ["text"] = recommendation.Title,
+                ["subtext"] = recommendation.Reason
+            },
+            Tooltip = new Dictionary<string, object>
+            {
+                ["trigger"] = "axis",
+                ["axisPointer"] = new Dictionary<string, object>
+                {
+                    ["type"] = "cross"
+                }
+            },
+            Grid = new Dictionary<string, object>
+            {
+                ["left"] = "3%",
+                ["right"] = "4%",
+                ["bottom"] = "10%",
+                ["top"] = "15%",
+                ["containLabel"] = true
+            },
+            XAxis = new Dictionary<string, object>
+            {
+                ["type"] = "time",
+                ["name"] = recommendation.Query.X.Column
+            },
+            YAxis = new Dictionary<string, object>
+            {
+                ["type"] = "value",
+                ["name"] = recommendation.Query.Y.Column
+            },
+            Legend = new Dictionary<string, object>
+            {
+                ["data"] = seriesData.Keys.ToList()
+            },
+            Series = new List<Dictionary<string, object>>()
+        };
+
+        foreach (var series in seriesData)
+        {
+            option.Series!.Add(new Dictionary<string, object>
+            {
+                ["name"] = series.Key,
+                ["type"] = "line",
+                ["smooth"] = true,
+                ["connectNulls"] = true,
+                ["data"] = series.Value.Select(p => new object?[] { p.TimestampMs, p.Value }).ToList()
+            });
+        }
+
+        var maxCount = seriesData.Values.Select(s => s.Count).DefaultIfEmpty(0).Max();
+        if (_settings.EnableAutoDataZoom && maxCount > _settings.DataZoomThreshold)
+        {
+            option.DataZoom = new List<Dictionary<string, object>>
+            {
+                new()
+                {
+                    ["type"] = "slider",
+                    ["show"] = true,
+                    ["xAxisIndex"] = 0,
+                    ["start"] = 0,
+                    ["end"] = 100
+                },
+                new()
+                {
+                    ["type"] = "inside",
+                    ["xAxisIndex"] = 0,
+                    ["start"] = 0,
+                    ["end"] = 100
+                }
+            };
+        }
+
+        return option;
+    }
+
+    private EChartsOption BuildBarEChartsOption(
+        ChartRecommendation recommendation,
+        List<CategorySeriesValue> data)
+    {
+        var categories = new List<string>();
+        var categorySet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in data)
+        {
+            if (categorySet.Add(item.Category))
+            {
+                categories.Add(item.Category);
+            }
+        }
+
+        var seriesTotals = data
+            .GroupBy(d => d.Series)
+            .Select(g => new { Series = g.Key, Total = g.Sum(x => x.Value) })
+            .OrderByDescending(g => g.Total)
+            .Take(5)
+            .Select(g => g.Series)
+            .ToList();
+
+        var seriesList = new List<Dictionary<string, object>>();
+
+        foreach (var series in seriesTotals)
+        {
+            var values = categories
+                .Select(cat => data.FirstOrDefault(d => d.Category == cat && d.Series == series)?.Value ?? 0.0)
+                .ToList();
+
+            seriesList.Add(new Dictionary<string, object>
+            {
+                ["name"] = series,
+                ["type"] = "bar",
+                ["data"] = values
+            });
+        }
+
+        var option = new EChartsOption
+        {
+            Title = new Dictionary<string, object>
+            {
+                ["text"] = recommendation.Title,
+                ["subtext"] = recommendation.Reason
+            },
+            Tooltip = new Dictionary<string, object>
+            {
+                ["trigger"] = "axis",
+                ["axisPointer"] = new Dictionary<string, object>
+                {
+                    ["type"] = "shadow"
+                }
+            },
+            Legend = new Dictionary<string, object>
+            {
+                ["data"] = seriesTotals
+            },
+            Grid = new Dictionary<string, object>
+            {
+                ["left"] = "3%",
+                ["right"] = "4%",
+                ["bottom"] = "10%",
+                ["top"] = "18%",
+                ["containLabel"] = true
+            },
+            XAxis = new Dictionary<string, object>
+            {
+                ["type"] = "category",
+                ["name"] = recommendation.Query.X.Column,
+                ["data"] = categories
+            },
+            YAxis = new Dictionary<string, object>
+            {
+                ["type"] = "value",
+                ["name"] = recommendation.Query.Y.Column
+            },
+            Series = seriesList
+        };
+
+        return option;
     }
 
     private EChartsOption BuildEChartsOption(
@@ -960,11 +1453,13 @@ ORDER BY 1;
     /// Representa um ponto em série temporal
     /// </summary>
     private record TimeSeriesPoint(long TimestampMs, double Value);
+    private record GroupedTimeSeriesPoint(long TimestampMs, string Series, double Value);
 
     /// <summary>
     /// Representa um par categoria-valor para gráficos de barra
     /// </summary>
     private record CategoryValue(string Category, double Value);
+    private record CategorySeriesValue(string Category, string Series, double Value);
 
     /// <summary>
     /// Representa um ponto (x, y) para gráfico de dispersão

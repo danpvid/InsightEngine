@@ -19,15 +19,18 @@ public class DataSetApplicationService : IDataSetApplicationService
     private readonly IMediator _mediator;
     private readonly ILogger<DataSetApplicationService> _logger;
     private readonly IMetadataCacheService _cacheService;
+    private readonly IScenarioSimulationService _scenarioSimulationService;
 
     public DataSetApplicationService(
         IMediator mediator,
         ILogger<DataSetApplicationService> logger,
-        IMetadataCacheService cacheService)
+        IMetadataCacheService cacheService,
+        IScenarioSimulationService scenarioSimulationService)
     {
         _mediator = mediator;
         _logger = logger;
         _cacheService = cacheService;
+        _scenarioSimulationService = scenarioSimulationService;
     }
 
     public async Task<Result<UploadDataSetResponse>> UploadAsync(IFormFile file, CancellationToken cancellationToken = default)
@@ -141,13 +144,15 @@ public class DataSetApplicationService : IDataSetApplicationService
         string? aggregation = null,
         string? timeBin = null,
         string? yColumn = null,
+        string? groupBy = null,
+        List<ChartFilter>? filters = null,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "Executing chart for dataset {DatasetId}, recommendation {RecommendationId}, aggregation: {Aggregation}, timeBin: {TimeBin}, yColumn: {YColumn}", 
             datasetId, recommendationId, aggregation, timeBin, yColumn);
 
-        var query = new GetDataSetChartQuery(datasetId, recommendationId, aggregation, timeBin, yColumn);
+        var query = new GetDataSetChartQuery(datasetId, recommendationId, aggregation, timeBin, yColumn, groupBy, filters);
         var result = await _mediator.Send(query, cancellationToken);
 
         if (result.IsSuccess)
@@ -164,5 +169,45 @@ public class DataSetApplicationService : IDataSetApplicationService
         }
 
         return result;
+    }
+
+    public async Task<Result<ScenarioSimulationResponse>> SimulateAsync(
+        Guid datasetId,
+        ScenarioRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Running scenario simulation for dataset {DatasetId} with {OperationCount} operation(s)",
+            datasetId,
+            request.Operations?.Count ?? 0);
+
+        var profileResult = await GetProfileAsync(datasetId, cancellationToken);
+        if (!profileResult.IsSuccess)
+        {
+            return Result.Failure<ScenarioSimulationResponse>(profileResult.Errors);
+        }
+
+        var simulationResult = await _scenarioSimulationService.SimulateAsync(
+            datasetId,
+            profileResult.Data!,
+            request,
+            cancellationToken);
+
+        if (!simulationResult.IsSuccess)
+        {
+            _logger.LogWarning(
+                "Scenario simulation failed for dataset {DatasetId}: {Errors}",
+                datasetId,
+                string.Join(", ", simulationResult.Errors));
+            return simulationResult;
+        }
+
+        _logger.LogInformation(
+            "Scenario simulation completed for dataset {DatasetId}. Rows={Rows}, DuckDbMs={DuckDbMs}",
+            datasetId,
+            simulationResult.Data!.RowCountReturned,
+            simulationResult.Data.DuckDbMs);
+
+        return simulationResult;
     }
 }

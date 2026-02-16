@@ -352,15 +352,34 @@ public class DataSetController : BaseController
         string recommendationId,
         [FromQuery] string? aggregation = null,
         [FromQuery] string? timeBin = null,
-        [FromQuery] string? yColumn = null)
+        [FromQuery] string? yColumn = null,
+        [FromQuery] string? metricY = null,
+        [FromQuery] string? groupBy = null,
+        [FromQuery] string[]? filters = null)
     {
+        var resolvedMetricY = !string.IsNullOrWhiteSpace(metricY) ? metricY : yColumn;
+
         _logger.LogInformation(
-            "GetChart called - DatasetId: {DatasetId}, RecommendationId: {RecommendationId}, Aggregation: {Aggregation}, TimeBin: {TimeBin}, YColumn: {YColumn}",
-            id, recommendationId, aggregation ?? "null", timeBin ?? "null", yColumn ?? "null");
+            "GetChart called - DatasetId: {DatasetId}, RecommendationId: {RecommendationId}, Aggregation: {Aggregation}, TimeBin: {TimeBin}, YColumn: {YColumn}, GroupBy: {GroupBy}, Filters: {FilterCount}",
+            id, recommendationId, aggregation ?? "null", timeBin ?? "null", resolvedMetricY ?? "null", groupBy ?? "null", filters?.Length ?? 0);
 
         try
         {
-            var result = await _dataSetApplicationService.GetChartAsync(id, recommendationId, aggregation, timeBin, yColumn);
+            var filterErrors = new List<string>();
+            var parsedFilters = ParseFilters(filters, filterErrors);
+            if (filterErrors.Count > 0)
+            {
+                return ResponseResult(Result.Failure<object>(filterErrors));
+            }
+
+            var result = await _dataSetApplicationService.GetChartAsync(
+                id,
+                recommendationId,
+                aggregation,
+                timeBin,
+                resolvedMetricY,
+                groupBy,
+                parsedFilters);
 
             if (!result.IsSuccess)
             {
@@ -374,6 +393,7 @@ public class DataSetController : BaseController
                 DatasetId = domainResponse.DatasetId,
                 RecommendationId = domainResponse.RecommendationId,
                 Option = domainResponse.ExecutionResult.Option,
+                InsightSummary = domainResponse.InsightSummary,
                 Meta = new ChartExecutionMeta
                 {
                     RowCountReturned = domainResponse.ExecutionResult.RowCount,
@@ -401,5 +421,132 @@ public class DataSetController : BaseController
 
             return StatusCode(StatusCodes.Status500InternalServerError, errorResponse);
         }
+    }
+
+    [HttpPost("{id:guid}/simulate")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Simulate(
+        Guid id,
+        [FromBody] ScenarioRequest request)
+    {
+        if (request == null)
+        {
+            return ResponseResult(Result.Failure<object>("Invalid simulation request body."));
+        }
+
+        var result = await _dataSetApplicationService.SimulateAsync(id, request);
+        if (!result.IsSuccess)
+        {
+            return ResponseResult(Result.Failure<object>(result.Errors));
+        }
+
+        var simulation = result.Data!;
+
+        return ResponseResult(Result.Success(new
+        {
+            datasetId = simulation.DatasetId,
+            targetMetric = simulation.TargetMetric,
+            targetDimension = simulation.TargetDimension,
+            queryHash = simulation.QueryHash,
+            rowCountReturned = simulation.RowCountReturned,
+            duckDbMs = simulation.DuckDbMs,
+            baselineSeries = simulation.BaselineSeries,
+            simulatedSeries = simulation.SimulatedSeries,
+            deltaSeries = simulation.DeltaSeries,
+            deltaSummary = simulation.DeltaSummary,
+            debugSql = _environment.IsDevelopment() ? simulation.GeneratedSql : null
+        }));
+    }
+
+    private static List<ChartFilter> ParseFilters(string[]? filters, List<string> errors)
+    {
+        var parsed = new List<ChartFilter>();
+        if (filters == null || filters.Length == 0)
+        {
+            return parsed;
+        }
+
+        if (filters.Length > 3)
+        {
+            errors.Add("No more than 3 filters are allowed.");
+        }
+
+        foreach (var raw in filters.Take(3))
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            var parts = raw.Split('|', 3, StringSplitOptions.None);
+            if (parts.Length < 3)
+            {
+                errors.Add($"Invalid filter format '{raw}'. Use column|operator|value.");
+                continue;
+            }
+
+            var column = parts[0].Trim();
+            var opRaw = parts[1].Trim();
+            var valueRaw = parts[2].Trim();
+
+            if (string.IsNullOrWhiteSpace(column) || string.IsNullOrWhiteSpace(opRaw))
+            {
+                errors.Add($"Invalid filter '{raw}'. Column and operator are required.");
+                continue;
+            }
+
+            if (!TryParseFilterOperator(opRaw, out var op))
+            {
+                errors.Add($"Invalid filter operator '{opRaw}'.");
+                continue;
+            }
+
+            var values = valueRaw
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(v => v.Trim())
+                .Where(v => v.Length > 0)
+                .ToList();
+
+            if (values.Count == 0)
+            {
+                errors.Add($"Filter '{raw}' must include at least one value.");
+                continue;
+            }
+
+            if (op == FilterOperator.Between && values.Count != 2)
+            {
+                errors.Add($"Filter '{raw}' must provide exactly 2 values for 'between'.");
+                continue;
+            }
+
+            if (op == FilterOperator.Contains && values.Count != 1)
+            {
+                errors.Add($"Filter '{raw}' must provide a single value for 'contains'.");
+                continue;
+            }
+
+            if ((op == FilterOperator.Eq || op == FilterOperator.NotEq) && values.Count != 1)
+            {
+                errors.Add($"Filter '{raw}' must provide a single value for '{opRaw}'.");
+                continue;
+            }
+
+            parsed.Add(new ChartFilter
+            {
+                Column = column,
+                Operator = op,
+                Values = values
+            });
+        }
+
+        return parsed;
+    }
+
+    private static bool TryParseFilterOperator(string input, out FilterOperator op)
+    {
+        return Enum.TryParse(input, true, out op);
     }
 }

@@ -47,5 +47,12 @@ public interface IDataSetApplicationService
         string? aggregation = null,
         string? timeBin = null,
         string? yColumn = null,
+        string? groupBy = null,
+        List<ChartFilter>? filters = null,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<ScenarioSimulationResponse>> SimulateAsync(
+        Guid datasetId,
+        ScenarioRequest request,
         CancellationToken cancellationToken = default);
 }

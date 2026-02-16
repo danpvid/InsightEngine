@@ -37,6 +37,8 @@ public class ChartExecutionSettings
     /// </summary>
     public int ScatterMaxPoints { get; set; } = 2000;
 
+    public int TimeSeriesMaxPoints { get; set; } = 2000;
+
     /// <summary>
     /// Número de bins para histograma (default)
     /// </summary>
