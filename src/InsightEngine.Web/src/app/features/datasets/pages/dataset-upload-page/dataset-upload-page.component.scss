@@ -110,12 +110,17 @@
 
 .upload-actions {
   margin: 24px 0;
+  min-height: 48px;
 }
 
 .upload-button {
   padding: 0 32px;
   height: 48px;
   font-size: 16px;
+
+  .spin {
+    animation: spin 1s linear infinite;
+  }
 }
 
 // Upload Progress
@@ -137,6 +142,16 @@
     font-weight: 500;
     font-size: 14px;
     text-align: center;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
   }
 }
 

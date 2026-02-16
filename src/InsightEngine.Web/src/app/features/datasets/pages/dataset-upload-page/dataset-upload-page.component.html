@@ -82,23 +82,28 @@
         </div>
 
         <!-- Upload Progress Bar -->
-        <div class="upload-progress" *ngIf="loading && uploadProgress > 0">
-          <mat-progress-bar mode="determinate" [value]="uploadProgress"></mat-progress-bar>
-          <p class="progress-text">Enviando... {{ uploadProgress }}%</p>
+        <div class="upload-progress" *ngIf="loading">
+          <mat-progress-bar [mode]="uploadProgress > 0 ? 'determinate' : 'indeterminate'" [value]="uploadProgress"></mat-progress-bar>
+          <p class="progress-text">
+            <span *ngIf="uploadProgress > 0">Enviando... {{ uploadProgress }}%</span>
+            <span *ngIf="uploadProgress === 0">Preparando upload...</span>
+          </p>
         </div>
 
         <app-loading-bar [loading]="loading && uploadProgress === 0"></app-loading-bar>
         
         <app-error-panel [error]="error"></app-error-panel>
 
-        <div class="upload-actions" *ngIf="selectedFile && !loading">
+        <div class="upload-actions" *ngIf="selectedFile">
           <button
             mat-raised-button
             color="accent"
             (click)="uploadDataset()"
+            [disabled]="loading"
             class="upload-button">
-            <mat-icon>send</mat-icon>
-            Enviar e Gerar Recomendações
+            <mat-icon *ngIf="!loading">send</mat-icon>
+            <mat-icon *ngIf="loading" class="spin">hourglass_top</mat-icon>
+            {{ loading ? 'Enviando...' : 'Enviar e Gerar Recomendações' }}
           </button>
         </div>
 

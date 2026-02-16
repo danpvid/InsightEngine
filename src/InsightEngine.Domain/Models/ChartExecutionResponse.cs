@@ -11,4 +11,5 @@ public class ChartExecutionResponse
     public InsightSummary? InsightSummary { get; set; }
     public long TotalExecutionMs { get; set; }
     public string QueryHash { get; set; } = string.Empty;
+    public bool CacheHit { get; set; }
 }

@@ -170,7 +170,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   ];
 
   get isCached(): boolean {
-    return (this.chartMeta?.executionMs || 0) < 100;
+    return !!this.chartMeta?.cacheHit;
   }
 
   get hasPrevious(): boolean {

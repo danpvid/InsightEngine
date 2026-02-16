@@ -76,6 +76,7 @@ export interface ChartMeta {
   chartType?: string;
   generatedAt?: string;
   queryHash?: string;
+  cacheHit?: boolean;
 }
 
 export interface InsightSummary {

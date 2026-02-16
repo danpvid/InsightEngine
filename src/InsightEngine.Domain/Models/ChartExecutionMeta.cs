@@ -34,4 +34,9 @@ public class ChartExecutionMeta
     /// Optional: SHA256 hash of the query for future caching
     /// </summary>
     public string? QueryHash { get; set; }
+
+    /// <summary>
+    /// Indicates if response came from cache.
+    /// </summary>
+    public bool CacheHit { get; set; }
 }

@@ -566,7 +566,8 @@ OFFSET {offset};
                     ChartType = domainResponse.ExecutionResult.Option.Series?.FirstOrDefault()?
                         .GetValueOrDefault("type")?.ToString() ?? "Line",
                     GeneratedAt = DateTime.UtcNow,
-                    QueryHash = domainResponse.QueryHash
+                    QueryHash = domainResponse.QueryHash,
+                    CacheHit = domainResponse.CacheHit
                 },
                 DebugSql = _environment.IsDevelopment() ? domainResponse.ExecutionResult.GeneratedSql : null
             };

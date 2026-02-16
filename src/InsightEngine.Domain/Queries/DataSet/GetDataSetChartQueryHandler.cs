@@ -179,6 +179,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
             {
                 sw.Stop();
                 cachedResponse.TotalExecutionMs = sw.ElapsedMilliseconds;
+                cachedResponse.CacheHit = true;
 
                 _logger.LogInformation(
                     "Cache hit for chart {RecommendationId} - DatasetId: {DatasetId}, QueryHash: {QueryHash}",
@@ -222,7 +223,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 ExecutionResult = executionResult.Data!,
                 InsightSummary = insightSummary,
                 TotalExecutionMs = sw.ElapsedMilliseconds,
-                QueryHash = queryHash
+                QueryHash = queryHash,
+                CacheHit = false
             };
 
             await _chartQueryCache.SetAsync(
