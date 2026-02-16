@@ -46,6 +46,7 @@ npm start
 Frontend URL:
 
 - `http://localhost:4200`
+- Optional local LLM server (for AI features): `http://localhost:11434`
 
 ## Configuration
 
@@ -86,6 +87,63 @@ Notes:
 - Raw CSV files remain in `FileStorage:BasePath`.
 - Retention cleanup runs in background and can also be triggered manually.
 
+### LLM (local-first, pluggable providers)
+
+```json
+{
+  "LLM": {
+    "Provider": "None",
+    "TimeoutSeconds": 20,
+    "MaxTokens": 512,
+    "MaxContextBytes": 24000,
+    "AskMaxQuestionChars": 600,
+    "Temperature": 0.2,
+    "EnableCaching": true,
+    "LocalHttp": {
+      "BaseUrl": "http://localhost:11434",
+      "Model": "llama3"
+    },
+    "Redaction": {
+      "Enabled": true,
+      "ColumnNamePatterns": ["email", "phone", "cpf", "ssn"]
+    }
+  }
+}
+```
+
+Provider options:
+
+- `None`: AI endpoints stay available but return deterministic fallback content.
+- `LocalHttp`: uses a local HTTP LLM provider (Ollama-compatible).
+- `OpenAI`: placeholder for future provider integration.
+
+Enable local AI with Ollama (example):
+
+```bash
+ollama serve
+ollama pull llama3
+```
+
+Then set in `appsettings.json`:
+
+```json
+{
+  "LLM": {
+    "Provider": "LocalHttp",
+    "LocalHttp": {
+      "BaseUrl": "http://localhost:11434",
+      "Model": "llama3"
+    }
+  }
+}
+```
+
+Data safety defaults:
+
+- LLM context is built from schema, profile stats, chart/query metadata, and reduced aggregates.
+- Raw CSV rows are not sent to the model.
+- Redaction masks/removes sensitive columns by configured name patterns.
+
 ## API overview
 
 Key endpoints:
@@ -94,6 +152,9 @@ Key endpoints:
 - `GET /api/v1/datasets/runtime-config` - frontend runtime limits
 - `GET /api/v1/datasets/{id}/recommendations` - chart recommendations
 - `GET /api/v1/datasets/{id}/charts/{recommendationId}` - executable chart (supports exploration query params)
+- `POST /api/v1/datasets/{id}/charts/{recommendationId}/ai-summary` - on-demand AI summary
+- `POST /api/v1/datasets/{id}/charts/{recommendationId}/explain` - on-demand chart explanation
+- `POST /api/v1/datasets/{id}/ask` - natural language question -> analysis plan (no SQL execution)
 - `POST /api/v1/datasets/{id}/simulate` - scenario simulation
 - `POST /api/v1/datasets/cleanup` - manual cleanup trigger (dev/admin)
 - `GET /health` and `GET /health/ready` - liveness/readiness
@@ -147,6 +208,44 @@ All API errors follow this shape:
 }
 ```
 
+### Example: AI summary request/response (short)
+
+Request:
+
+```http
+POST /api/v1/datasets/{id}/charts/{recommendationId}/ai-summary
+Content-Type: application/json
+
+{
+  "aggregation": "sum",
+  "metricY": "revenue",
+  "timeBin": "month"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "insightSummary": {
+      "headline": "Revenue trend is upward with moderate variance.",
+      "bulletPoints": ["Growth accelerates after Q2."],
+      "cautions": ["Possible seasonal bias in holiday months."],
+      "nextQuestions": ["Which segment drives the lift?"],
+      "confidence": 0.79
+    },
+    "meta": {
+      "provider": "LocalHttp",
+      "model": "llama3",
+      "durationMs": 842,
+      "cacheHit": false
+    }
+  }
+}
+```
+
 ## Smoke tests
 
 Run full backend integration tests:
@@ -168,9 +267,14 @@ cd src/InsightEngine.Web
 npm run build
 ```
 
+Manual UI verification for AI features:
+
+- `docs/AI-UI-MANUAL-TESTS.md`
+
 ## Operational notes
 
 - Enums are serialized as strings (backend and frontend models aligned).
 - Chart responses include `meta.cacheHit` for cache visibility.
 - Request correlation uses trace identifiers in logs and error responses.
 - Retention cleanup removes expired metadata and corresponding local artifacts.
+- AI features are opt-in/on-demand and do not block chart rendering.
