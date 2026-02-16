@@ -7,6 +7,7 @@ import { ApiResponse } from '../models/api-response.model';
 import { UploadDatasetResponse, DataSetSummary, DatasetProfile, RawDatasetRowsResponse } from '../models/dataset.model';
 import { RecommendationsResponse } from '../models/recommendation.model';
 import {
+  AskAnalysisPlanResponse,
   AiSummaryRequest,
   AiSummaryResponse,
   ChartResponse,
@@ -203,6 +204,20 @@ export class DatasetApiService {
     return this.http.post<ApiResponse<ExplainChartResponse>>(
       `${this.baseUrl}/api/v1/datasets/${datasetId}/charts/${recommendationId}/explain`,
       payload
+    );
+  }
+
+  askDataset(
+    datasetId: string,
+    question: string,
+    currentView?: Record<string, unknown>
+  ): Observable<ApiResponse<AskAnalysisPlanResponse>> {
+    return this.http.post<ApiResponse<AskAnalysisPlanResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/ask`,
+      {
+        question,
+        currentView: currentView || {}
+      }
     );
   }
 }

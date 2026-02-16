@@ -15,6 +15,7 @@ import { LoadingBarComponent } from '../../../../shared/components/loading-bar/l
 import { ErrorPanelComponent } from '../../../../shared/components/error-panel/error-panel.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import {
+  AskAnalysisPlanResponse,
   AiGenerationMeta,
   AiInsightSummary,
   ChartMeta,
@@ -98,6 +99,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   explainLoading: boolean = false;
   explainError: string | null = null;
   explainPanelOpen: boolean = false;
+  askQuestion: string = '';
+  askLoading: boolean = false;
+  askError: string | null = null;
+  askPlan: AskAnalysisPlanResponse | null = null;
+  askReasoningExpanded: boolean = false;
   loading: boolean = false;
   error: ApiError | null = null;
 
@@ -505,6 +511,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.explainResult = null;
     this.explainError = null;
     this.explainPanelOpen = false;
+    this.askPlan = null;
+    this.askError = null;
+    this.askReasoningExpanded = false;
 
     const loadVersion = ++this.chartLoadVersion;
     const startedAt = performance.now();
@@ -669,6 +678,75 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }).catch(() => {
       this.toast.error('Nao foi possivel copiar a explicacao.');
     });
+  }
+
+  submitAskQuestion(): void {
+    const question = this.askQuestion.trim();
+    if (!question) {
+      this.toast.info('Digite uma pergunta para gerar um plano.');
+      return;
+    }
+
+    this.askLoading = true;
+    this.askError = null;
+    this.askPlan = null;
+    this.askReasoningExpanded = false;
+
+    this.datasetApi.askDataset(this.datasetId, question, this.buildCurrentQueryParams()).subscribe({
+      next: (response) => {
+        this.askLoading = false;
+        if (!response.success || !response.data) {
+          this.askError = response.errors?.[0]?.message || 'Nao foi possivel analisar a pergunta.';
+          return;
+        }
+
+        this.askPlan = response.data;
+      },
+      error: (err) => {
+        this.askLoading = false;
+        this.askError = HttpErrorUtil.extractErrorMessage(err);
+      }
+    });
+  }
+
+  applyAskPlan(runAfterApply: boolean): void {
+    if (!this.askPlan) {
+      return;
+    }
+
+    const dimensions = this.askPlan.proposedDimensions || {};
+    const nextMetric = (dimensions.y || '').trim();
+    if (nextMetric) {
+      this.selectedMetric = nextMetric;
+      this.selectedMetricsY = [nextMetric];
+    }
+
+    const nextGroupBy = (dimensions.groupBy || '').trim();
+    this.selectedGroupBy = nextGroupBy;
+
+    const chartTypeRaw = (this.askPlan.suggestedChartType || '').trim().toLowerCase();
+    if (['line', 'bar', 'scatter', 'histogram'].includes(chartTypeRaw)) {
+      const normalized = this.normalizeVisualizationType(chartTypeRaw);
+      this.selectedVisualizationType = this.ensureAllowedVisualization(normalized);
+    }
+
+    const suggestedFilters = (this.askPlan.suggestedFilters || []).slice(0, 3);
+    if (suggestedFilters.length > 0) {
+      this.filterRules = suggestedFilters
+        .filter(filter => filter.column && filter.values && filter.values.length > 0)
+        .map(filter => ({
+          column: filter.column,
+          operator: filter.operator || 'Eq',
+          value: filter.values.join(',')
+        }));
+    }
+
+    if (runAfterApply) {
+      this.reloadChartWithCurrentParameters(true);
+      return;
+    }
+
+    this.syncUrlWithoutReload();
   }
 
   private buildAiSummaryPayload(): {

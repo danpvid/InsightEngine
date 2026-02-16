@@ -214,6 +214,77 @@
           </ng-container>
         </mat-card>
 
+        <mat-card class="insight-card ask-card">
+          <div class="insight-header">
+            <div class="insight-title">
+              <mat-icon>quiz</mat-icon>
+              <div class="insight-text">
+                <h3>Ask Dataset</h3>
+                <p class="insight-headline">Ask in natural language and map the plan to chart controls.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="ask-row">
+            <mat-form-field appearance="outline" class="ask-input">
+              <mat-label>Ask a question about this dataset</mat-label>
+              <input matInput [(ngModel)]="askQuestion" placeholder="Ex: Compare monthly revenue by region and highlight outliers" />
+            </mat-form-field>
+            <button mat-flat-button color="primary" (click)="submitAskQuestion()" [disabled]="askLoading">
+              {{ askLoading ? 'Analyzing...' : 'Ask' }}
+            </button>
+          </div>
+
+          <div class="chart-skeleton" *ngIf="askLoading">
+            <div class="skeleton-axis-x"></div>
+            <div class="skeleton-axis-x"></div>
+          </div>
+
+          <div class="simulation-error" *ngIf="askError">{{ askError }}</div>
+
+          <ng-container *ngIf="askPlan">
+            <div class="insight-chips">
+              <mat-chip color="primary" selected>Intent: {{ askPlan.intent }}</mat-chip>
+              <mat-chip color="primary" selected>Chart: {{ askPlan.suggestedChartType }}</mat-chip>
+              <mat-chip color="accent" selected *ngIf="askPlan.meta?.cacheHit">Cached ⚡</mat-chip>
+            </div>
+
+            <div class="ask-plan-grid">
+              <div><strong>X:</strong> {{ askPlan.proposedDimensions.x || '-' }}</div>
+              <div><strong>Y:</strong> {{ askPlan.proposedDimensions.y || '-' }}</div>
+              <div><strong>GroupBy:</strong> {{ askPlan.proposedDimensions.groupBy || '-' }}</div>
+            </div>
+
+            <div class="insight-subsection" *ngIf="askPlan.suggestedFilters?.length">
+              <h4>Suggested Filters</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let filter of askPlan.suggestedFilters">
+                  {{ filter.column }} {{ filter.operator }} {{ filter.values.join(', ') }}
+                </li>
+              </ul>
+            </div>
+
+            <button mat-button color="primary" (click)="askReasoningExpanded = !askReasoningExpanded">
+              {{ askReasoningExpanded ? 'Hide reasoning' : 'Show reasoning' }}
+            </button>
+
+            <div class="insight-subsection" *ngIf="askReasoningExpanded">
+              <ul class="insight-bullets">
+                <li *ngFor="let item of askPlan.reasoning">{{ item }}</li>
+              </ul>
+            </div>
+
+            <div class="ai-actions">
+              <button mat-stroked-button color="primary" (click)="applyAskPlan(false)">
+                Apply Plan
+              </button>
+              <button mat-flat-button color="primary" (click)="applyAskPlan(true)">
+                Apply &amp; Run
+              </button>
+            </div>
+          </ng-container>
+        </mat-card>
+
         <mat-card class="shared-filters-card">
           <div class="inline-filters-header">
             <h3>Filtros globais</h3>

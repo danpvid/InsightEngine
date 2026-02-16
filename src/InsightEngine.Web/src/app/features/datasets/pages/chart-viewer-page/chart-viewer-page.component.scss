@@ -251,9 +251,24 @@
   justify-content: flex-end;
 }
 
-.explain-card {
-  .insight-header {
+.ask-card {
+  .ask-row {
+    display: flex;
+    gap: 12px;
     align-items: flex-start;
+    margin-top: 10px;
+  }
+
+  .ask-input {
+    flex: 1;
+  }
+
+  .ask-plan-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 8px 0;
+    color: #334155;
   }
 }
 
@@ -771,5 +786,16 @@
 
   .filter-rule {
     grid-template-columns: 1fr;
+  }
+
+  .ask-card {
+    .ask-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .ask-plan-grid {
+      grid-template-columns: 1fr;
+    }
   }
 }

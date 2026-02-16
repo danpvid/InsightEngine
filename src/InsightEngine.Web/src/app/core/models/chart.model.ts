@@ -133,6 +133,27 @@ export interface ExplainChartResponse {
   meta: AiGenerationMeta;
 }
 
+export interface AskAnalysisPlanResponse {
+  intent: string;
+  suggestedChartType: string;
+  proposedDimensions: AskProposedDimensions;
+  suggestedFilters: AskSuggestedFilter[];
+  reasoning: string[];
+  meta: AiGenerationMeta;
+}
+
+export interface AskProposedDimensions {
+  x?: string | null;
+  y?: string | null;
+  groupBy?: string | null;
+}
+
+export interface AskSuggestedFilter {
+  column: string;
+  operator: string;
+  values: string[];
+}
+
 export type TrendSignal = 'Up' | 'Down' | 'Flat';
 export type VolatilitySignal = 'Low' | 'Medium' | 'High';
 export type OutlierSignal = 'None' | 'Few' | 'Many';
