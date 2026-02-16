@@ -704,6 +704,46 @@ OFFSET {offset};
         }));
     }
 
+    [HttpPost("{id:guid}/ask")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AskDataset(
+        Guid id,
+        [FromBody] AskDatasetRequest? request)
+    {
+        request ??= new AskDatasetRequest();
+        if (string.IsNullOrWhiteSpace(request.Question))
+        {
+            return ResponseResult(Result.Failure<object>("Question is required."));
+        }
+
+        var result = await _aiInsightService.AskAnalysisPlanAsync(
+            new AskAnalysisPlanRequest
+            {
+                DatasetId = id,
+                Question = request.Question,
+                CurrentView = request.CurrentView
+            },
+            HttpContext.RequestAborted);
+
+        if (!result.IsSuccess)
+        {
+            return ResponseResult(Result.Failure<object>(result.Errors));
+        }
+
+        return ResponseResult(Result.Success(new
+        {
+            intent = result.Data!.Plan.Intent,
+            suggestedChartType = result.Data.Plan.SuggestedChartType,
+            proposedDimensions = result.Data.Plan.ProposedDimensions,
+            suggestedFilters = result.Data.Plan.SuggestedFilters,
+            reasoning = result.Data.Plan.Reasoning,
+            meta = result.Data.Meta
+        }));
+    }
+
     [HttpPost("{id:guid}/simulate")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]

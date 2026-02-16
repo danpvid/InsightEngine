@@ -42,3 +42,39 @@ public class ChartExplanationResult
     public ChartExplanation Explanation { get; set; } = new();
     public AiGenerationMeta Meta { get; set; } = new();
 }
+
+public class AskAnalysisPlanRequest
+{
+    public Guid DatasetId { get; set; }
+    public string Question { get; set; } = string.Empty;
+    public Dictionary<string, object?> CurrentView { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public class AskAnalysisPlan
+{
+    public string Intent { get; set; } = "Compare";
+    public string SuggestedChartType { get; set; } = "Bar";
+    public AskProposedDimensions ProposedDimensions { get; set; } = new();
+    public List<AskSuggestedFilter> SuggestedFilters { get; set; } = new();
+    public List<string> Reasoning { get; set; } = new();
+}
+
+public class AskProposedDimensions
+{
+    public string? X { get; set; }
+    public string? Y { get; set; }
+    public string? GroupBy { get; set; }
+}
+
+public class AskSuggestedFilter
+{
+    public string Column { get; set; } = string.Empty;
+    public string Operator { get; set; } = "Eq";
+    public List<string> Values { get; set; } = new();
+}
+
+public class AskAnalysisPlanResult
+{
+    public AskAnalysisPlan Plan { get; set; } = new();
+    public AiGenerationMeta Meta { get; set; } = new();
+}

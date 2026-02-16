@@ -4,7 +4,9 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Settings;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace InsightEngine.Application.Services;
 
@@ -12,15 +14,18 @@ public class AIInsightService : IAIInsightService
 {
     private readonly ILLMContextBuilder _contextBuilder;
     private readonly ILLMClient _llmClient;
+    private readonly IOptionsMonitor<LLMSettings> _settingsMonitor;
     private readonly ILogger<AIInsightService> _logger;
 
     public AIInsightService(
         ILLMContextBuilder contextBuilder,
         ILLMClient llmClient,
+        IOptionsMonitor<LLMSettings> settingsMonitor,
         ILogger<AIInsightService> logger)
     {
         _contextBuilder = contextBuilder;
         _llmClient = llmClient;
+        _settingsMonitor = settingsMonitor;
         _logger = logger;
     }
 
@@ -94,6 +99,90 @@ public class AIInsightService : IAIInsightService
                 FallbackUsed = true,
                 FallbackReason = llmResult.IsSuccess
                     ? "Invalid AI JSON output; using heuristic summary."
+                    : string.Join(" | ", llmResult.Errors)
+            }
+        });
+    }
+
+    public async Task<Result<AskAnalysisPlanResult>> AskAnalysisPlanAsync(
+        AskAnalysisPlanRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.DatasetId == Guid.Empty)
+        {
+            return Result.Failure<AskAnalysisPlanResult>("DatasetId is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Question))
+        {
+            return Result.Failure<AskAnalysisPlanResult>("Question is required.");
+        }
+
+        var maxQuestionChars = Math.Max(100, _settingsMonitor.CurrentValue.AskMaxQuestionChars);
+        if (request.Question.Length > maxQuestionChars)
+        {
+            return Result.Failure<AskAnalysisPlanResult>($"Question exceeds max length of {maxQuestionChars} characters.");
+        }
+
+        var contextResult = await _contextBuilder.BuildAskContextAsync(
+            new LLMAskContextRequest
+            {
+                DatasetId = request.DatasetId,
+                CurrentView = request.CurrentView
+            },
+            cancellationToken);
+
+        if (!contextResult.IsSuccess || contextResult.Data == null)
+        {
+            return Result.Failure<AskAnalysisPlanResult>(contextResult.Errors);
+        }
+
+        var context = contextResult.Data;
+        var llmRequest = new LLMRequest
+        {
+            DatasetId = request.DatasetId,
+            QueryHash = context.QueryHash,
+            FeatureKind = "ask-plan",
+            PromptVersion = LLMPromptVersion.Value,
+            ResponseFormat = LLMResponseFormat.Json,
+            SystemPrompt = BuildAskSystemPrompt(),
+            UserPrompt = BuildAskUserPrompt(request.Question),
+            ContextObjects = context.ContextObjects
+        };
+
+        var llmResult = await _llmClient.GenerateJsonAsync(llmRequest, cancellationToken);
+        if (llmResult.IsSuccess && llmResult.Data != null)
+        {
+            var parsed = TryParseAnalysisPlan(llmResult.Data.Json ?? llmResult.Data.Text);
+            if (parsed != null)
+            {
+                return Result.Success(new AskAnalysisPlanResult
+                {
+                    Plan = parsed,
+                    Meta = new AiGenerationMeta
+                    {
+                        Provider = llmResult.Data.Provider,
+                        Model = llmResult.Data.ModelId,
+                        DurationMs = llmResult.Data.DurationMs,
+                        CacheHit = llmResult.Data.CacheHit,
+                        FallbackUsed = false
+                    }
+                });
+            }
+        }
+
+        return Result.Success(new AskAnalysisPlanResult
+        {
+            Plan = BuildFallbackPlan(request.Question),
+            Meta = new AiGenerationMeta
+            {
+                Provider = llmResult.Data?.Provider ?? LLMProvider.None,
+                Model = llmResult.Data?.ModelId ?? "heuristic",
+                DurationMs = llmResult.Data?.DurationMs ?? 0,
+                CacheHit = llmResult.Data?.CacheHit ?? false,
+                FallbackUsed = true,
+                FallbackReason = llmResult.IsSuccess
+                    ? "Invalid AI JSON output; returning fallback plan."
                     : string.Join(" | ", llmResult.Errors)
             }
         });
@@ -346,6 +435,73 @@ public class AIInsightService : IAIInsightService
         };
     }
 
+    private static AskAnalysisPlan? TryParseAnalysisPlan(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return null;
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<AskAnalysisPlan>(payload, SerializerOptions);
+            if (parsed == null)
+            {
+                return null;
+            }
+
+            parsed.Intent = NormalizeIntent(parsed.Intent);
+            parsed.SuggestedChartType = NormalizeChartType(parsed.SuggestedChartType);
+            parsed.Reasoning = NormalizeList(parsed.Reasoning, 6);
+            parsed.SuggestedFilters ??= new List<AskSuggestedFilter>();
+            parsed.SuggestedFilters = parsed.SuggestedFilters
+                .Where(filter => !string.IsNullOrWhiteSpace(filter.Column))
+                .Take(3)
+                .Select(filter => new AskSuggestedFilter
+                {
+                    Column = filter.Column.Trim(),
+                    Operator = NormalizeFilterOperator(filter.Operator),
+                    Values = filter.Values
+                        .Where(value => !string.IsNullOrWhiteSpace(value))
+                        .Select(value => value.Trim())
+                        .Take(3)
+                        .ToList()
+                })
+                .ToList();
+
+            return parsed.Reasoning.Count == 0 ? null : parsed;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static AskAnalysisPlan BuildFallbackPlan(string question)
+    {
+        var lowered = question.ToLowerInvariant();
+        var intent = lowered.Contains("trend", StringComparison.OrdinalIgnoreCase)
+            ? "Trend"
+            : lowered.Contains("outlier", StringComparison.OrdinalIgnoreCase)
+                ? "Outliers"
+                : lowered.Contains("break", StringComparison.OrdinalIgnoreCase)
+                    ? "Breakdown"
+                    : "Compare";
+
+        var chartType = intent == "Trend" ? "Line" : "Bar";
+
+        return new AskAnalysisPlan
+        {
+            Intent = intent,
+            SuggestedChartType = chartType,
+            Reasoning =
+            [
+                "Fallback planning is active because AI output was unavailable.",
+                "The plan uses keyword intent detection and current dataset schema."
+            ]
+        };
+    }
+
     private static string BuildSystemPrompt()
     {
         return """
@@ -408,6 +564,42 @@ Rules:
 """;
     }
 
+    private static string BuildAskSystemPrompt()
+    {
+        return """
+You convert user questions into a chart analysis plan.
+Return JSON only.
+Do not produce SQL.
+Use one of these intents: Compare, Trend, Breakdown, Outliers.
+""";
+    }
+
+    private static string BuildAskUserPrompt(string question)
+    {
+        return string.Join('\n',
+            "User question:",
+            question,
+            string.Empty,
+            "Return JSON with this schema:",
+            "{",
+            "  \"intent\": \"Compare|Trend|Breakdown|Outliers\",",
+            "  \"suggestedChartType\": \"Line|Bar|Scatter|Histogram\",",
+            "  \"proposedDimensions\": {",
+            "    \"x\": \"string or null\",",
+            "    \"y\": \"string or null\",",
+            "    \"groupBy\": \"string or null\"",
+            "  },",
+            "  \"suggestedFilters\": [",
+            "    {",
+            "      \"column\": \"string\",",
+            "      \"operator\": \"Eq|NotEq|In|Between|Contains\",",
+            "      \"values\": [\"string\"]",
+            "    }",
+            "  ],",
+            "  \"reasoning\": [\"string\"]",
+            "}");
+    }
+
     private static List<string> NormalizeList(List<string>? values, int maxItems)
     {
         if (values == null || values.Count == 0)
@@ -420,6 +612,40 @@ Rules:
             .Select(value => value.Trim())
             .Take(maxItems)
             .ToList();
+    }
+
+    private static string NormalizeIntent(string? intent)
+    {
+        return intent?.Trim().ToLowerInvariant() switch
+        {
+            "trend" => "Trend",
+            "breakdown" => "Breakdown",
+            "outliers" => "Outliers",
+            _ => "Compare"
+        };
+    }
+
+    private static string NormalizeChartType(string? chartType)
+    {
+        return chartType?.Trim().ToLowerInvariant() switch
+        {
+            "line" => "Line",
+            "scatter" => "Scatter",
+            "histogram" => "Histogram",
+            _ => "Bar"
+        };
+    }
+
+    private static string NormalizeFilterOperator(string? filterOperator)
+    {
+        return filterOperator?.Trim().ToLowerInvariant() switch
+        {
+            "noteq" => "NotEq",
+            "in" => "In",
+            "between" => "Between",
+            "contains" => "Contains",
+            _ => "Eq"
+        };
     }
 
     private static readonly JsonSerializerOptions SerializerOptions = new()

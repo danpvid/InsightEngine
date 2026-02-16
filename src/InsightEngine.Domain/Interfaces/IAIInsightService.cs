@@ -12,4 +12,8 @@ public interface IAIInsightService
     Task<Result<ChartExplanationResult>> ExplainChartAsync(
         LLMChartContextRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<Result<AskAnalysisPlanResult>> AskAnalysisPlanAsync(
+        AskAnalysisPlanRequest request,
+        CancellationToken cancellationToken = default);
 }
