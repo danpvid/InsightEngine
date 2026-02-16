@@ -16,4 +16,11 @@ public class DataSetRepository : Repository<DataSet>, IDataSetRepository
         return await _dbSet
             .FirstOrDefaultAsync(ds => ds.StoredFileName == storedFileName);
     }
+
+    public async Task<IReadOnlyList<DataSet>> GetExpiredAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .Where(ds => ds.LastAccessedAt <= cutoffUtc)
+            .ToListAsync(cancellationToken);
+    }
 }

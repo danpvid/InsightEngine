@@ -26,6 +26,7 @@ namespace InsightEngine.API.Controllers.V1;
 public class DataSetController : BaseController
 {
     private readonly IDataSetApplicationService _dataSetApplicationService;
+    private readonly IDataSetCleanupService _dataSetCleanupService;
     private readonly IFileStorageService _fileStorageService;
     private readonly ILogger<DataSetController> _logger;
     private readonly IWebHostEnvironment _environment;
@@ -33,6 +34,7 @@ public class DataSetController : BaseController
 
     public DataSetController(
         IDataSetApplicationService dataSetApplicationService,
+        IDataSetCleanupService dataSetCleanupService,
         IFileStorageService fileStorageService,
         IDomainNotificationHandler notificationHandler,
         IMediator mediator,
@@ -42,6 +44,7 @@ public class DataSetController : BaseController
         : base(notificationHandler, mediator)
     {
         _dataSetApplicationService = dataSetApplicationService;
+        _dataSetCleanupService = dataSetCleanupService;
         _fileStorageService = fileStorageService;
         _logger = logger;
         _environment = environment;
@@ -440,6 +443,21 @@ OFFSET {offset};
         };
 
         return Ok(new ApiResponse<RuntimeConfigResponse>(payload, traceId));
+    }
+
+    [HttpPost("cleanup")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> CleanupExpired([FromQuery] int? retentionDays = null)
+    {
+        var effectiveRetentionDays = retentionDays ?? _runtimeSettings.RetentionDays;
+        var result = await _dataSetCleanupService.CleanupExpiredAsync(effectiveRetentionDays);
+
+        return Ok(new
+        {
+            success = true,
+            data = result
+        });
     }
 
     /// <summary>

@@ -78,6 +78,7 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<ICsvProfiler, CsvProfiler>();
         services.AddScoped<IChartExecutionService, ChartExecutionService>();
         services.AddScoped<IScenarioSimulationService, ScenarioSimulationService>();
+        services.AddScoped<IDataSetCleanupService, DataSetCleanupService>();
         services.AddScoped<InsightEngine.Domain.Services.RecommendationEngine>();
 
         services.AddMemoryCache();

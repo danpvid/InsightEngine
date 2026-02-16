@@ -147,6 +147,7 @@ builder.Services.AddCors(options =>
 
 // Register Token Service
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddHostedService<DataSetRetentionBackgroundService>();
 
 // Register application services
 NativeInjectorBootStrapper.RegisterServices(builder.Services, builder.Configuration);
