@@ -1,5 +1,4 @@
 <div class="container-wide">
-  <!-- Breadcrumb melhorado -->
   <nav class="breadcrumb">
     <a routerLink="/datasets/new" mat-button>
       <mat-icon>upload_file</mat-icon>
@@ -8,42 +7,41 @@
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
     <a [routerLink]="['/datasets', datasetId, 'recommendations']" mat-button>
       <mat-icon>auto_awesome</mat-icon>
-      Recomendações
+      Recomendacoes
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
-    <span class="breadcrumb-current">Gráfico</span>
+    <span class="breadcrumb-current">Grafico</span>
   </nav>
 
-  <!-- Navigation Controls -->
   <div class="navigation-controls" *ngIf="recommendations.length > 0">
-    <button 
-      mat-button
-      (click)="goToPrevious()" 
-      [disabled]="!hasPrevious"
-      class="nav-btn">
+    <button mat-button (click)="goToPrevious()" [disabled]="!hasPrevious" class="nav-btn">
       <mat-icon>chevron_left</mat-icon>
       Anterior
     </button>
 
+    <mat-form-field appearance="outline" class="insight-search">
+      <mat-label>Buscar insight</mat-label>
+      <input matInput [(ngModel)]="navigationSearch" placeholder="Titulo, tipo, score" />
+      <mat-icon matSuffix>search</mat-icon>
+    </mat-form-field>
+
     <mat-form-field appearance="outline" class="insight-selector">
-      <mat-label>Insight</mat-label>
-      <mat-select 
-        [value]="recommendationId" 
-        (selectionChange)="onRecommendationChange($event.value)">
-        <mat-option *ngFor="let rec of recommendations; let i = index" [value]="rec.id">
-          {{ i + 1 }}. {{ rec.title }}
+      <mat-label>Todos os insights</mat-label>
+      <mat-select [value]="recommendationId" (selectionChange)="onRecommendationChange($event.value)">
+        <mat-option *ngFor="let rec of filteredNavigationRecommendations" [value]="rec.id">
+          {{ recommendationDisplay(rec) }}
         </mat-option>
       </mat-select>
     </mat-form-field>
 
-    <button 
-      mat-button
-      (click)="goToNext()" 
-      [disabled]="!hasNext"
-      class="nav-btn">
-      Próximo
+    <button mat-button (click)="goToNext()" [disabled]="!hasNext" class="nav-btn">
+      Proximo
       <mat-icon>chevron_right</mat-icon>
     </button>
+
+    <mat-slide-toggle [(ngModel)]="keepNavigationContext" color="primary" class="keep-context-toggle">
+      Manter contexto
+    </mat-slide-toggle>
   </div>
 
   <app-page-header
@@ -53,155 +51,374 @@
   </app-page-header>
 
   <app-loading-bar [loading]="loading"></app-loading-bar>
-  
   <app-error-panel [error]="error"></app-error-panel>
 
-  <!-- Main Layout: Chart + Controls -->
-  <div class="chart-layout" *ngIf="!loading && chartOption">
-    <!-- Left: Chart Card -->
-    <mat-card class="chart-card">
-      <!-- Insight Summary -->
-      <div class="insight-summary" *ngIf="currentRecommendation">
-        <div class="insight-header">
-          <mat-icon>lightbulb</mat-icon>
-          <h3>Insight</h3>
-        </div>
-        <p class="insight-text">{{ getInsightSummary() }}</p>
+  <mat-drawer-container class="chart-layout" *ngIf="!loading && chartOption" autosize>
+    <mat-drawer-content>
+      <div class="chart-column">
+        <mat-card class="insight-card" *ngIf="insightSummary">
+          <div class="insight-header">
+            <div class="insight-title">
+              <mat-icon>lightbulb</mat-icon>
+              <div class="insight-text">
+                <h3>Resumo do Insight</h3>
+                <p class="insight-headline">{{ insightSummary.headline }}</p>
+              </div>
+            </div>
+            <span class="confidence" *ngIf="insightSummary.confidence !== null">
+              Confianca {{ insightSummary.confidence | percent:'1.0-0' }}
+            </span>
+          </div>
+
+          <div class="insight-chips">
+            <mat-chip color="primary" selected>Tendencia: {{ insightSummary.signals.trend }}</mat-chip>
+            <mat-chip color="primary" selected>Volatilidade: {{ insightSummary.signals.volatility }}</mat-chip>
+            <mat-chip color="primary" selected>Outliers: {{ insightSummary.signals.outliers }}</mat-chip>
+            <mat-chip color="primary" selected>Sazonalidade: {{ insightSummary.signals.seasonality }}</mat-chip>
+          </div>
+
+          <ul class="insight-bullets">
+            <li *ngFor="let bullet of insightSummary.bulletPoints">{{ bullet }}</li>
+          </ul>
+        </mat-card>
+
+        <mat-tab-group [(selectedIndex)]="activeTab" class="viewer-tabs">
+          <mat-tab label="Grafico">
+            <mat-card class="chart-card">
+              <mat-card-header>
+                <mat-card-title>
+                  Visualizacao Interativa
+                  <span class="cached-badge" *ngIf="isCached">
+                    <mat-icon>bolt</mat-icon> Cached
+                  </span>
+                </mat-card-title>
+                <div class="header-actions">
+                  <button mat-icon-button (click)="toggleControls()" *ngIf="isMobile" matTooltip="Controles" color="primary">
+                    <mat-icon>tune</mat-icon>
+                  </button>
+                  <button mat-icon-button (click)="copyChartLink()" matTooltip="Copiar link" color="primary">
+                    <mat-icon>link</mat-icon>
+                  </button>
+                  <button mat-icon-button (click)="exportChartPNG()" matTooltip="Exportar PNG" color="primary">
+                    <mat-icon>download</mat-icon>
+                  </button>
+                  <button mat-icon-button (click)="refreshChart()" matTooltip="Recarregar" color="primary">
+                    <mat-icon>refresh</mat-icon>
+                  </button>
+                </div>
+              </mat-card-header>
+
+              <mat-card-content>
+                <div class="chart-skeleton" *ngIf="loading">
+                  <div class="skeleton-axis-y"></div>
+                  <div class="skeleton-bars">
+                    <div class="skeleton-bar" *ngFor="let i of [1,2,3,4,5,6,7,8,9,10]" [style.height.%]="50 + (i * 5)"></div>
+                  </div>
+                  <div class="skeleton-axis-x"></div>
+                  <div class="skeleton-legend"></div>
+                </div>
+
+                <div class="chart-wrapper" *ngIf="!loading">
+                  <div
+                    echarts
+                    [options]="chartOption"
+                    (chartInit)="onChartInit($event)"
+                    class="chart">
+                  </div>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          </mat-tab>
+
+          <mat-tab label="Simulacao">
+            <mat-card class="simulation-card">
+              <mat-card-header>
+                <mat-card-title>
+                  <mat-icon>science</mat-icon>
+                  What-if Simulation
+                </mat-card-title>
+              </mat-card-header>
+
+              <mat-card-content>
+                <div class="simulation-grid">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Target Metric</mat-label>
+                    <mat-select [(ngModel)]="simulationTargetMetric">
+                      <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
+                        {{ metric }}
+                      </mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline">
+                    <mat-label>Target Dimension</mat-label>
+                    <mat-select [(ngModel)]="simulationTargetDimension">
+                      <mat-option *ngFor="let col of profileColumns" [value]="col.name">
+                        {{ col.name }}
+                      </mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline">
+                    <mat-label>Aggregation</mat-label>
+                    <mat-select [(ngModel)]="selectedAggregation">
+                      <mat-option *ngFor="let agg of availableAggregations" [value]="agg">
+                        {{ agg }}
+                      </mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                </div>
+
+                <div class="simulation-ops-header">
+                  <h3>Operacoes (max 3)</h3>
+                  <button mat-stroked-button color="primary" (click)="addSimulationOperation()" [disabled]="simulationOperations.length >= 3">
+                    Adicionar operacao
+                  </button>
+                </div>
+
+                <div class="simulation-operation" *ngFor="let op of simulationOperations; let i = index">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Tipo</mat-label>
+                    <mat-select [(ngModel)]="op.type" (selectionChange)="onSimulationOperationTypeChange(op)">
+                      <mat-option *ngFor="let type of simulationOperationTypes" [value]="type.value">
+                        {{ type.label }}
+                      </mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" *ngIf="op.type === 'RemoveCategory' || op.type === 'FilterOut'">
+                    <mat-label>Coluna</mat-label>
+                    <mat-select [(ngModel)]="op.column">
+                      <mat-option *ngFor="let col of profileColumns" [value]="col.name">
+                        {{ col.name }}
+                      </mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" *ngIf="op.type === 'RemoveCategory' || op.type === 'FilterOut'">
+                    <mat-label>Valores (CSV)</mat-label>
+                    <input matInput [(ngModel)]="op.values" placeholder="A,B,C" />
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" *ngIf="op.type === 'MultiplyMetric'">
+                    <mat-label>Factor</mat-label>
+                    <input matInput type="number" [(ngModel)]="op.factor" />
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" *ngIf="op.type === 'AddConstant'">
+                    <mat-label>Constante</mat-label>
+                    <input matInput type="number" [(ngModel)]="op.constant" />
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" *ngIf="op.type === 'Clamp'">
+                    <mat-label>Min</mat-label>
+                    <input matInput type="number" [(ngModel)]="op.min" />
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" *ngIf="op.type === 'Clamp'">
+                    <mat-label>Max</mat-label>
+                    <input matInput type="number" [(ngModel)]="op.max" />
+                  </mat-form-field>
+
+                  <div class="simulation-operation-preview">{{ simulationOperationDescription(op) }}</div>
+
+                  <button mat-icon-button color="warn" (click)="removeSimulationOperation(i)">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </div>
+
+                <div class="simulation-actions">
+                  <button mat-raised-button color="primary" (click)="runSimulation()" [disabled]="!canRunSimulation">
+                    Run simulation
+                  </button>
+                </div>
+
+                <app-loading-bar [loading]="simulationLoading"></app-loading-bar>
+                <div class="simulation-error" *ngIf="simulationError">{{ simulationError }}</div>
+
+                <div class="simulation-result" *ngIf="simulationResult && simulationChartOption">
+                  <div class="delta-cards">
+                    <mat-card>
+                      <div class="delta-title">Average Delta</div>
+                      <div class="delta-value">{{ formatDeltaPercent(simulationResult.deltaSummary.averageDeltaPercent) }}</div>
+                    </mat-card>
+                    <mat-card>
+                      <div class="delta-title">Max Delta</div>
+                      <div class="delta-value">{{ formatDeltaPercent(simulationResult.deltaSummary.maxDeltaPercent) }}</div>
+                    </mat-card>
+                    <mat-card>
+                      <div class="delta-title">Min Delta</div>
+                      <div class="delta-value">{{ formatDeltaPercent(simulationResult.deltaSummary.minDeltaPercent) }}</div>
+                    </mat-card>
+                    <mat-card>
+                      <div class="delta-title">Changed Points</div>
+                      <div class="delta-value">{{ simulationResult.deltaSummary.changedPoints }}</div>
+                    </mat-card>
+                  </div>
+
+                  <div class="chart-wrapper simulation-chart-wrapper">
+                    <div
+                      echarts
+                      [options]="simulationChartOption"
+                      (chartInit)="onSimulationChartInit($event)"
+                      class="chart simulation-chart">
+                    </div>
+                  </div>
+
+                  <div class="simulation-meta">
+                    <span>Rows: {{ simulationResult.rowCountReturned }}</span>
+                    <span>DuckDB: {{ formatExecutionTime(simulationResult.duckDbMs) }}</span>
+                    <span>Hash: {{ simulationResult.queryHash }}</span>
+                  </div>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          </mat-tab>
+        </mat-tab-group>
       </div>
+    </mat-drawer-content>
 
-      <mat-card-header>
-        <mat-card-title>
-          Visualização Interativa
-          <span class="cached-badge" *ngIf="isCached">
-            <mat-icon>bolt</mat-icon> Cached
-          </span>
-        </mat-card-title>
-        <div class="header-actions">
-          <button 
-            mat-icon-button 
-            (click)="copyChartLink()" 
-            matTooltip="Copiar link do gráfico"
-            color="primary">
-            <mat-icon>link</mat-icon>
-          </button>
-          <button 
-            mat-icon-button 
-            (click)="exportChartPNG()" 
-            matTooltip="Exportar como PNG"
-            color="primary">
-            <mat-icon>download</mat-icon>
-          </button>
-          <button 
-            mat-icon-button 
-            (click)="refreshChart()" 
-            matTooltip="Recarregar gráfico"
-            color="primary">
-            <mat-icon>refresh</mat-icon>
-          </button>
-        </div>
-      </mat-card-header>
-      
-      <mat-card-content>
-        <!-- Skeleton loading -->
-        <div class="chart-skeleton" *ngIf="loading">
-          <div class="skeleton-axis-y"></div>
-          <div class="skeleton-bars">
-            <div class="skeleton-bar" *ngFor="let i of [1,2,3,4,5,6,7,8,9,10]" [style.height.%]="50 + (i * 5)"></div>
+    <mat-drawer class="controls-drawer" position="end" [mode]="isMobile ? 'over' : 'side'" [(opened)]="controlsOpen">
+      <mat-card class="controls-card">
+        <mat-card-header>
+          <mat-card-title>
+            <mat-icon>tune</mat-icon>
+            Controles
+          </mat-card-title>
+        </mat-card-header>
+
+        <mat-card-content>
+          <div class="controls-actions">
+            <button mat-stroked-button color="primary" (click)="resetToRecommended()">
+              Reset to Recommended
+            </button>
           </div>
-          <div class="skeleton-axis-x"></div>
-          <div class="skeleton-legend"></div>
-        </div>
 
-        <!-- Actual chart -->
-        <div class="chart-wrapper" *ngIf="!loading">
-          <div
-            echarts
-            [options]="chartOption"
-            (chartInit)="onChartInit($event)"
-            class="chart">
+          <mat-divider></mat-divider>
+
+          <div class="controls-section">
+            <h3>Agregacao</h3>
+            <mat-form-field appearance="outline">
+              <mat-label>Tipo</mat-label>
+              <mat-select [(ngModel)]="selectedAggregation" (selectionChange)="onAggregationChange()">
+                <mat-option *ngFor="let agg of availableAggregations" [value]="agg">
+                  {{ agg }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
           </div>
-        </div>
-      </mat-card-content>
-    </mat-card>
 
-    <!-- Right: Controls Panel -->
-    <mat-card class="controls-card">
-      <mat-card-header>
-        <mat-card-title>
-          <mat-icon>tune</mat-icon>
-          Controles
-        </mat-card-title>
-      </mat-card-header>
-      
-      <mat-card-content>
-        <div class="controls-section">
-          <h3>Agregação</h3>
-          <mat-form-field appearance="outline">
-            <mat-label>Tipo</mat-label>
-            <mat-select 
-              [(ngModel)]="selectedAggregation" 
-              (selectionChange)="onAggregationChange()">
-              <mat-option *ngFor="let agg of availableAggregations" [value]="agg">
-                {{ agg }}
-              </mat-option>
-            </mat-select>
-          </mat-form-field>
-        </div>
+          <mat-divider></mat-divider>
 
-        <mat-divider></mat-divider>
+          <div class="controls-section">
+            <h3>Periodo</h3>
+            <mat-form-field appearance="outline">
+              <mat-label>Intervalo</mat-label>
+              <mat-select [(ngModel)]="selectedTimeBin" (selectionChange)="onTimeBinChange()">
+                <mat-option *ngFor="let bin of availableTimeBins" [value]="bin">
+                  {{ bin }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
 
-        <div class="controls-section">
-          <h3>Período</h3>
-          <mat-form-field appearance="outline">
-            <mat-label>Intervalo</mat-label>
-            <mat-select 
-              [(ngModel)]="selectedTimeBin" 
-              (selectionChange)="onTimeBinChange()">
-              <mat-option *ngFor="let bin of availableTimeBins" [value]="bin">
-                {{ bin }}
-              </mat-option>
-            </mat-select>
-          </mat-form-field>
-        </div>
+          <mat-divider></mat-divider>
 
-        <mat-divider></mat-divider>
+          <div class="controls-section">
+            <h3>Metrica Y</h3>
+            <mat-form-field appearance="outline">
+              <mat-label>Coluna</mat-label>
+              <mat-select [(ngModel)]="selectedMetric" (selectionChange)="onMetricChange()" [disabled]="availableMetrics.length === 0">
+                <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
+                  {{ metric }}
+                </mat-option>
+              </mat-select>
+              <mat-hint *ngIf="availableMetrics.length === 0">
+                Baseado na recomendacao
+              </mat-hint>
+            </mat-form-field>
+          </div>
 
-        <div class="controls-section">
-          <h3>Métrica Y</h3>
-          <mat-form-field appearance="outline">
-            <mat-label>Coluna</mat-label>
-            <mat-select 
-              [(ngModel)]="selectedMetric" 
-              (selectionChange)="onMetricChange()"
-              [disabled]="availableMetrics.length === 0">
-              <mat-option [value]="selectedMetric" *ngIf="selectedMetric">
-                {{ selectedMetric }}
-              </mat-option>
-            </mat-select>
-            <mat-hint *ngIf="availableMetrics.length === 0">
-              Baseado na recomendação
-            </mat-hint>
-          </mat-form-field>
-        </div>
+          <mat-divider></mat-divider>
 
-        <mat-divider></mat-divider>
+          <div class="controls-section">
+            <h3>Group By</h3>
+            <mat-form-field appearance="outline">
+              <mat-label>Coluna</mat-label>
+              <mat-select [(ngModel)]="selectedGroupBy" (selectionChange)="onGroupByChange()">
+                <mat-option [value]="''">Nenhum</mat-option>
+                <mat-option *ngFor="let col of availableGroupBy" [value]="col">
+                  {{ col }}
+                </mat-option>
+              </mat-select>
+              <mat-hint *ngIf="availableGroupBy.length === 0">
+                Sem colunas de baixa cardinalidade
+              </mat-hint>
+            </mat-form-field>
+          </div>
 
-        <div class="controls-info">
-          <mat-icon>info</mat-icon>
-          <p>
-            Controles dinâmicos em desenvolvimento.
-            Os valores são baseados na recomendação original.
-          </p>
-        </div>
-      </mat-card-content>
-    </mat-card>
-  </div>
+          <mat-divider></mat-divider>
+
+          <div class="controls-section filters-section">
+            <div class="filters-header">
+              <h3>Filtros</h3>
+              <button mat-stroked-button (click)="addFilterRule()" [disabled]="filterRules.length >= 3">
+                Adicionar
+              </button>
+            </div>
+
+            <div class="filter-rule" *ngFor="let rule of filterRules; let i = index">
+              <mat-form-field appearance="outline">
+                <mat-label>Coluna</mat-label>
+                <mat-select [(ngModel)]="rule.column" (selectionChange)="onFilterRuleChange()">
+                  <mat-option *ngFor="let col of profileColumns" [value]="col.name">
+                    {{ col.name }}
+                  </mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline">
+                <mat-label>Op</mat-label>
+                <mat-select [(ngModel)]="rule.operator" (selectionChange)="onFilterRuleChange()">
+                  <mat-option *ngFor="let op of filterOperators" [value]="op.value">
+                    {{ op.label }}
+                  </mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" class="filter-value">
+                <mat-label>Valor</mat-label>
+                <input matInput [(ngModel)]="rule.value" (ngModelChange)="onFilterRuleChange()" />
+              </mat-form-field>
+
+              <button mat-icon-button color="warn" (click)="removeFilterRule(i)">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+
+            <p class="filters-hint">
+              Use v1,v2 para "in" e "between".
+            </p>
+          </div>
+
+          <mat-divider></mat-divider>
+
+          <div class="controls-info">
+            <mat-icon>info</mat-icon>
+            <p>
+              Os mesmos filtros podem ser reaproveitados na aba de simulacao.
+            </p>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </mat-drawer>
+  </mat-drawer-container>
 
   <mat-card *ngIf="!loading && chartMeta" class="meta-card">
     <mat-card-header>
-      <mat-card-title>Informações de Execução</mat-card-title>
+      <mat-card-title>Informacoes de Execucao</mat-card-title>
     </mat-card-header>
-    
+
     <mat-card-content>
       <div class="meta-grid">
         <div class="meta-item">
@@ -215,7 +432,7 @@
         <div class="meta-item" *ngIf="chartMeta.executionMs">
           <mat-icon>speed</mat-icon>
           <div class="meta-content">
-            <span class="meta-label">Tempo de Execução</span>
+            <span class="meta-label">Tempo de Execucao</span>
             <span class="meta-value">{{ formatExecutionTime(chartMeta.executionMs) }}</span>
           </div>
         </div>
@@ -223,7 +440,7 @@
         <div class="meta-item" *ngIf="chartMeta.chartType">
           <mat-icon>insert_chart</mat-icon>
           <div class="meta-content">
-            <span class="meta-label">Tipo de Gráfico</span>
+            <span class="meta-label">Tipo de Grafico</span>
             <span class="meta-value">{{ chartMeta.chartType }}</span>
           </div>
         </div>
@@ -252,13 +469,13 @@
       <mat-card-content>
         <div class="tips-header">
           <mat-icon>info</mat-icon>
-          <strong>Dicas de Interação</strong>
+          <strong>Dicas de Interacao</strong>
         </div>
         <ul>
           <li>Passe o mouse sobre os elementos para ver detalhes</li>
-          <li>Clique nos itens da legenda para mostrar/ocultar séries</li>
-          <li>Use a roda do mouse para zoom (quando disponível)</li>
-          <li>Arraste para navegar pelo gráfico</li>
+          <li>Clique nos itens da legenda para mostrar ou ocultar series</li>
+          <li>Use a roda do mouse para zoom quando disponivel</li>
+          <li>Use a aba Simulacao para comparar baseline e cenario</li>
         </ul>
       </mat-card-content>
     </mat-card>

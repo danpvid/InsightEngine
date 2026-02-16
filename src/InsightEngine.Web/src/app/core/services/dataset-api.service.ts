@@ -4,9 +4,9 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../environments/environment.development';
 import { ApiResponse } from '../models/api-response.model';
-import { UploadDatasetResponse, DataSetSummary } from '../models/dataset.model';
+import { UploadDatasetResponse, DataSetSummary, DatasetProfile } from '../models/dataset.model';
 import { RecommendationsResponse } from '../models/recommendation.model';
-import { ChartResponse } from '../models/chart.model';
+import { ChartResponse, ScenarioSimulationRequest, ScenarioSimulationResponse } from '../models/chart.model';
 
 export interface UploadProgress {
   progress: number;
@@ -80,6 +80,15 @@ export class DatasetApiService {
   }
 
   /**
+   * Get dataset profile (schema + stats)
+   */
+  getProfile(datasetId: string): Observable<ApiResponse<DatasetProfile>> {
+    return this.http.get<ApiResponse<DatasetProfile>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/profile`
+    );
+  }
+
+  /**
    * Get chart data for a specific recommendation with optional dynamic parameters
    */
   getChart(
@@ -88,7 +97,10 @@ export class DatasetApiService {
     options?: {
       aggregation?: string;
       timeBin?: string;
+      metricY?: string;
       yColumn?: string;
+      groupBy?: string;
+      filters?: string[];
     }
   ): Observable<ApiResponse<ChartResponse>> {
     let url = `${this.baseUrl}/api/v1/datasets/${datasetId}/charts/${recommendationId}`;
@@ -99,7 +111,12 @@ export class DatasetApiService {
       const params = new URLSearchParams();
       if (options.aggregation) params.append('aggregation', options.aggregation);
       if (options.timeBin) params.append('timeBin', options.timeBin);
+      if (options.metricY) params.append('metricY', options.metricY);
       if (options.yColumn) params.append('yColumn', options.yColumn);
+      if (options.groupBy) params.append('groupBy', options.groupBy);
+      if (options.filters && options.filters.length > 0) {
+        options.filters.forEach(filter => params.append('filters', filter));
+      }
       
       const queryString = params.toString();
       if (queryString) {
@@ -109,5 +126,15 @@ export class DatasetApiService {
     }
 
     return this.http.get<ApiResponse<ChartResponse>>(url);
+  }
+
+  simulate(
+    datasetId: string,
+    payload: ScenarioSimulationRequest
+  ): Observable<ApiResponse<ScenarioSimulationResponse>> {
+    return this.http.post<ApiResponse<ScenarioSimulationResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/simulate`,
+      payload
+    );
   }
 }

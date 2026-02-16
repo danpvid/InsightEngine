@@ -36,11 +36,10 @@ export class RecommendationsPageComponent implements OnInit {
   loading: boolean = false;
   error: ApiError | null = null;
 
-  // Filters
   selectedChartType: string = 'All';
-  sortBy: string = 'default';
+  sortBy: string = 'score';
 
-  chartTypes: string[] = ['All', 'Line', 'Bar', 'Scatter', 'Histogram', 'Pie'];
+  chartTypes: string[] = ['All', 'Line', 'Bar', 'Scatter', 'Histogram'];
 
   constructor(
     private route: ActivatedRoute,
@@ -51,11 +50,11 @@ export class RecommendationsPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.datasetId = this.route.snapshot.paramMap.get('datasetId') || '';
-    
+
     if (!this.datasetId) {
       this.error = {
         code: 'MISSING_DATASET_ID',
-        message: 'ID do dataset não fornecido.'
+        message: 'ID do dataset nao fornecido.'
       };
       return;
     }
@@ -70,14 +69,13 @@ export class RecommendationsPageComponent implements OnInit {
     this.datasetApi.getRecommendations(this.datasetId).subscribe({
       next: (response) => {
         this.loading = false;
-        
+
         if (response.success && response.data) {
-          // Backend retorna array direto no data
           this.recommendations = Array.isArray(response.data) ? response.data : [];
           this.applyFilters();
-          
+
           if (this.recommendations.length === 0) {
-            this.toast.info('Nenhuma recomendação encontrada para este dataset.');
+            this.toast.info('Nenhuma recomendacao encontrada para este dataset.');
           }
         } else if (response.error) {
           this.error = response.error;
@@ -94,7 +92,7 @@ export class RecommendationsPageComponent implements OnInit {
             message: HttpErrorUtil.extractErrorMessage(err)
           };
         }
-        this.toast.error('Erro ao carregar recomendações');
+        this.toast.error('Erro ao carregar recomendacoes');
       }
     });
   }
@@ -105,48 +103,119 @@ export class RecommendationsPageComponent implements OnInit {
 
   getChartTypeColor(chartType: string): string {
     const colors: Record<string, string> = {
-      'Line': 'primary',
-      'Bar': 'accent',
-      'Scatter': 'warn',
-      'Histogram': 'primary',
-      'Pie': 'accent'
+      Line: 'primary',
+      Bar: 'accent',
+      Scatter: 'warn',
+      Histogram: 'primary'
     };
     return colors[chartType] || 'primary';
   }
 
   getChartTypeIcon(chartType: string): string {
     const icons: Record<string, string> = {
-      'Line': 'show_chart',
-      'Bar': 'bar_chart',
-      'Scatter': 'scatter_plot',
-      'Histogram': 'equalizer',
-      'Pie': 'pie_chart'
+      Line: 'show_chart',
+      Bar: 'bar_chart',
+      Scatter: 'scatter_plot',
+      Histogram: 'equalizer'
     };
     return icons[chartType] || 'insert_chart';
   }
 
-  // Helper para pegar o tipo do chart do objeto aninhado
   getChartType(rec: ChartRecommendation): string {
     return rec.chart?.type || 'Line';
   }
 
-  // Filter & Sort methods
+  getScore(rec: ChartRecommendation): number {
+    return rec.score ?? 0;
+  }
+
+  getImpactScore(rec: ChartRecommendation): number {
+    return rec.impactScore ?? 0;
+  }
+
+  formatScore(score?: number): string {
+    const safeScore = score ?? 0;
+    return safeScore.toFixed(2);
+  }
+
   applyFilters(): void {
     let filtered = [...this.recommendations];
 
-    // Filter by chart type
     if (this.selectedChartType !== 'All') {
       filtered = filtered.filter(rec => this.getChartType(rec) === this.selectedChartType);
     }
 
-    // Sort
-    if (this.sortBy === 'type') {
-      filtered.sort((a, b) => this.getChartType(a).localeCompare(this.getChartType(b)));
-    } else if (this.sortBy === 'title') {
-      filtered.sort((a, b) => a.title.localeCompare(b.title));
+    const decorated = filtered.map((rec, index) => ({ rec, index }));
+
+    decorated.sort((left, right) => {
+      if (this.sortBy === 'score') {
+        return this.compareStable(
+          right.rec.score ?? 0,
+          left.rec.score ?? 0,
+          right.rec.impactScore ?? 0,
+          left.rec.impactScore ?? 0,
+          left.index,
+          right.index);
+      }
+
+      if (this.sortBy === 'impact') {
+        return this.compareStable(
+          right.rec.impactScore ?? 0,
+          left.rec.impactScore ?? 0,
+          right.rec.score ?? 0,
+          left.rec.score ?? 0,
+          left.index,
+          right.index);
+      }
+
+      if (this.sortBy === 'type') {
+        const typeCompare = this.getChartType(left.rec).localeCompare(this.getChartType(right.rec));
+        if (typeCompare !== 0) {
+          return typeCompare;
+        }
+
+        return this.compareStable(
+          right.rec.score ?? 0,
+          left.rec.score ?? 0,
+          right.rec.impactScore ?? 0,
+          left.rec.impactScore ?? 0,
+          left.index,
+          right.index);
+      }
+
+      if (this.sortBy === 'title') {
+        const titleCompare = left.rec.title.localeCompare(right.rec.title);
+        if (titleCompare !== 0) {
+          return titleCompare;
+        }
+
+        return left.index - right.index;
+      }
+
+      return left.index - right.index;
+    });
+
+    this.filteredRecommendations = decorated.map(item => item.rec);
+  }
+
+  private compareStable(
+    primaryLeft: number,
+    primaryRight: number,
+    secondaryLeft: number,
+    secondaryRight: number,
+    leftIndex: number,
+    rightIndex: number): number {
+    const primary = primaryLeft - primaryRight;
+    if (primary !== 0) {
+      return primary;
     }
 
-    this.filteredRecommendations = filtered;
+    const secondary = secondaryLeft - secondaryRight;
+    if (secondary !== 0) {
+      return secondary;
+    }
+
+    return leftIndex - rightIndex;
   }
 
   onChartTypeChange(): void {
@@ -159,7 +228,7 @@ export class RecommendationsPageComponent implements OnInit {
 
   copyDatasetId(): void {
     navigator.clipboard.writeText(this.datasetId).then(() => {
-      this.toast.success('ID copiado para área de transferência');
+      this.toast.success('ID copiado para a area de transferencia');
     });
   }
 }

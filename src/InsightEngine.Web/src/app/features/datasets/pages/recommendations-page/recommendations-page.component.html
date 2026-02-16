@@ -1,5 +1,4 @@
 <div class="container">
-  <!-- Breadcrumb -->
   <nav class="breadcrumb">
     <a routerLink="/" class="breadcrumb-item">
       <mat-icon>home</mat-icon>
@@ -8,12 +7,12 @@
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
     <span class="breadcrumb-item active">
       <mat-icon>auto_awesome</mat-icon>
-      <span>Recomendações</span>
+      <span>Recomendacoes</span>
     </span>
   </nav>
 
   <app-page-header
-    title="Recomendações de Gráficos"
+    title="Recomendacoes de Graficos"
     [subtitle]="'Dataset: ' + datasetId"
     icon="auto_awesome">
   </app-page-header>
@@ -40,14 +39,13 @@
 
   <app-error-panel [error]="error"></app-error-panel>
 
-  <!-- Filters -->
   <mat-card class="filters-card" *ngIf="!loading && recommendations.length > 0">
     <mat-card-content>
       <div class="filters-container">
         <div class="filter-group">
           <mat-icon>filter_list</mat-icon>
           <mat-form-field appearance="outline">
-            <mat-label>Tipo de Gráfico</mat-label>
+            <mat-label>Tipo de Grafico</mat-label>
             <mat-select [(ngModel)]="selectedChartType" (selectionChange)="onChartTypeChange()">
               <mat-option *ngFor="let type of chartTypes" [value]="type">
                 {{ type === 'All' ? 'Todos' : type }}
@@ -61,27 +59,27 @@
           <mat-form-field appearance="outline">
             <mat-label>Ordenar por</mat-label>
             <mat-select [(ngModel)]="sortBy" (selectionChange)="onSortChange()">
-              <mat-option value="default">Padrão</mat-option>
+              <mat-option value="score">Score</mat-option>
+              <mat-option value="impact">Impacto</mat-option>
               <mat-option value="type">Tipo</mat-option>
-              <mat-option value="title">Título</mat-option>
+              <mat-option value="title">Titulo</mat-option>
+              <mat-option value="default">Ordem original</mat-option>
             </mat-select>
           </mat-form-field>
         </div>
 
         <div class="results-count">
           <mat-icon>bar_chart</mat-icon>
-          <span>{{ filteredRecommendations.length }} recomendações</span>
+          <span>{{ filteredRecommendations.length }} recomendacoes</span>
         </div>
       </div>
     </mat-card-content>
   </mat-card>
 
-  <!-- Skeleton Loading -->
   <div class="recommendations-grid" *ngIf="loading">
     <app-skeleton-card *ngFor="let i of [1,2,3,4,5,6]"></app-skeleton-card>
   </div>
 
-  <!-- Recommendations Grid -->
   <div class="recommendations-grid" *ngIf="!loading && filteredRecommendations.length > 0">
     <mat-card
       *ngFor="let rec of filteredRecommendations"
@@ -96,11 +94,17 @@
         <mat-card-title>{{ rec.title }}</mat-card-title>
         <mat-card-subtitle *ngIf="rec.reason">{{ rec.reason }}</mat-card-subtitle>
       </mat-card-header>
-      
+
       <mat-card-content>
         <div class="chart-type-badge">
           <mat-chip [color]="getChartTypeColor(getChartType(rec))" highlighted>
             {{ getChartType(rec) }}
+          </mat-chip>
+          <mat-chip highlighted>
+            Score {{ formatScore(rec.score) }}
+          </mat-chip>
+          <mat-chip highlighted>
+            Impacto {{ formatScore(rec.impactScore) }}
           </mat-chip>
         </div>
 
@@ -115,12 +119,19 @@
           </div>
           <div class="detail-row" *ngIf="rec.aggregation">
             <mat-icon>functions</mat-icon>
-            <span><strong>Agregação:</strong> {{ rec.aggregation }}</span>
+            <span><strong>Agregacao:</strong> {{ rec.aggregation }}</span>
           </div>
           <div class="detail-row" *ngIf="rec.timeBin">
             <mat-icon>calendar_today</mat-icon>
-            <span><strong>Período:</strong> {{ rec.timeBin }}</span>
+            <span><strong>Periodo:</strong> {{ rec.timeBin }}</span>
           </div>
+        </div>
+
+        <div class="criteria" *ngIf="rec.scoreCriteria && rec.scoreCriteria.length > 0">
+          <div class="criteria-title">Criterios de score</div>
+          <ul>
+            <li *ngFor="let criterion of rec.scoreCriteria | slice:0:3">{{ criterion }}</li>
+          </ul>
         </div>
 
         <p class="reasoning" *ngIf="rec.reason">
@@ -132,7 +143,7 @@
       <mat-card-actions>
         <button mat-raised-button color="primary" class="open-chart-btn">
           <mat-icon>visibility</mat-icon>
-          Abrir Gráfico
+          Abrir Grafico
         </button>
       </mat-card-actions>
     </mat-card>
@@ -140,8 +151,8 @@
 
   <div class="empty-state" *ngIf="!loading && !error && recommendations.length === 0">
     <mat-icon>search_off</mat-icon>
-    <h3>Nenhuma recomendação disponível</h3>
-    <p>Não foi possível gerar recomendações de gráficos para este dataset.</p>
+    <h3>Nenhuma recomendacao disponivel</h3>
+    <p>Nao foi possivel gerar recomendacoes de graficos para este dataset.</p>
     <button mat-raised-button color="primary" routerLink="/datasets/new">
       <mat-icon>upload_file</mat-icon>
       Enviar Novo Dataset

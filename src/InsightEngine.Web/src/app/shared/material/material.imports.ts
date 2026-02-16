@@ -13,6 +13,9 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSidenavModule } from '@angular/material/sidenav';
+import { MatTabsModule } from '@angular/material/tabs';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 
 export const MATERIAL_MODULES = [
   MatToolbarModule,
@@ -29,5 +32,8 @@ export const MATERIAL_MODULES = [
   MatSelectModule,
   MatChipsModule,
   MatDividerModule,
-  MatTooltipModule
+  MatTooltipModule,
+  MatSidenavModule,
+  MatTabsModule,
+  MatSlideToggleModule
 ];
