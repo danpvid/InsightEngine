@@ -6,7 +6,7 @@ public class LLMSettings
 {
     public const string SectionName = "LLM";
 
-    public LLMProvider Provider { get; set; } = LLMProvider.None;
+    public LLMProvider Provider { get; set; } = LLMProvider.LocalHttp;
     public int TimeoutSeconds { get; set; } = 20;
     public int MaxTokens { get; set; } = 512;
     public int MaxContextBytes { get; set; } = 24_000;
@@ -22,6 +22,16 @@ public class LocalHttpSettings
 {
     public string BaseUrl { get; set; } = "http://localhost:11434";
     public string Model { get; set; } = "llama3";
+    public bool AutoSelectInstalledModel { get; set; } = true;
+    public List<string> FallbackModels { get; set; } =
+    [
+        "llama3.2",
+        "llama3.1",
+        "llama3",
+        "qwen2.5",
+        "mistral",
+        "phi4"
+    ];
 }
 
 public class RedactionSettings

@@ -46,6 +46,7 @@ public class LLMCacheAndRedactionTests
 
         var localClient = new LocalHttpLLMClient(
             httpClient,
+            new MemoryCache(new MemoryCacheOptions()),
             new TestOptionsMonitor<LLMSettings>(llmSettings),
             NullLogger<LocalHttpLLMClient>.Instance);
         var router = new LLMClientRouter(
@@ -81,7 +82,8 @@ public class LLMCacheAndRedactionTests
         second.IsSuccess.Should().BeTrue();
         first.Data!.CacheHit.Should().BeFalse();
         second.Data!.CacheHit.Should().BeTrue();
-        handler.CallCount.Should().Be(1);
+        handler.GenerateCallCount.Should().Be(1);
+        handler.TagsCallCount.Should().BeLessThanOrEqualTo(1);
     }
 
     [Fact]
@@ -122,7 +124,8 @@ public class LLMCacheAndRedactionTests
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
         private readonly string _payload;
-        public int CallCount { get; private set; }
+        public int GenerateCallCount { get; private set; }
+        public int TagsCallCount { get; private set; }
 
         public StubHttpMessageHandler(string payload)
         {
@@ -131,7 +134,27 @@ public class LLMCacheAndRedactionTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            CallCount++;
+            var endpoint = request.RequestUri?.AbsolutePath ?? string.Empty;
+
+            if (endpoint.EndsWith("/api/tags", StringComparison.OrdinalIgnoreCase))
+            {
+                TagsCallCount++;
+                var tagsPayload = """
+{
+  "models": [
+    { "name": "llama3" }
+  ]
+}
+""";
+                var tagsResponse = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(tagsPayload, Encoding.UTF8, "application/json")
+                };
+
+                return Task.FromResult(tagsResponse);
+            }
+
+            GenerateCallCount++;
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(_payload, Encoding.UTF8, "application/json")
