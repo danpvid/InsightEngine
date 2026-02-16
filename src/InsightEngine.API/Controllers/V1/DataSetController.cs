@@ -2,11 +2,15 @@ using InsightEngine.API.Models;
 using InsightEngine.Application.Services;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Core.Notifications;
+using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using CsvHelper;
+using CsvHelper.Configuration;
+using System.Globalization;
 
 namespace InsightEngine.API.Controllers.V1;
 
@@ -20,6 +24,7 @@ namespace InsightEngine.API.Controllers.V1;
 public class DataSetController : BaseController
 {
     private readonly IDataSetApplicationService _dataSetApplicationService;
+    private readonly IFileStorageService _fileStorageService;
     private readonly ILogger<DataSetController> _logger;
     private readonly IWebHostEnvironment _environment;
 
@@ -28,6 +33,7 @@ public class DataSetController : BaseController
 
     public DataSetController(
         IDataSetApplicationService dataSetApplicationService,
+        IFileStorageService fileStorageService,
         IDomainNotificationHandler notificationHandler,
         IMediator mediator,
         ILogger<DataSetController> logger,
@@ -35,6 +41,7 @@ public class DataSetController : BaseController
         : base(notificationHandler, mediator)
     {
         _dataSetApplicationService = dataSetApplicationService;
+        _fileStorageService = fileStorageService;
         _logger = logger;
         _environment = environment;
     }
@@ -266,6 +273,104 @@ public class DataSetController : BaseController
             {
                 success = false,
                 message = "Erro ao gerar profile do dataset.",
+                error = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("{id:guid}/rows")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetRawRows(
+        Guid id,
+        [FromQuery] int? maxRows = null)
+    {
+        var csvPath = _fileStorageService.GetFullPath($"{id}.csv");
+        if (!System.IO.File.Exists(csvPath))
+        {
+            return NotFound(new
+            {
+                success = false,
+                message = $"Dataset not found: {id}"
+            });
+        }
+
+        var effectiveMaxRows = Math.Clamp(maxRows ?? 50000, 1, 200000);
+        var rows = new List<Dictionary<string, string?>>();
+        string[] columns = Array.Empty<string>();
+        var rowCountTotal = 0;
+
+        try
+        {
+            await using var stream = System.IO.File.OpenRead(csvPath);
+            using var reader = new StreamReader(stream);
+            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                BadDataFound = null,
+                MissingFieldFound = null,
+                HeaderValidated = null
+            };
+            using var csv = new CsvReader(reader, config);
+
+            if (!await csv.ReadAsync())
+            {
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        datasetId = id,
+                        columns = Array.Empty<string>(),
+                        rowCountTotal = 0,
+                        rowCountReturned = 0,
+                        truncated = false,
+                        rows
+                    }
+                });
+            }
+
+            csv.ReadHeader();
+            columns = csv.HeaderRecord ?? Array.Empty<string>();
+
+            while (await csv.ReadAsync())
+            {
+                rowCountTotal++;
+                if (rows.Count >= effectiveMaxRows)
+                {
+                    continue;
+                }
+
+                var row = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+                foreach (var column in columns)
+                {
+                    row[column] = csv.GetField(column);
+                }
+
+                rows.Add(row);
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    datasetId = id,
+                    columns,
+                    rowCountTotal,
+                    rowCountReturned = rows.Count,
+                    truncated = rowCountTotal > rows.Count,
+                    rows
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading raw rows for dataset {DatasetId}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                success = false,
+                message = "Erro ao carregar os dados brutos do dataset.",
                 error = ex.Message
             });
         }
