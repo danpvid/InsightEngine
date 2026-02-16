@@ -8,13 +8,14 @@ namespace InsightEngine.Domain.Services;
 public static class InsightSummaryBuilder
 {
     private const int MaxOutliersInSummary = 5;
-    private const double TrendThreshold = 0.05;
-    private const double VolatilityLow = 0.2;
-    private const double VolatilityHigh = 0.5;
+    private const double TrendFlatThreshold = 0.06;
+    private const double VolatilityLow = 0.15;
+    private const double VolatilityHigh = 0.45;
 
     public static InsightSummary Build(ChartRecommendation recommendation, ChartExecutionResult executionResult)
     {
-        var values = ExtractSeriesValues(executionResult);
+        var points = ExtractSeriesPoints(executionResult);
+        var values = points.Select(p => p.Value).ToList();
         if (values.Count == 0)
         {
             return BuildFallback(recommendation);
@@ -22,20 +23,24 @@ public static class InsightSummaryBuilder
 
         var stats = ComputeStats(values);
         var isTimeSeries = recommendation.Chart.Type == ChartType.Line;
+        var effectiveRowCount = executionResult.RowCount > 0 ? executionResult.RowCount : values.Count;
 
-        var trendResult = isTimeSeries ? ComputeTrend(values, stats.Mean) : (TrendSignal.Flat, 0.0);
+        var trendResult = isTimeSeries ? ComputeTrend(values, stats.Mean) : new TrendComputationResult(TrendSignal.Flat, 0.0, 0.0);
         var volatilitySignal = ClassifyVolatility(stats.CoefficientOfVariation);
         var outlierResult = ComputeOutliers(values, stats.Mean, stats.StandardDeviation);
-        var seasonalityResult = isTimeSeries ? ComputeSeasonality(values, recommendation.Query.X.Bin) : (SeasonalitySignal.None, 0.0);
+        var seasonalityResult = isTimeSeries
+            ? ComputeSeasonality(points, recommendation.Query.X.Bin, stats.StandardDeviation)
+            : new SeasonalityComputationResult(SeasonalitySignal.None, 0.0, 0.0);
 
-        var headline = BuildHeadline(recommendation, trendResult.Item1, volatilitySignal, isTimeSeries);
+        var headline = BuildHeadline(recommendation, trendResult.Signal, volatilitySignal, isTimeSeries);
         var bullets = BuildBullets(stats, trendResult, volatilitySignal, outlierResult, seasonalityResult, isTimeSeries);
 
         var confidence = ComputeConfidence(
-            values.Count,
-            trendResult.Item1,
-            outlierResult.Signal,
-            seasonalityResult.Item1);
+            effectiveRowCount,
+            trendResult.Strength,
+            volatilitySignal,
+            outlierResult.Strength,
+            seasonalityResult.Strength);
 
         return new InsightSummary
         {
@@ -43,10 +48,10 @@ public static class InsightSummaryBuilder
             BulletPoints = bullets,
             Signals = new InsightSignals
             {
-                Trend = trendResult.Item1,
+                Trend = trendResult.Signal,
                 Volatility = volatilitySignal,
                 Outliers = outlierResult.Signal,
-                Seasonality = seasonalityResult.Item1
+                Seasonality = seasonalityResult.Signal
             },
             Confidence = confidence
         };
@@ -72,13 +77,13 @@ public static class InsightSummaryBuilder
         };
     }
 
-    private static List<double> ExtractSeriesValues(ChartExecutionResult executionResult)
+    private static List<SeriesPoint> ExtractSeriesPoints(ChartExecutionResult executionResult)
     {
-        var values = new List<double>();
+        var points = new List<SeriesPoint>();
         var series = executionResult.Option.Series?.FirstOrDefault();
         if (series == null || !series.TryGetValue("data", out var dataObject) || dataObject == null)
         {
-            return values;
+            return points;
         }
 
         if (dataObject is System.Collections.IEnumerable enumerable)
@@ -94,7 +99,7 @@ public static class InsightSummaryBuilder
                 {
                     if (TryToDouble(pair[1], out var y))
                     {
-                        values.Add(y);
+                        points.Add(new SeriesPoint(y, TryToDateTimeOffset(pair[0])));
                     }
                     continue;
                 }
@@ -103,20 +108,20 @@ public static class InsightSummaryBuilder
                 {
                     if (TryToDouble(list[1], out var y))
                     {
-                        values.Add(y);
+                        points.Add(new SeriesPoint(y, TryToDateTimeOffset(list[0])));
                     }
                     continue;
                 }
 
                 if (TryToDouble(item, out var value))
                 {
-                    values.Add(value);
+                    points.Add(new SeriesPoint(value, null));
                 }
             }
         }
 
-        values.RemoveAll(v => double.IsNaN(v) || double.IsInfinity(v));
-        return values;
+        points.RemoveAll(point => double.IsNaN(point.Value) || double.IsInfinity(point.Value));
+        return points;
     }
 
     private static bool TryToDouble(object? value, out double result)
@@ -150,6 +155,46 @@ public static class InsightSummaryBuilder
         return false;
     }
 
+    private static DateTimeOffset? TryToDateTimeOffset(object? value)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        if (value is DateTimeOffset dto)
+        {
+            return dto;
+        }
+
+        if (value is DateTime dateTime)
+        {
+            return new DateTimeOffset(dateTime.ToUniversalTime());
+        }
+
+        if (TryToDouble(value, out var numericValue))
+        {
+            // Unix milliseconds is the expected axis format from ECharts time series.
+            if (numericValue > 10_000_000_000)
+            {
+                return DateTimeOffset.FromUnixTimeMilliseconds((long)Math.Round(numericValue));
+            }
+
+            if (numericValue > 1_000_000_000)
+            {
+                return DateTimeOffset.FromUnixTimeSeconds((long)Math.Round(numericValue));
+            }
+        }
+
+        if (value is string text &&
+            DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+        {
+            return parsed.ToUniversalTime();
+        }
+
+        return null;
+    }
+
     private static (double Mean, double StandardDeviation, double CoefficientOfVariation, double Min, double Max) ComputeStats(List<double> values)
     {
         var count = values.Count;
@@ -179,25 +224,42 @@ public static class InsightSummaryBuilder
         return (mean, std, cv, min, max);
     }
 
-    private static (TrendSignal Signal, double DeltaPct) ComputeTrend(List<double> values, double mean)
+    private static TrendComputationResult ComputeTrend(List<double> values, double mean)
     {
         if (values.Count < 4)
         {
-            return (TrendSignal.Flat, 0.0);
+            return new TrendComputationResult(TrendSignal.Flat, 0.0, 0.0);
         }
 
-        var window = Math.Max(1, values.Count / 4);
-        var firstMean = values.Take(window).Average();
-        var lastMean = values.TakeLast(window).Average();
-        var delta = lastMean - firstMean;
-        var deltaPct = delta / Math.Max(Math.Abs(mean), 1e-9);
+        var n = values.Count;
+        var xMean = (n - 1) / 2.0;
+        var denominator = 0.0;
+        var numerator = 0.0;
 
-        if (Math.Abs(deltaPct) < TrendThreshold)
+        for (var i = 0; i < n; i++)
         {
-            return (TrendSignal.Flat, deltaPct);
+            var dx = i - xMean;
+            denominator += dx * dx;
+            numerator += dx * (values[i] - mean);
         }
 
-        return deltaPct > 0 ? (TrendSignal.Up, deltaPct) : (TrendSignal.Down, deltaPct);
+        if (denominator <= 1e-9)
+        {
+            return new TrendComputationResult(TrendSignal.Flat, 0.0, 0.0);
+        }
+
+        var slope = numerator / denominator;
+        var normalizedChange = (slope * (n - 1)) / Math.Max(Math.Abs(mean), 1e-9);
+
+        if (Math.Abs(normalizedChange) < TrendFlatThreshold)
+        {
+            var flatStrength = Math.Min(1.0, Math.Abs(normalizedChange) / TrendFlatThreshold);
+            return new TrendComputationResult(TrendSignal.Flat, normalizedChange, flatStrength);
+        }
+
+        var signal = normalizedChange > 0 ? TrendSignal.Up : TrendSignal.Down;
+        var strength = Math.Min(1.0, Math.Abs(normalizedChange) / 0.35);
+        return new TrendComputationResult(signal, normalizedChange, strength);
     }
 
     private static VolatilitySignal ClassifyVolatility(double cv)
@@ -215,14 +277,14 @@ public static class InsightSummaryBuilder
         return VolatilitySignal.High;
     }
 
-    private static (OutlierSignal Signal, int Count, List<double> TopValues) ComputeOutliers(
+    private static OutlierComputationResult ComputeOutliers(
         List<double> values,
         double mean,
         double std)
     {
         if (values.Count < 4)
         {
-            return (OutlierSignal.None, 0, new List<double>());
+            return new OutlierComputationResult(OutlierSignal.None, 0, new List<double>(), 0.0);
         }
 
         var sorted = values.ToArray();
@@ -272,13 +334,13 @@ public static class InsightSummaryBuilder
 
         if (count == 0)
         {
-            return (OutlierSignal.None, 0, new List<double>());
+            return new OutlierComputationResult(OutlierSignal.None, 0, new List<double>(), 0.0);
         }
 
         var ratio = (double)count / values.Count;
         var signal = ratio <= 0.02 || count <= 3 ? OutlierSignal.Few : OutlierSignal.Many;
-
-        return (signal, count, topValues);
+        var strength = Math.Min(1.0, ratio * 8);
+        return new OutlierComputationResult(signal, count, topValues, strength);
     }
 
     private static double Percentile(double[] sorted, double percentile)
@@ -301,79 +363,60 @@ public static class InsightSummaryBuilder
         return (sorted[left] * (1 - weight)) + (sorted[right] * weight);
     }
 
-    private static (SeasonalitySignal Signal, double Correlation) ComputeSeasonality(List<double> values, TimeBin? bin)
+    private static SeasonalityComputationResult ComputeSeasonality(
+        List<SeriesPoint> points,
+        TimeBin? bin,
+        double overallStd)
     {
-        var lag = bin switch
+        if (bin != TimeBin.Day || points.Count < 14)
         {
-            TimeBin.Day => 7,
-            TimeBin.Week => 4,
-            TimeBin.Month => 12,
-            TimeBin.Quarter => 4,
-            TimeBin.Year => 2,
-            _ => 0
-        };
-
-        if (lag <= 0 || values.Count < lag * 2)
-        {
-            return (SeasonalitySignal.None, 0.0);
+            return new SeasonalityComputationResult(SeasonalitySignal.None, 0.0, 0.0);
         }
 
-        var correlation = ComputeLagCorrelation(values, lag);
-        if (double.IsNaN(correlation))
+        var datedPoints = points
+            .Where(point => point.Timestamp.HasValue)
+            .Select(point => new { Timestamp = point.Timestamp!.Value, point.Value })
+            .ToList();
+
+        if (datedPoints.Count < 14)
         {
-            return (SeasonalitySignal.None, 0.0);
+            return new SeasonalityComputationResult(SeasonalitySignal.None, 0.0, 0.0);
         }
 
-        if (correlation >= 0.6)
+        var spanDays = (datedPoints.Max(point => point.Timestamp) - datedPoints.Min(point => point.Timestamp)).TotalDays;
+        if (spanDays < 60)
         {
-            return (SeasonalitySignal.Strong, correlation);
+            return new SeasonalityComputationResult(SeasonalitySignal.None, 0.0, 0.0);
         }
 
-        if (correlation >= 0.35)
+        var weekdayMeans = datedPoints
+            .GroupBy(point => point.Timestamp.DayOfWeek)
+            .Select(group => group.Average(item => item.Value))
+            .ToList();
+
+        if (weekdayMeans.Count < 4)
         {
-            return (SeasonalitySignal.Weak, correlation);
+            return new SeasonalityComputationResult(SeasonalitySignal.None, 0.0, 0.0);
         }
 
-        return (SeasonalitySignal.None, correlation);
-    }
+        var weekdayMean = weekdayMeans.Average();
+        var weekdayVariance = weekdayMeans
+            .Select(mean => (mean - weekdayMean) * (mean - weekdayMean))
+            .Average();
+        var weekdayStd = Math.Sqrt(Math.Max(weekdayVariance, 0));
+        var strength = weekdayStd / Math.Max(overallStd, 1e-9);
 
-    private static double ComputeLagCorrelation(List<double> values, int lag)
-    {
-        var n = values.Count - lag;
-        if (n <= 1)
+        if (strength >= 0.45)
         {
-            return 0.0;
+            return new SeasonalityComputationResult(SeasonalitySignal.Strong, strength, Math.Min(1.0, strength));
         }
 
-        var sumA = 0.0;
-        var sumB = 0.0;
-        var sumA2 = 0.0;
-        var sumB2 = 0.0;
-        var sumAB = 0.0;
-
-        for (var i = 0; i < n; i++)
+        if (strength >= 0.25)
         {
-            var a = values[i];
-            var b = values[i + lag];
-
-            sumA += a;
-            sumB += b;
-            sumA2 += a * a;
-            sumB2 += b * b;
-            sumAB += a * b;
+            return new SeasonalityComputationResult(SeasonalitySignal.Weak, strength, Math.Min(1.0, strength));
         }
 
-        var numerator = (n * sumAB) - (sumA * sumB);
-        var denomLeft = (n * sumA2) - (sumA * sumA);
-        var denomRight = (n * sumB2) - (sumB * sumB);
-        var denominator = Math.Sqrt(denomLeft * denomRight);
-
-        if (denominator <= 1e-9)
-        {
-            return 0.0;
-        }
-
-        return numerator / denominator;
+        return new SeasonalityComputationResult(SeasonalitySignal.None, strength, Math.Min(1.0, strength * 0.5));
     }
 
     private static string BuildHeadline(
@@ -405,10 +448,10 @@ public static class InsightSummaryBuilder
 
     private static List<string> BuildBullets(
         (double Mean, double StandardDeviation, double CoefficientOfVariation, double Min, double Max) stats,
-        (TrendSignal Signal, double DeltaPct) trendResult,
+        TrendComputationResult trendResult,
         VolatilitySignal volatility,
-        (OutlierSignal Signal, int Count, List<double> TopValues) outlierResult,
-        (SeasonalitySignal Signal, double Correlation) seasonalityResult,
+        OutlierComputationResult outlierResult,
+        SeasonalityComputationResult seasonalityResult,
         bool isTimeSeries)
     {
         var bullets = new List<string>();
@@ -436,13 +479,13 @@ public static class InsightSummaryBuilder
 
         if (isTimeSeries && seasonalityResult.Signal != SeasonalitySignal.None)
         {
-            bullets.Add($"Sazonalidade {LabelSeasonality(seasonalityResult.Signal)} (corr {FormatNumber(seasonalityResult.Correlation, 2)}).");
+            bullets.Add($"Sazonalidade {LabelSeasonality(seasonalityResult.Signal)} (forca {FormatNumber(seasonalityResult.Strength, 2)}).");
         }
 
         return bullets;
     }
 
-    private static string BuildTrendBullet((TrendSignal Signal, double DeltaPct) trendResult)
+    private static string BuildTrendBullet(TrendComputationResult trendResult)
     {
         var direction = trendResult.Signal switch
         {
@@ -451,7 +494,7 @@ public static class InsightSummaryBuilder
             _ => "Estavel"
         };
 
-        var pct = Math.Abs(trendResult.DeltaPct);
+        var pct = Math.Abs(trendResult.NormalizedChange);
         return $"{direction} aproximada de {FormatPercent(pct)} entre inicio e fim.";
     }
 
@@ -476,44 +519,32 @@ public static class InsightSummaryBuilder
     }
 
     private static double ComputeConfidence(
-        int count,
-        TrendSignal trend,
-        OutlierSignal outliers,
-        SeasonalitySignal seasonality)
+        int rowCountReturned,
+        double trendStrength,
+        VolatilitySignal volatility,
+        double outlierStrength,
+        double seasonalityStrength)
     {
-        var confidence = 0.3;
-
-        if (count >= 10)
+        var rowScore = rowCountReturned switch
         {
-            confidence += 0.2;
-        }
+            >= 500 => 0.4,
+            >= 100 => 0.3,
+            >= 30 => 0.2,
+            >= 10 => 0.12,
+            _ => 0.05
+        };
 
-        if (count >= 30)
+        var volatilityStrength = volatility switch
         {
-            confidence += 0.15;
-        }
+            VolatilitySignal.High => 0.35,
+            VolatilitySignal.Medium => 0.2,
+            _ => 0.1
+        };
 
-        if (count >= 100)
-        {
-            confidence += 0.1;
-        }
+        var signalScore = (trendStrength + outlierStrength + seasonalityStrength + volatilityStrength) / 4.0;
+        var confidence = 0.2 + rowScore + (signalScore * 0.35);
 
-        if (trend != TrendSignal.Flat)
-        {
-            confidence += 0.05;
-        }
-
-        if (outliers != OutlierSignal.None)
-        {
-            confidence += 0.05;
-        }
-
-        if (seasonality != SeasonalitySignal.None)
-        {
-            confidence += 0.05;
-        }
-
-        return Math.Min(0.9, Math.Max(0.1, confidence));
+        return Math.Min(0.95, Math.Max(0.1, confidence));
     }
 
     private static string FormatNumber(double value, int decimals = 1)
@@ -526,4 +557,9 @@ public static class InsightSummaryBuilder
         var pct = value * 100;
         return pct.ToString("0.#", CultureInfo.InvariantCulture) + "%";
     }
+
+    private readonly record struct SeriesPoint(double Value, DateTimeOffset? Timestamp);
+    private readonly record struct TrendComputationResult(TrendSignal Signal, double NormalizedChange, double Strength);
+    private readonly record struct OutlierComputationResult(OutlierSignal Signal, int Count, List<double> TopValues, double Strength);
+    private readonly record struct SeasonalityComputationResult(SeasonalitySignal Signal, double Score, double Strength);
 }

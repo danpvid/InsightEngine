@@ -28,6 +28,34 @@ public class InsightSummaryTests
     }
 
     [Fact]
+    public void Build_WithDecreasingTimeSeries_ReturnsDownTrend()
+    {
+        var recommendation = BuildLineRecommendation();
+        var executionResult = BuildLineExecutionResult(new List<double>
+        {
+            100, 92, 85, 79, 74, 70, 67, 63, 60
+        });
+
+        var summary = InsightSummaryBuilder.Build(recommendation, executionResult);
+
+        summary.Signals.Trend.Should().Be(TrendSignal.Down);
+    }
+
+    [Fact]
+    public void Build_WithLargeVariance_FlagsHighVolatility()
+    {
+        var recommendation = BuildBarRecommendation();
+        var executionResult = BuildBarExecutionResult(new List<double>
+        {
+            10, 80, 12, 95, 8, 120, 14, 110, 9
+        });
+
+        var summary = InsightSummaryBuilder.Build(recommendation, executionResult);
+
+        summary.Signals.Volatility.Should().Be(VolatilitySignal.High);
+    }
+
+    [Fact]
     public void Build_WithOutlierValues_FlagsOutliers()
     {
         var recommendation = BuildBarRecommendation();
@@ -40,6 +68,35 @@ public class InsightSummaryTests
 
         summary.Signals.Outliers.Should().NotBe(OutlierSignal.None);
         summary.BulletPoints.Should().Contain(b => b.Contains("outliers", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Build_WithWeeklyPatternAndLongSpan_FlagsSeasonality()
+    {
+        var recommendation = BuildLineRecommendation();
+        var values = new List<double>();
+
+        for (var index = 0; index < 84; index++)
+        {
+            var weekday = index % 7;
+            var baseline = weekday switch
+            {
+                0 => 120.0,
+                1 => 95.0,
+                2 => 105.0,
+                3 => 130.0,
+                4 => 115.0,
+                5 => 80.0,
+                _ => 70.0
+            };
+
+            values.Add(baseline + (index % 3));
+        }
+
+        var executionResult = BuildLineExecutionResult(values);
+        var summary = InsightSummaryBuilder.Build(recommendation, executionResult);
+
+        summary.Signals.Seasonality.Should().NotBe(SeasonalitySignal.None);
     }
 
     private static ChartRecommendation BuildLineRecommendation()
