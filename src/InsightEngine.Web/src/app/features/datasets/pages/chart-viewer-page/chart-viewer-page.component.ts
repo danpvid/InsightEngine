@@ -26,6 +26,7 @@ import {
 import { ChartRecommendation } from '../../../../core/models/recommendation.model';
 import { ApiError } from '../../../../core/models/api-response.model';
 import { DataSetSummary, DatasetColumnProfile, RawDatasetRow, RawDatasetRowsResponse } from '../../../../core/models/dataset.model';
+import { environment } from '../../../../../environments/environment';
 
 interface FilterRule {
   column: string;
@@ -489,6 +490,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.pendingDrilldownCategory = null;
 
     const loadVersion = ++this.chartLoadVersion;
+    const startedAt = performance.now();
 
     this.datasetApi.getChart(this.datasetId, this.recommendationId, requestOptions).subscribe({
       next: (response) => {
@@ -515,6 +517,12 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
               message: 'Nenhum dado de grafico retornado.'
             };
           }
+          this.logDevTiming('chart-load', startedAt, {
+            datasetId: this.datasetId,
+            recommendationId: this.recommendationId,
+            cacheHit: this.chartMeta?.cacheHit || false,
+            rowCountReturned: this.chartMeta?.rowCountReturned || 0
+          });
           return;
         }
 
@@ -528,6 +536,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
             traceId: response.traceId
           };
         }
+
+        this.logDevTiming('chart-load-error', startedAt, {
+          datasetId: this.datasetId,
+          recommendationId: this.recommendationId
+        });
       },
       error: (err) => {
         if (loadVersion !== this.chartLoadVersion) {
@@ -539,6 +552,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           code: 'LOAD_ERROR',
           message: HttpErrorUtil.extractErrorMessage(err)
         };
+        this.logDevTiming('chart-load-error', startedAt, {
+          datasetId: this.datasetId,
+          recommendationId: this.recommendationId
+        });
       }
     });
   }
@@ -2044,5 +2061,16 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   private cloneOption(option: EChartsOption): EChartsOption {
     const safeOption = option as Record<string, unknown>;
     return JSON.parse(JSON.stringify(safeOption)) as EChartsOption;
+  }
+
+  private logDevTiming(event: string, startedAt: number, extra?: Record<string, unknown>): void {
+    if (environment.production) {
+      return;
+    }
+
+    console.info(`[timing] ${event}`, {
+      durationMs: Math.round(performance.now() - startedAt),
+      ...extra
+    });
   }
 }

@@ -11,6 +11,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { ApiError } from '../../../../core/models/api-response.model';
 import { DataSetSummary } from '../../../../core/models/dataset.model';
 import { RuntimeConfig } from '../../../../core/models/runtime-config.model';
+import { environment } from '../../../../../environments/environment';
 
 @Component({
   selector: 'app-dataset-upload-page',
@@ -153,6 +154,7 @@ export class DatasetUploadPageComponent implements OnInit {
     this.loading = true;
     this.error = null;
     this.uploadProgress = 0;
+    const uploadStart = performance.now();
 
     this.datasetApi.uploadDatasetWithProgress(this.selectedFile).subscribe({
       next: (progressEvent) => {
@@ -162,6 +164,10 @@ export class DatasetUploadPageComponent implements OnInit {
           this.loading = false;
           
           if (progressEvent.response.success && progressEvent.response.data) {
+            this.logDevTiming('dataset-upload', uploadStart, {
+              datasetId: progressEvent.response.data.datasetId,
+              fileSizeBytes: this.selectedFile?.size || 0
+            });
             this.toast.success('Dataset enviado com sucesso!');
             this.router.navigate(['/datasets', progressEvent.response.data.datasetId, 'recommendations']);
           } else if (progressEvent.response.errors && progressEvent.response.errors.length > 0) {
@@ -179,6 +185,7 @@ export class DatasetUploadPageComponent implements OnInit {
       error: (err) => {
         this.loading = false;
         this.uploadProgress = 0;
+        this.logDevTiming('dataset-upload-error', uploadStart);
         this.error = HttpErrorUtil.extractApiError(err) || {
           code: 'UPLOAD_ERROR',
           message: HttpErrorUtil.extractErrorMessage(err)
@@ -233,5 +240,16 @@ export class DatasetUploadPageComponent implements OnInit {
 
     const mb = this.uploadMaxBytes / (1024 * 1024);
     return `${mb.toFixed(0)}MB`;
+  }
+
+  private logDevTiming(event: string, startedAt: number, extra?: Record<string, unknown>): void {
+    if (environment.production) {
+      return;
+    }
+
+    console.info(`[timing] ${event}`, {
+      durationMs: Math.round(performance.now() - startedAt),
+      ...extra
+    });
   }
 }

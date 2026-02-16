@@ -1,4 +1,5 @@
 using InsightEngine.API.Configuration;
+using InsightEngine.API.Middleware;
 using InsightEngine.API.Models;
 using InsightEngine.API.Services;
 using InsightEngine.CrossCutting.IoC;
@@ -157,6 +158,8 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwaggerConfiguration(apiVersionDescriptionProvider);
 }
+
+app.UseMiddleware<RequestTimingLoggingMiddleware>();
 
 app.UseExceptionHandler(errorApp =>
 {

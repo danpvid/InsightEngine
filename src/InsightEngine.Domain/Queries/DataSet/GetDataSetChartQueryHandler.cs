@@ -42,7 +42,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         var sw = Stopwatch.StartNew();
 
         _logger.LogInformation(
-            "🚀 Executing chart - DatasetId: {DatasetId}, RecommendationId: {RecommendationId}, Agg: {Agg}, TimeBin: {TimeBin}, YCol: {YCol}",
+            "Chart execution started DatasetId={DatasetId} RecommendationId={RecommendationId} Aggregation={Aggregation} TimeBin={TimeBin} YColumn={YColumn}",
             request.DatasetId, request.RecommendationId, request.Aggregation ?? "null", request.TimeBin ?? "null", request.YColumn ?? "null");
 
         try
@@ -182,10 +182,13 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 cachedResponse.CacheHit = true;
 
                 _logger.LogInformation(
-                    "Cache hit for chart {RecommendationId} - DatasetId: {DatasetId}, QueryHash: {QueryHash}",
-                    request.RecommendationId,
+                    "Chart execution completed DatasetId={DatasetId} RecommendationId={RecommendationId} QueryHash={QueryHash} DuckDbMs={DuckDbMs} RowCountReturned={RowCountReturned} CacheHit={CacheHit}",
                     request.DatasetId,
-                    queryHash);
+                    request.RecommendationId,
+                    queryHash,
+                    cachedResponse.ExecutionResult.DuckDbMs,
+                    cachedResponse.ExecutionResult.RowCount,
+                    true);
 
                 return Result.Success(cachedResponse);
             }
@@ -234,9 +237,14 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 response);
 
             _logger.LogInformation(
-                "Chart executed successfully: {DatasetId}/{RecommendationId}, TotalMs: {TotalMs}, DuckDbMs: {DuckDbMs}, RowCount: {RowCount}, QueryHash: {QueryHash}",
-                request.DatasetId, request.RecommendationId, response.TotalExecutionMs, 
-                response.ExecutionResult.DuckDbMs, response.ExecutionResult.RowCount, queryHash);
+                "Chart execution completed DatasetId={DatasetId} RecommendationId={RecommendationId} QueryHash={QueryHash} DuckDbMs={DuckDbMs} RowCountReturned={RowCountReturned} CacheHit={CacheHit} TotalMs={TotalMs}",
+                request.DatasetId,
+                request.RecommendationId,
+                queryHash,
+                response.ExecutionResult.DuckDbMs,
+                response.ExecutionResult.RowCount,
+                false,
+                response.TotalExecutionMs);
 
             return Result.Success(response);
         }
