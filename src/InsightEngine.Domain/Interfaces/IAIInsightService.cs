@@ -16,4 +16,8 @@ public interface IAIInsightService
     Task<Result<AskAnalysisPlanResult>> AskAnalysisPlanAsync(
         AskAnalysisPlanRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<Result<DeepInsightsResult>> GenerateDeepInsightsAsync(
+        DeepInsightsRequest request,
+        CancellationToken cancellationToken = default);
 }

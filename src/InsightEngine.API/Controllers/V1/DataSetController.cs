@@ -708,6 +708,66 @@ OFFSET {offset};
         }));
     }
 
+    [HttpPost("{id:guid}/charts/{recommendationId}/deep-insights")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GenerateDeepInsights(
+        Guid id,
+        string recommendationId,
+        [FromBody] DeepInsightsApiRequest? request)
+    {
+        request ??= new DeepInsightsApiRequest();
+        var language = ResolveLanguage();
+
+        var filterErrors = new List<string>();
+        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
+        if (filterErrors.Count > 0)
+        {
+            return ResponseResult(Result.Failure<object>(filterErrors));
+        }
+
+        var result = await _aiInsightService.GenerateDeepInsightsAsync(
+            new DeepInsightsRequest
+            {
+                DatasetId = id,
+                RecommendationId = recommendationId,
+                Language = language,
+                Aggregation = request.Aggregation,
+                TimeBin = request.TimeBin,
+                MetricY = request.MetricY,
+                GroupBy = request.GroupBy,
+                Filters = parsedFilters,
+                Scenario = request.Scenario,
+                Horizon = request.Horizon,
+                SensitiveMode = request.SensitiveMode,
+                RequesterKey = ResolveRequesterKey()
+            },
+            HttpContext.RequestAborted);
+
+        if (!result.IsSuccess)
+        {
+            var firstError = result.Errors.FirstOrDefault() ?? "Unable to generate deep insights.";
+            if (firstError.Contains("budget", StringComparison.OrdinalIgnoreCase) ||
+                firstError.Contains("cooldown", StringComparison.OrdinalIgnoreCase))
+            {
+                return ErrorResponse(StatusCodes.Status429TooManyRequests, "rate_limited", firstError);
+            }
+
+            return ResponseResult(Result.Failure<object>(result.Errors));
+        }
+
+        return ResponseResult(Result.Success(new
+        {
+            report = result.Data!.Report,
+            meta = result.Data.Meta,
+            explainability = result.Data.Explainability,
+            evidencePack = request.IncludeEvidence ? result.Data.EvidencePack : null
+        }));
+    }
+
     [HttpPost("{id:guid}/ask")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
@@ -889,6 +949,26 @@ OFFSET {offset};
             "en-us" => "en",
             _ => "pt-br"
         };
+    }
+
+    private string ResolveRequesterKey()
+    {
+        var userId = HttpContext?.User?.Identity?.IsAuthenticated == true
+            ? HttpContext.User.Identity?.Name
+            : null;
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            return $"user:{userId}";
+        }
+
+        var remoteIp = HttpContext?.Connection?.RemoteIpAddress?.ToString();
+        if (!string.IsNullOrWhiteSpace(remoteIp))
+        {
+            return $"ip:{remoteIp}";
+        }
+
+        return "anonymous";
     }
 
     private static List<RawSortRule> ParseRawSort(

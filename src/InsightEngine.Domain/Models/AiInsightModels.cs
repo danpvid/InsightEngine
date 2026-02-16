@@ -19,6 +19,9 @@ public class AiGenerationMeta
     public bool CacheHit { get; set; }
     public bool FallbackUsed { get; set; }
     public string? FallbackReason { get; set; }
+    public int? EvidenceBytes { get; set; }
+    public int? OutputBytes { get; set; }
+    public string? ValidationStatus { get; set; }
 }
 
 public class AiInsightSummaryResult
