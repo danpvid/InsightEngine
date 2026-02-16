@@ -99,6 +99,7 @@ export interface AiSummaryRequest {
   metricY?: string;
   groupBy?: string;
   filters?: string[];
+  scenarioMeta?: Record<string, unknown>;
 }
 
 export interface AiSummaryResponse {
@@ -121,6 +122,9 @@ export interface AiGenerationMeta {
   cacheHit: boolean;
   fallbackUsed: boolean;
   fallbackReason?: string;
+  evidenceBytes?: number;
+  outputBytes?: number;
+  validationStatus?: string;
 }
 
 export interface ExplainChartResponse {
@@ -152,6 +156,105 @@ export interface AskSuggestedFilter {
   column: string;
   operator: string;
   values: string[];
+}
+
+export interface DeepInsightsRequest extends AiSummaryRequest {
+  scenario?: ScenarioSimulationRequest;
+  horizon?: number;
+  sensitiveMode?: boolean;
+  includeEvidence?: boolean;
+}
+
+export interface DeepInsightsResponse {
+  report: DeepInsightReport;
+  meta: AiGenerationMeta;
+  explainability: DeepInsightsExplainability;
+  evidencePack?: EvidencePack;
+}
+
+export interface DeepInsightsExplainability {
+  evidenceUsedCount: number;
+  topEvidenceIdsUsed: string[];
+}
+
+export interface DeepInsightReport {
+  headline: string;
+  executiveSummary: string;
+  keyFindings: DeepInsightFinding[];
+  drivers: DeepInsightDriver[];
+  risksAndCaveats: DeepInsightRisk[];
+  projections: DeepInsightProjections;
+  recommendedActions: DeepInsightAction[];
+  nextQuestions: string[];
+  citations: DeepInsightCitation[];
+  meta: DeepInsightMeta;
+}
+
+export interface DeepInsightFinding {
+  title: string;
+  narrative: string;
+  evidenceIds: string[];
+  severity: 'low' | 'medium' | 'high';
+}
+
+export interface DeepInsightDriver {
+  driver: string;
+  whyItMatters: string;
+  evidenceIds: string[];
+}
+
+export interface DeepInsightRisk {
+  risk: string;
+  mitigation: string;
+  evidenceIds: string[];
+}
+
+export interface DeepInsightProjections {
+  horizon: string;
+  methods: DeepInsightProjectionMethod[];
+  conclusion: string;
+}
+
+export interface DeepInsightProjectionMethod {
+  method: 'naive' | 'movingAverage' | 'linearRegression';
+  narrative: string;
+  confidence: 'low' | 'medium' | 'high';
+  evidenceIds: string[];
+}
+
+export interface DeepInsightAction {
+  action: string;
+  expectedImpact: string;
+  effort: 'low' | 'medium' | 'high';
+  evidenceIds: string[];
+}
+
+export interface DeepInsightCitation {
+  evidenceId: string;
+  shortClaim: string;
+}
+
+export interface DeepInsightMeta {
+  provider: string;
+  model: string;
+  promptVersion: string;
+  evidenceVersion: string;
+}
+
+export interface EvidencePack {
+  evidenceVersion: string;
+  datasetId: string;
+  recommendationId: string;
+  queryHash: string;
+  serializedBytes: number;
+  truncated: boolean;
+  facts: EvidenceFact[];
+}
+
+export interface EvidenceFact {
+  evidenceId: string;
+  shortClaim: string;
+  value: string;
 }
 
 export type TrendSignal = 'Up' | 'Down' | 'Flat';

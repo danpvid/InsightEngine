@@ -102,6 +102,22 @@
             </div>
           </div>
 
+          <div class="ai-actions">
+            <mat-slide-toggle
+              [(ngModel)]="llmUseScenarioContext"
+              color="primary"
+              [disabled]="!simulationResult">
+              {{ 'chartViewer.useSimulationForAi' | translate }}
+            </mat-slide-toggle>
+            <button
+              mat-button
+              color="primary"
+              (click)="runSimulationAndGenerateAiSummary()"
+              [disabled]="!canRunSimulation || aiSummaryLoading">
+              {{ 'chartViewer.runSimulationAndAi' | translate }}
+            </button>
+          </div>
+
           <div class="chart-skeleton" *ngIf="aiSummaryLoading">
             <div class="skeleton-axis-x"></div>
             <div class="skeleton-axis-x"></div>
@@ -124,6 +140,9 @@
               <mat-chip color="warn" selected *ngIf="aiSummaryMeta?.fallbackUsed">
                 {{ 'chartViewer.fallback' | translate }}
               </mat-chip>
+              <mat-chip color="primary" selected *ngIf="llmUseScenarioContext && simulationResult">
+                {{ 'chartViewer.scenarioContext' | translate }}
+              </mat-chip>
             </div>
 
             <ul class="insight-bullets">
@@ -140,7 +159,12 @@
             <div class="insight-subsection" *ngIf="aiSummary.nextQuestions?.length">
               <h4>{{ 'chartViewer.nextQuestions' | translate }}</h4>
               <ul class="insight-bullets">
-                <li *ngFor="let question of aiSummary.nextQuestions">{{ question }}</li>
+                <li *ngFor="let question of aiSummary.nextQuestions" class="bullet-with-action">
+                  <span>{{ question }}</span>
+                  <button mat-button color="primary" (click)="runAskFromSuggestion(question)">
+                    {{ 'chartViewer.askThis' | translate }}
+                  </button>
+                </li>
               </ul>
             </div>
           </ng-container>
@@ -282,6 +306,158 @@
                 {{ 'chartViewer.applyAndRun' | translate }}
               </button>
             </div>
+          </ng-container>
+        </mat-card>
+
+        <mat-card class="insight-card deep-insights-card">
+          <div class="insight-header">
+            <div class="insight-title">
+              <mat-icon>analytics</mat-icon>
+              <div class="insight-text">
+                <h3>{{ 'chartViewer.deepInsightsTitle' | translate }}</h3>
+                <p class="insight-headline">
+                  {{ 'chartViewer.deepInsightsHint' | translate }}
+                </p>
+              </div>
+            </div>
+            <div class="ai-actions">
+              <button mat-stroked-button color="primary" (click)="copyDeepInsightsReport()" [disabled]="!deepInsights?.report">
+                {{ 'chartViewer.copyReport' | translate }}
+              </button>
+              <button mat-flat-button color="primary" (click)="generateDeepInsights()" [disabled]="deepInsightsLoading">
+                {{ deepInsightsLoading ? ('chartViewer.generating' | translate) : ('chartViewer.generateDeepInsights' | translate) }}
+              </button>
+            </div>
+          </div>
+
+          <div class="ask-row deep-insights-controls">
+            <mat-form-field appearance="outline">
+              <mat-label>{{ 'chartViewer.projectionHorizon' | translate }}</mat-label>
+              <mat-select [(ngModel)]="deepInsightsHorizon">
+                <mat-option [value]="14">14</mat-option>
+                <mat-option [value]="30">30</mat-option>
+                <mat-option [value]="60">60</mat-option>
+              </mat-select>
+            </mat-form-field>
+
+            <mat-slide-toggle [(ngModel)]="deepInsightsSensitiveMode" color="primary">
+              {{ 'chartViewer.sensitiveMode' | translate }}
+            </mat-slide-toggle>
+
+            <mat-slide-toggle [(ngModel)]="deepInsightsUseScenario" color="primary">
+              {{ 'chartViewer.includeScenario' | translate }}
+            </mat-slide-toggle>
+
+            <button mat-button color="primary" (click)="runSimulationAndGenerateDeepInsights()" [disabled]="!canRunSimulation">
+              {{ 'chartViewer.runSimulationAndInsights' | translate }}
+            </button>
+          </div>
+
+          <div class="chart-skeleton" *ngIf="deepInsightsLoading">
+            <div class="skeleton-axis-x"></div>
+            <div class="skeleton-axis-x"></div>
+            <div class="skeleton-axis-x"></div>
+          </div>
+
+          <div *ngIf="deepInsightsError" class="simulation-error">{{ deepInsightsError }}</div>
+
+          <ng-container *ngIf="deepInsights as deep">
+            <ng-container *ngIf="deep.report as report">
+            <div class="insight-chips">
+              <mat-chip color="primary" selected *ngIf="deep.meta.provider">
+                {{ 'chartViewer.provider' | translate }}: {{ deep.meta.provider }}
+              </mat-chip>
+              <mat-chip color="primary" selected *ngIf="deep.meta.model">
+                {{ 'chartViewer.model' | translate }}: {{ deep.meta.model }}
+              </mat-chip>
+              <mat-chip color="accent" selected *ngIf="deep.meta.cacheHit">
+                {{ 'chartViewer.cached' | translate }} ⚡
+              </mat-chip>
+              <mat-chip color="warn" selected *ngIf="deep.meta.fallbackUsed">
+                {{ 'chartViewer.fallback' | translate }}
+              </mat-chip>
+              <mat-chip color="primary" selected *ngIf="deep.meta.durationMs">
+                {{ 'chartViewer.duration' | translate }}: {{ deep.meta.durationMs }}ms
+              </mat-chip>
+              <mat-chip color="primary" selected *ngIf="deep.meta.validationStatus">
+                {{ 'chartViewer.validation' | translate }}: {{ deep.meta.validationStatus }}
+              </mat-chip>
+            </div>
+
+            <div class="insight-subsection">
+              <h4>{{ report.headline }}</h4>
+              <p>{{ report.executiveSummary }}</p>
+            </div>
+
+            <div *ngIf="report.keyFindings.length > 0">
+              <div class="insight-subsection" *ngFor="let finding of report.keyFindings">
+                <h4>
+                  {{ finding.title }}
+                  <mat-chip [color]="severityChipColor(finding.severity)" selected>{{ finding.severity }}</mat-chip>
+                </h4>
+                <p>{{ finding.narrative }}</p>
+                <p class="evidence-inline" *ngIf="finding.evidenceIds?.length">
+                  Evidence: {{ finding.evidenceIds.join(', ') }}
+                </p>
+              </div>
+            </div>
+
+            <div class="insight-subsection" *ngIf="report.projections">
+              <h4>{{ 'chartViewer.projections' | translate }}</h4>
+              <p>{{ report.projections.conclusion }}</p>
+              <ul class="insight-bullets">
+                <li *ngFor="let method of report.projections.methods">
+                  <strong>{{ method.method }}:</strong> {{ method.narrative }}
+                </li>
+              </ul>
+            </div>
+
+            <div class="insight-subsection" *ngIf="report.recommendedActions.length > 0">
+              <h4>{{ 'chartViewer.recommendedActions' | translate }}</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let action of report.recommendedActions">
+                  <strong>{{ action.action }}</strong> — {{ action.expectedImpact }}
+                </li>
+              </ul>
+            </div>
+
+            <div class="insight-subsection" *ngIf="report.risksAndCaveats.length > 0">
+              <h4>{{ 'chartViewer.caveats' | translate }}</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let risk of report.risksAndCaveats">
+                  <strong>{{ risk.risk }}</strong> — {{ risk.mitigation }}
+                </li>
+              </ul>
+            </div>
+
+            <div class="insight-subsection" *ngIf="report.nextQuestions.length > 0">
+              <h4>{{ 'chartViewer.nextQuestions' | translate }}</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let question of report.nextQuestions" class="bullet-with-action">
+                  <span>{{ question }}</span>
+                  <button mat-button color="primary" (click)="runAskFromSuggestion(question)">
+                    {{ 'chartViewer.askThis' | translate }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <div class="insight-subsection" *ngIf="deep.explainability">
+              <button mat-button color="primary" (click)="deepInsightsShowEvidence = !deepInsightsShowEvidence">
+                {{ deepInsightsShowEvidence ? ('chartViewer.hideEvidence' | translate) : ('chartViewer.showEvidence' | translate) }}
+              </button>
+              <div *ngIf="deepInsightsShowEvidence">
+                <p>
+                  {{ 'chartViewer.evidenceUsed' | translate }}: {{ deep.explainability.evidenceUsedCount }}
+                </p>
+                <ul class="insight-bullets">
+                  <li *ngFor="let evidence of deepInsightsEvidenceFacts">
+                    <strong>{{ evidence.evidenceId }}</strong> — {{ evidence.shortClaim }}: {{ evidence.value }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+            </ng-container>
           </ng-container>
         </mat-card>
 
@@ -503,9 +679,20 @@
 
                 <div class="simulation-ops-header">
                   <h3>{{ 'chartViewer.operationsMax' | translate }}</h3>
-                  <button mat-stroked-button color="primary" (click)="addSimulationOperation()" [disabled]="simulationOperations.length >= 3">
-                    {{ 'chartViewer.addOperation' | translate }}
-                  </button>
+                  <div class="inline-filters-actions">
+                    <button mat-button color="primary" (click)="applySimulationPreset('increase10')">
+                      +10%
+                    </button>
+                    <button mat-button color="primary" (click)="applySimulationPreset('decrease10')">
+                      -10%
+                    </button>
+                    <button mat-button color="primary" (click)="applySimulationPreset('capP95')">
+                      P95 Cap
+                    </button>
+                    <button mat-stroked-button color="primary" (click)="addSimulationOperation()" [disabled]="simulationOperations.length >= 3">
+                      {{ 'chartViewer.addOperation' | translate }}
+                    </button>
+                  </div>
                 </div>
 
                 <div class="simulation-operation" *ngFor="let op of simulationOperations; let i = index">
@@ -563,6 +750,9 @@
                   <button mat-raised-button color="primary" (click)="runSimulation()" [disabled]="!canRunSimulation">
                     {{ 'chartViewer.runSimulation' | translate }}
                   </button>
+                  <button mat-stroked-button color="primary" (click)="drillLargestSimulationDelta()" [disabled]="topSimulationDeltas.length === 0">
+                    {{ 'chartViewer.drillLargestDelta' | translate }}
+                  </button>
                 </div>
 
                 <app-loading-bar [loading]="simulationLoading"></app-loading-bar>
@@ -601,6 +791,18 @@
                     <span>{{ 'chartViewer.rows' | translate }}: {{ simulationResult.rowCountReturned }}</span>
                     <span>DuckDB: {{ formatExecutionTime(simulationResult.duckDbMs) }}</span>
                     <span>{{ 'chartViewer.hash' | translate }}: {{ simulationResult.queryHash }}</span>
+                  </div>
+
+                  <div class="insight-subsection" *ngIf="topSimulationDeltas.length > 0">
+                    <h4>{{ 'chartViewer.topDeltaSegments' | translate }}</h4>
+                    <ul class="insight-bullets">
+                      <li *ngFor="let item of topSimulationDeltas" class="bullet-with-action">
+                        <span>{{ item.dimension }}: {{ formatDeltaPercent(item.deltaPercent) }}</span>
+                        <button mat-button color="primary" (click)="drillSimulationDimension(item.dimension)">
+                          {{ 'chartViewer.drillIntoSegment' | translate }}
+                        </button>
+                      </li>
+                    </ul>
                   </div>
                 </div>
               </mat-card-content>

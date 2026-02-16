@@ -1127,6 +1127,8 @@ You are a data insight assistant. Return valid JSON only.
 Do not include markdown or prose outside JSON.
 Keep language business-friendly and concise.
 Include limitations and assumptions in cautions when uncertainty exists.
+Use only numbers available in the provided context.
+If a number is missing, explicitly say it is unknown.
 """
         + Environment.NewLine
         + BuildOutputLanguageInstruction(language);
@@ -1139,6 +1141,7 @@ You are a business analytics assistant.
 Return JSON only. No markdown.
 Use plain business language and avoid SQL/database jargon.
 Include caveats when evidence is weak.
+Use only numeric facts from the context. Do not invent values.
 """
         + Environment.NewLine
         + BuildOutputLanguageInstruction(language);
@@ -1161,6 +1164,7 @@ Rules:
 - cautions: 0 to 4 bullets with assumptions/limitations.
 - nextQuestions: 2 to 5 actionable follow-up questions.
 - confidence: number between 0 and 1.
+- If scenarioMeta is present, mention scenario impact only using provided delta fields.
 """
         + Environment.NewLine
         + BuildOutputLanguageInstruction(language);
@@ -1185,6 +1189,7 @@ Rules:
 - caveats: 1 to 4 bullets.
 - suggestedNextSteps: 2 to 5 bullets.
 - questionsToAsk: 2 to 6 bullets.
+- If scenarioMeta is present, explain baseline vs scenario deltas without inventing values.
 """
         + Environment.NewLine
         + BuildOutputLanguageInstruction(language);
@@ -1197,6 +1202,7 @@ You convert user questions into a chart analysis plan.
 Return JSON only.
 Do not produce SQL.
 Use one of these intents: Compare, Trend, Breakdown, Outliers.
+If information is missing from context, keep fields null instead of guessing.
 """
         + Environment.NewLine
         + BuildOutputLanguageInstruction(language);

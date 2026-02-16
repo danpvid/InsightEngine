@@ -21,8 +21,12 @@ import {
   AiGenerationMeta,
   AiInsightSummary,
   ChartMeta,
+  DeepInsightsResponse,
+  DeepInsightsRequest,
+  EvidenceFact,
   ExplainChartResponse,
   InsightSummary,
+  ScenarioDeltaPoint,
   ScenarioFilterRequest,
   ScenarioOperationRequest,
   ScenarioOperationType,
@@ -102,6 +106,14 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   explainLoading: boolean = false;
   explainError: string | null = null;
   explainPanelOpen: boolean = false;
+  deepInsights: DeepInsightsResponse | null = null;
+  deepInsightsLoading: boolean = false;
+  deepInsightsError: string | null = null;
+  deepInsightsHorizon: number = 30;
+  deepInsightsSensitiveMode: boolean = false;
+  deepInsightsUseScenario: boolean = false;
+  deepInsightsShowEvidence: boolean = false;
+  llmUseScenarioContext: boolean = false;
   askQuestion: string = '';
   askLoading: boolean = false;
   askError: string | null = null;
@@ -291,6 +303,21 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       }));
   }
 
+  get deepInsightsEvidenceFacts(): EvidenceFact[] {
+    return this.deepInsights?.evidencePack?.facts || [];
+  }
+
+  get topSimulationDeltas(): ScenarioDeltaPoint[] {
+    if (!this.simulationResult?.deltaSeries?.length) {
+      return [];
+    }
+
+    return [...this.simulationResult.deltaSeries]
+      .sort((left, right) =>
+        Math.abs((right.deltaPercent ?? right.delta) || 0) - Math.abs((left.deltaPercent ?? left.delta) || 0))
+      .slice(0, 5);
+  }
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -414,6 +441,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       this.echartsInstance.off('datazoom');
       this.echartsInstance.off('click');
     }
+
+    if (this.simulationEchartsInstance) {
+      this.simulationEchartsInstance.off('click');
+    }
   }
 
   loadRecommendations(): void {
@@ -527,9 +558,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.explainResult = null;
     this.explainError = null;
     this.explainPanelOpen = false;
+    this.deepInsights = null;
+    this.deepInsightsError = null;
+    this.deepInsightsShowEvidence = false;
     this.askPlan = null;
     this.askError = null;
     this.askReasoningExpanded = false;
+    this.llmUseScenarioContext = false;
 
     const loadVersion = ++this.chartLoadVersion;
     const startedAt = performance.now();
@@ -652,6 +687,73 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     });
   }
 
+  generateDeepInsights(): void {
+    if (this.deepInsightsLoading) {
+      return;
+    }
+
+    this.deepInsightsLoading = true;
+    this.deepInsightsError = null;
+    this.deepInsightsShowEvidence = false;
+
+    const payload = this.buildDeepInsightsPayload();
+    const startedAt = performance.now();
+
+    this.datasetApi.generateDeepInsights(this.datasetId, this.recommendationId, payload).subscribe({
+      next: response => {
+        this.deepInsightsLoading = false;
+
+        if (!response.success || !response.data) {
+          this.deepInsightsError = response.errors?.[0]?.message || 'Unable to generate deep insights.';
+          return;
+        }
+
+        this.deepInsights = response.data;
+        this.logDevTiming('deep-insights', startedAt, {
+          datasetId: this.datasetId,
+          recommendationId: this.recommendationId,
+          cacheHit: this.deepInsights.meta?.cacheHit || false,
+          fallback: this.deepInsights.meta?.fallbackUsed || false
+        });
+      },
+      error: err => {
+        this.deepInsightsLoading = false;
+        this.deepInsightsError = HttpErrorUtil.extractErrorMessage(err);
+        this.logDevTiming('deep-insights-error', startedAt, {
+          datasetId: this.datasetId,
+          recommendationId: this.recommendationId
+        });
+      }
+    });
+  }
+
+  copyDeepInsightsReport(): void {
+    if (!this.deepInsights?.report) {
+      return;
+    }
+
+    const report = this.deepInsights.report;
+    const lines: string[] = [];
+    lines.push(report.headline);
+    lines.push('');
+    lines.push(report.executiveSummary);
+    lines.push('');
+    lines.push('Key Findings');
+    report.keyFindings.forEach(item => lines.push(`- ${item.title}: ${item.narrative}`));
+    lines.push('');
+    lines.push('Recommended Actions');
+    report.recommendedActions.forEach(item => lines.push(`- ${item.action} (${item.effort})`));
+    lines.push('');
+    lines.push('Next Questions');
+    report.nextQuestions.forEach(item => lines.push(`- ${item}`));
+
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      this.toast.success('Deep insights report copied.');
+    }).catch(() => {
+      this.toast.error('Could not copy deep insights report.');
+    });
+  }
+
   openExplainChart(): void {
     this.explainPanelOpen = true;
     if (this.explainLoading) {
@@ -771,15 +873,37 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     metricY?: string;
     groupBy?: string;
     filters?: string[];
+    scenarioMeta?: Record<string, unknown>;
   } {
     const options = this.buildLoadOptionsFromState();
+    const scenarioMeta = this.buildScenarioMetaForLlm();
     return {
       aggregation: options.aggregation,
       timeBin: options.timeBin,
       metricY: options.metricY,
       groupBy: options.groupBy,
-      filters: options.filters
+      filters: options.filters,
+      scenarioMeta
     };
+  }
+
+  private buildDeepInsightsPayload(): DeepInsightsRequest {
+    const basePayload = this.buildAiSummaryPayload();
+    const payload: DeepInsightsRequest = {
+      ...basePayload,
+      horizon: this.deepInsightsHorizon,
+      sensitiveMode: this.deepInsightsSensitiveMode,
+      includeEvidence: true
+    };
+
+    if (this.deepInsightsUseScenario) {
+      const scenario = this.buildSimulationPayload();
+      if (scenario) {
+        payload.scenario = scenario;
+      }
+    }
+
+    return payload;
   }
 
   private buildExplanationText(explanation: ExplainChartResponse): string {
@@ -820,6 +944,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.filterRules = [];
     this.pendingDrilldownCategory = null;
     this.filterPreviewPending = false;
+    this.llmUseScenarioContext = false;
 
     this.router.navigate([], {
       relativeTo: this.route,
@@ -842,6 +967,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   onSimulationChartInit(ec: ECharts): void {
     this.simulationEchartsInstance = ec;
+    this.simulationEchartsInstance.off('click');
+    this.simulationEchartsInstance.on('click', event => this.onSimulationChartClick(event));
   }
 
   goToPrevious(): void {
@@ -1272,6 +1399,45 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.simulationOperations.push(this.createDefaultSimulationOperation());
   }
 
+  applySimulationPreset(preset: 'increase10' | 'decrease10' | 'capP95'): void {
+    this.initializeScenarioDefaults();
+    switch (preset) {
+      case 'increase10':
+        this.simulationOperations = [{
+          type: 'MultiplyMetric',
+          column: this.simulationTargetDimension,
+          values: '',
+          factor: 1.1,
+          constant: null,
+          min: null,
+          max: null
+        }];
+        break;
+      case 'decrease10':
+        this.simulationOperations = [{
+          type: 'MultiplyMetric',
+          column: this.simulationTargetDimension,
+          values: '',
+          factor: 0.9,
+          constant: null,
+          min: null,
+          max: null
+        }];
+        break;
+      case 'capP95':
+        this.simulationOperations = [{
+          type: 'Clamp',
+          column: this.simulationTargetDimension,
+          values: '',
+          factor: null,
+          constant: null,
+          min: null,
+          max: this.estimateMetricP95()
+        }];
+        break;
+    }
+  }
+
   removeSimulationOperation(index: number): void {
     this.simulationOperations.splice(index, 1);
   }
@@ -1295,7 +1461,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
   }
 
-  runSimulation(): void {
+  runSimulation(generateDeepInsightsAfter: boolean = false, onSuccess?: () => void): void {
     const payload = this.buildSimulationPayload();
     if (!payload) {
       return;
@@ -1314,6 +1480,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           this.simulationResult = response.data;
           this.simulationChartOption = this.buildSimulationChartOption(response.data);
           this.activeTab = 2;
+          if (generateDeepInsightsAfter) {
+            this.deepInsightsUseScenario = true;
+            this.generateDeepInsights();
+          }
+          onSuccess?.();
           return;
         }
 
@@ -1326,6 +1497,71 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         this.simulationError = HttpErrorUtil.extractApiError(err)?.message || HttpErrorUtil.extractErrorMessage(err);
       }
     });
+  }
+
+  runSimulationAndGenerateDeepInsights(): void {
+    this.runSimulation(true);
+  }
+
+  runSimulationAndGenerateAiSummary(): void {
+    this.runSimulation(false, () => {
+      this.llmUseScenarioContext = true;
+      this.generateAiSummary();
+    });
+  }
+
+  runAskFromSuggestion(question: string): void {
+    const trimmed = question.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    this.askQuestion = trimmed;
+    this.submitAskQuestion();
+  }
+
+  drillSimulationDimension(dimension: string): void {
+    const trimmedDimension = `${dimension ?? ''}`.trim();
+    if (!trimmedDimension) {
+      return;
+    }
+
+    const column = this.simulationTargetDimension || this.selectedGroupBy || this.currentRecommendation?.xColumn || '';
+    if (!column) {
+      this.toast.error('Could not determine the target column for simulation drilldown.');
+      return;
+    }
+
+    const existing = this.filterRules.find(rule => rule.column === column && rule.operator === 'Eq');
+    if (existing) {
+      existing.value = trimmedDimension;
+    } else if (this.filterRules.length < 3) {
+      this.filterRules.push({
+        column,
+        operator: 'Eq',
+        value: trimmedDimension
+      });
+    } else {
+      this.filterRules[0] = {
+        column,
+        operator: 'Eq',
+        value: trimmedDimension
+      };
+    }
+
+    this.activeTab = 0;
+    this.reloadChartWithCurrentParameters(true);
+    this.toast.success(`Drilldown applied for ${column} = ${trimmedDimension}.`);
+  }
+
+  drillLargestSimulationDelta(): void {
+    const top = this.topSimulationDeltas[0];
+    if (!top) {
+      this.toast.info('Run a simulation first to enable drilldown.');
+      return;
+    }
+
+    this.drillSimulationDimension(top.dimension);
   }
 
   private buildSimulationPayload(): ScenarioSimulationRequest | null {
@@ -1432,6 +1668,20 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       .filter(value => value.length > 0);
   }
 
+  private estimateMetricP95(): number {
+    const values = this.pointDataRows
+      .map(row => Number(row['y']))
+      .filter(value => Number.isFinite(value))
+      .sort((left, right) => left - right);
+
+    if (values.length === 0) {
+      return 0;
+    }
+
+    const index = Math.floor((values.length - 1) * 0.95);
+    return Number(values[index].toFixed(2));
+  }
+
   private buildSimulationChartOption(result: ScenarioSimulationResponse): EChartsOption {
     const dimensions = result.deltaSeries.map(item => item.dimension);
     const baseline = result.deltaSeries.map(item => item.baseline);
@@ -1488,12 +1738,66 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     };
   }
 
+  private onSimulationChartClick(event: unknown): void {
+    const payload = event as Record<string, unknown>;
+    const componentType = `${payload['componentType'] ?? ''}`;
+    if (componentType !== 'series') {
+      return;
+    }
+
+    const category = `${payload['name'] ?? ''}`.trim();
+    if (!category) {
+      return;
+    }
+
+    this.drillSimulationDimension(category);
+  }
+
+  private buildScenarioMetaForLlm(): Record<string, unknown> | undefined {
+    if (!this.llmUseScenarioContext || !this.simulationResult) {
+      return undefined;
+    }
+
+    return {
+      queryHash: this.simulationResult.queryHash,
+      targetMetric: this.simulationResult.targetMetric,
+      targetDimension: this.simulationResult.targetDimension,
+      aggregation: this.selectedAggregation,
+      deltaSummary: this.simulationResult.deltaSummary,
+      topDeltas: this.topSimulationDeltas.map(item => ({
+        dimension: item.dimension,
+        delta: item.delta,
+        deltaPercent: item.deltaPercent ?? null
+      })),
+      operations: this.simulationOperations.slice(0, 3).map(item => ({
+        type: item.type,
+        column: item.column,
+        values: this.splitCsvValues(item.values).slice(0, 3),
+        factor: item.factor,
+        constant: item.constant,
+        min: item.min,
+        max: item.max
+      }))
+    };
+  }
+
   formatDeltaPercent(value?: number): string {
     if (value === null || value === undefined || Number.isNaN(value)) {
       return 'N/A';
     }
 
     return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+  }
+
+  severityChipColor(severity: string): 'primary' | 'accent' | 'warn' {
+    switch ((severity || '').toLowerCase()) {
+      case 'high':
+        return 'warn';
+      case 'low':
+        return 'primary';
+      default:
+        return 'accent';
+    }
   }
 
   formatNumeric(value?: number): string {
