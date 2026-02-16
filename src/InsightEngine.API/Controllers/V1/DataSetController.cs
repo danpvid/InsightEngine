@@ -26,6 +26,7 @@ namespace InsightEngine.API.Controllers.V1;
 public class DataSetController : BaseController
 {
     private readonly IDataSetApplicationService _dataSetApplicationService;
+    private readonly IAIInsightService _aiInsightService;
     private readonly IDataSetCleanupService _dataSetCleanupService;
     private readonly IFileStorageService _fileStorageService;
     private readonly ILogger<DataSetController> _logger;
@@ -34,6 +35,7 @@ public class DataSetController : BaseController
 
     public DataSetController(
         IDataSetApplicationService dataSetApplicationService,
+        IAIInsightService aiInsightService,
         IDataSetCleanupService dataSetCleanupService,
         IFileStorageService fileStorageService,
         IDomainNotificationHandler notificationHandler,
@@ -44,6 +46,7 @@ public class DataSetController : BaseController
         : base(notificationHandler, mediator)
     {
         _dataSetApplicationService = dataSetApplicationService;
+        _aiInsightService = aiInsightService;
         _dataSetCleanupService = dataSetCleanupService;
         _fileStorageService = fileStorageService;
         _logger = logger;
@@ -604,6 +607,51 @@ OFFSET {offset};
 
             return StatusCode(StatusCodes.Status500InternalServerError, errorResponse);
         }
+    }
+
+    [HttpPost("{id:guid}/charts/{recommendationId}/ai-summary")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GenerateAiSummary(
+        Guid id,
+        string recommendationId,
+        [FromBody] AiChartRequest? request)
+    {
+        request ??= new AiChartRequest();
+
+        var filterErrors = new List<string>();
+        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
+        if (filterErrors.Count > 0)
+        {
+            return ResponseResult(Result.Failure<object>(filterErrors));
+        }
+
+        var result = await _aiInsightService.GenerateAiSummaryAsync(
+            new LLMChartContextRequest
+            {
+                DatasetId = id,
+                RecommendationId = recommendationId,
+                Aggregation = request.Aggregation,
+                TimeBin = request.TimeBin,
+                MetricY = request.MetricY,
+                GroupBy = request.GroupBy,
+                Filters = parsedFilters,
+                ScenarioMeta = request.ScenarioMeta
+            },
+            HttpContext.RequestAborted);
+
+        if (!result.IsSuccess)
+        {
+            return ResponseResult(Result.Failure<object>(result.Errors));
+        }
+
+        return ResponseResult(Result.Success(new
+        {
+            insightSummary = result.Data!.InsightSummary,
+            meta = result.Data.Meta
+        }));
     }
 
     [HttpPost("{id:guid}/simulate")]
