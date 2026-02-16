@@ -11,6 +11,8 @@ import {
   AiSummaryRequest,
   AiSummaryResponse,
   ChartResponse,
+  DeepInsightsRequest,
+  DeepInsightsResponse,
   ExplainChartResponse,
   ScenarioSimulationRequest,
   ScenarioSimulationResponse
@@ -218,6 +220,17 @@ export class DatasetApiService {
         question,
         currentView: currentView || {}
       }
+    );
+  }
+
+  generateDeepInsights(
+    datasetId: string,
+    recommendationId: string,
+    payload: DeepInsightsRequest
+  ): Observable<ApiResponse<DeepInsightsResponse>> {
+    return this.http.post<ApiResponse<DeepInsightsResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/charts/${recommendationId}/deep-insights`,
+      payload
     );
   }
 }
