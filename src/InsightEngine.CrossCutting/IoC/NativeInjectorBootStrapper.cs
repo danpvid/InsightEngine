@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.IO;
 
 namespace InsightEngine.CrossCutting.IoC;
 
@@ -24,6 +25,9 @@ public static class NativeInjectorBootStrapper
         var runtimeSettings = configuration
             .GetSection(InsightEngineSettings.SectionName)
             .Get<InsightEngineSettings>() ?? new InsightEngineSettings();
+        var metadataPersistenceSettings = configuration
+            .GetSection(MetadataPersistenceSettings.SectionName)
+            .Get<MetadataPersistenceSettings>() ?? new MetadataPersistenceSettings();
 
         // Domain - Notifications
         services.AddScoped<IDomainNotificationHandler, DomainNotificationHandler>();
@@ -32,6 +36,7 @@ public static class NativeInjectorBootStrapper
         services.Configure<ChartExecutionSettings>(configuration.GetSection("ChartExecution"));
         services.Configure<ChartCacheSettings>(configuration.GetSection("ChartCache"));
         services.Configure<ScenarioSimulationSettings>(configuration.GetSection("ScenarioSimulation"));
+        services.Configure<MetadataPersistenceSettings>(configuration.GetSection(MetadataPersistenceSettings.SectionName));
         services.PostConfigure<ChartExecutionSettings>(options =>
         {
             options.ScatterMaxPoints = runtimeSettings.ScatterMaxPoints;
@@ -54,7 +59,13 @@ public static class NativeInjectorBootStrapper
 
         // Infra - Data
         services.AddDbContext<InsightEngineContext>(options =>
-            options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+        {
+            var connectionString = metadataPersistenceSettings.Enabled
+                ? ResolveMetadataConnectionString(metadataPersistenceSettings.ConnectionString)
+                : "Data Source=:memory:";
+
+            options.UseSqlite(connectionString);
+        });
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
@@ -97,5 +108,34 @@ public static class NativeInjectorBootStrapper
 
         // Infra - External Services
         services.AddHttpClient();
+    }
+
+    private static string ResolveMetadataConnectionString(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            connectionString = "Data Source=insightengine-metadata.db";
+        }
+
+        const string dataSourcePrefix = "Data Source=";
+        if (!connectionString.StartsWith(dataSourcePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return connectionString;
+        }
+
+        var dataSource = connectionString[dataSourcePrefix.Length..].Trim();
+        if (string.IsNullOrWhiteSpace(dataSource) || dataSource == ":memory:" || Path.IsPathRooted(dataSource))
+        {
+            return connectionString;
+        }
+
+        var fullPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, dataSource));
+        var directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        return $"{dataSourcePrefix}{fullPath}";
     }
 }

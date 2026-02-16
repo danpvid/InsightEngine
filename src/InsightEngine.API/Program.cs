@@ -4,12 +4,14 @@ using InsightEngine.API.Models;
 using InsightEngine.API.Services;
 using InsightEngine.CrossCutting.IoC;
 using InsightEngine.Domain.Settings;
+using InsightEngine.Infra.Data.Context;
 using DuckDB.NET.Data;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Diagnostics;
@@ -150,6 +152,21 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 NativeInjectorBootStrapper.RegisterServices(builder.Services, builder.Configuration);
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var metadataSettings = scope.ServiceProvider
+        .GetRequiredService<IOptions<MetadataPersistenceSettings>>()
+        .Value;
+
+    if (metadataSettings.Enabled)
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<InsightEngineContext>();
+        dbContext.Database.EnsureCreated();
+        logger.LogInformation("Metadata store initialized using SQLite.");
+    }
+}
 
 // Get API Version Description Provider
 var apiVersionDescriptionProvider = app.Services.GetRequiredService<IApiVersionDescriptionProvider>();

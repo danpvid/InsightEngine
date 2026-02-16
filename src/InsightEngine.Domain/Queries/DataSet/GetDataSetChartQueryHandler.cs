@@ -17,20 +17,23 @@ namespace InsightEngine.Domain.Queries.DataSet;
 /// </summary>
 public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery, Result<ChartExecutionResponse>>
 {
-    private readonly IFileStorageService _fileStorageService;
+    private readonly IDataSetRepository _dataSetRepository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ICsvProfiler _csvProfiler;
     private readonly IChartExecutionService _chartExecutionService;
     private readonly IChartQueryCache _chartQueryCache;
     private readonly ILogger<GetDataSetChartQueryHandler> _logger;
 
     public GetDataSetChartQueryHandler(
-        IFileStorageService fileStorageService,
+        IDataSetRepository dataSetRepository,
+        IUnitOfWork unitOfWork,
         ICsvProfiler csvProfiler,
         IChartExecutionService chartExecutionService,
         IChartQueryCache chartQueryCache,
         ILogger<GetDataSetChartQueryHandler> logger)
     {
-        _fileStorageService = fileStorageService;
+        _dataSetRepository = dataSetRepository;
+        _unitOfWork = unitOfWork;
         _csvProfiler = csvProfiler;
         _chartExecutionService = chartExecutionService;
         _chartQueryCache = chartQueryCache;
@@ -46,16 +49,25 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
             request.DatasetId, request.RecommendationId, request.Aggregation ?? "null", request.TimeBin ?? "null", request.YColumn ?? "null");
 
         try
-        {           
-            // 1. Validar existência do dataset
-            var csvPath = _fileStorageService.GetFullPath($"{request.DatasetId}.csv");
-            if (!File.Exists(csvPath))
+        {
+            var dataSet = await _dataSetRepository.GetByIdAsync(request.DatasetId);
+            if (dataSet is null)
             {
                 _logger.LogWarning("Dataset not found: {DatasetId}", request.DatasetId);
                 return Result.Failure<ChartExecutionResponse>($"Dataset not found: {request.DatasetId}");
             }
 
-            // 2. Gerar profile (necessário para recommendations)
+            var csvPath = dataSet.StoredPath;
+            if (!File.Exists(csvPath))
+            {
+                _logger.LogWarning(
+                    "Dataset file not found DatasetId={DatasetId} StoredPath={StoredPath}",
+                    request.DatasetId,
+                    csvPath);
+                return Result.Failure<ChartExecutionResponse>($"Dataset file not found: {request.DatasetId}");
+            }
+
+            // 2. Generate profile (required for recommendations)
             var profile = await _csvProfiler.ProfileAsync(request.DatasetId, csvPath, cancellationToken);
 
             // 3. Gerar recommendations (on-demand, sem persistência - MVP pattern)
@@ -190,6 +202,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                     cachedResponse.ExecutionResult.RowCount,
                     true);
 
+                await TouchDatasetAsync(dataSet);
+
                 return Result.Success(cachedResponse);
             }
 
@@ -246,6 +260,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 false,
                 response.TotalExecutionMs);
 
+            await TouchDatasetAsync(dataSet);
+
             return Result.Success(response);
         }
         catch (Exception ex)
@@ -255,6 +271,13 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 request.DatasetId, request.RecommendationId);
             return Result.Failure<ChartExecutionResponse>($"Error executing chart: {ex.Message}");
         }
+    }
+
+    private async Task TouchDatasetAsync(Domain.Entities.DataSet dataSet)
+    {
+        dataSet.MarkAccessed();
+        _dataSetRepository.Update(dataSet);
+        await _unitOfWork.CommitAsync();
     }
 
     /// <summary>

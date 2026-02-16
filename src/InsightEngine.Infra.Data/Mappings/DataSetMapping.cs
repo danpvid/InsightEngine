@@ -34,6 +34,14 @@ public class DataSetMapping : IEntityTypeConfiguration<DataSet>
             .IsRequired()
             .HasMaxLength(100);
 
+        builder.Property(ds => ds.RowCount);
+
+        builder.Property(ds => ds.ProfileSummary)
+            .HasMaxLength(2000);
+
+        builder.Property(ds => ds.LastAccessedAt)
+            .IsRequired();
+
         builder.Property(ds => ds.CreatedAt)
             .IsRequired();
 

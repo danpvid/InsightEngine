@@ -2,6 +2,7 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Interfaces;
 using MediatR;
 using Microsoft.Extensions.Logging;
+using DataSetEntity = InsightEngine.Domain.Entities.DataSet;
 
 namespace InsightEngine.Domain.Commands.DataSet;
 
@@ -12,13 +13,19 @@ namespace InsightEngine.Domain.Commands.DataSet;
 public class UploadDataSetCommandHandler : IRequestHandler<UploadDataSetCommand, Result<UploadDataSetResponse>>
 {
     private readonly IFileStorageService _fileStorageService;
+    private readonly IDataSetRepository _dataSetRepository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<UploadDataSetCommandHandler> _logger;
 
     public UploadDataSetCommandHandler(
         IFileStorageService fileStorageService,
+        IDataSetRepository dataSetRepository,
+        IUnitOfWork unitOfWork,
         ILogger<UploadDataSetCommandHandler> logger)
     {
         _fileStorageService = fileStorageService;
+        _dataSetRepository = dataSetRepository;
+        _unitOfWork = unitOfWork;
         _logger = logger;
     }
 
@@ -50,24 +57,16 @@ public class UploadDataSetCommandHandler : IRequestHandler<UploadDataSetCommand,
                 fileName: storedFileName,
                 cancellationToken: cancellationToken);
 
-            // Create metadata
-            var metadata = new
-            {
-                Id = datasetId,
-                OriginalFileName = request.File.FileName,
-                StoredFileName = storedFileName,
-                StoredPath = storedPath,
-                FileSizeInBytes = fileSize,
-                CreatedAt = DateTime.UtcNow
-            };
+            var dataSet = new DataSetEntity(
+                datasetId,
+                request.File.FileName,
+                storedFileName,
+                storedPath,
+                fileSize,
+                request.File.ContentType ?? "text/csv");
 
-            // Save metadata as JSON
-            var metadataPath = GetMetadataFilePath(datasetId);
-            var json = System.Text.Json.JsonSerializer.Serialize(metadata, new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-            await File.WriteAllTextAsync(metadataPath, json, cancellationToken);
+            await _dataSetRepository.AddAsync(dataSet);
+            await _unitOfWork.CommitAsync();
 
             _logger.LogInformation(
                 "Dataset uploaded successfully: {DatasetId}, Path: {Path}",
@@ -90,11 +89,5 @@ public class UploadDataSetCommandHandler : IRequestHandler<UploadDataSetCommand,
             _logger.LogError(ex, "Error uploading dataset: {FileName}", request.File.FileName);
             return Result.Failure<UploadDataSetResponse>($"Error uploading dataset: {ex.Message}");
         }
-    }
-
-    private string GetMetadataFilePath(Guid datasetId)
-    {
-        var directory = _fileStorageService.GetStoragePath();
-        return Path.Combine(directory, $"{datasetId}.meta.json");
     }
 }

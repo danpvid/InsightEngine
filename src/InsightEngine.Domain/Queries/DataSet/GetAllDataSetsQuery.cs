@@ -20,4 +20,7 @@ public class DataSetSummary
     public long FileSizeInBytes { get; set; }
     public double FileSizeMB { get; set; }
     public DateTime CreatedAt { get; set; }
+    public long? RowCount { get; set; }
+    public string? ProfileSummary { get; set; }
+    public DateTime LastAccessedAt { get; set; }
 }
