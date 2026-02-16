@@ -33,6 +33,7 @@ public class AIInsightService : IAIInsightService
         LLMChartContextRequest request,
         CancellationToken cancellationToken = default)
     {
+        var language = NormalizeLanguage(request.Language);
         var contextResult = await _contextBuilder.BuildChartContextAsync(request, cancellationToken);
         if (!contextResult.IsSuccess || contextResult.Data == null)
         {
@@ -45,11 +46,11 @@ public class AIInsightService : IAIInsightService
             DatasetId = request.DatasetId,
             RecommendationId = request.RecommendationId,
             QueryHash = context.QueryHash,
-            FeatureKind = "ai-summary",
+            FeatureKind = $"ai-summary-{language}",
             PromptVersion = LLMPromptVersion.Value,
             ResponseFormat = LLMResponseFormat.Json,
-            SystemPrompt = BuildSystemPrompt(),
-            UserPrompt = BuildUserPrompt(),
+            SystemPrompt = BuildSystemPrompt(language),
+            UserPrompt = BuildUserPrompt(language),
             ContextObjects = context.ContextObjects
         };
 
@@ -89,7 +90,7 @@ public class AIInsightService : IAIInsightService
 
         return Result.Success(new AiInsightSummaryResult
         {
-            InsightSummary = BuildFallbackSummary(context.HeuristicSummary),
+            InsightSummary = BuildFallbackSummary(context.HeuristicSummary, language),
             Meta = new AiGenerationMeta
             {
                 Provider = llmResult.Data?.Provider ?? LLMProvider.None,
@@ -108,6 +109,7 @@ public class AIInsightService : IAIInsightService
         AskAnalysisPlanRequest request,
         CancellationToken cancellationToken = default)
     {
+        var language = NormalizeLanguage(request.Language);
         if (request.DatasetId == Guid.Empty)
         {
             return Result.Failure<AskAnalysisPlanResult>("DatasetId is required.");
@@ -128,6 +130,7 @@ public class AIInsightService : IAIInsightService
             new LLMAskContextRequest
             {
                 DatasetId = request.DatasetId,
+                Language = language,
                 CurrentView = request.CurrentView
             },
             cancellationToken);
@@ -142,11 +145,11 @@ public class AIInsightService : IAIInsightService
         {
             DatasetId = request.DatasetId,
             QueryHash = context.QueryHash,
-            FeatureKind = "ask-plan",
+            FeatureKind = $"ask-plan-{language}",
             PromptVersion = LLMPromptVersion.Value,
             ResponseFormat = LLMResponseFormat.Json,
-            SystemPrompt = BuildAskSystemPrompt(),
-            UserPrompt = BuildAskUserPrompt(request.Question),
+            SystemPrompt = BuildAskSystemPrompt(language),
+            UserPrompt = BuildAskUserPrompt(request.Question, language),
             ContextObjects = context.ContextObjects
         };
 
@@ -173,7 +176,7 @@ public class AIInsightService : IAIInsightService
 
         return Result.Success(new AskAnalysisPlanResult
         {
-            Plan = BuildFallbackPlan(request.Question),
+            Plan = BuildFallbackPlan(request.Question, language),
             Meta = new AiGenerationMeta
             {
                 Provider = llmResult.Data?.Provider ?? LLMProvider.None,
@@ -192,6 +195,7 @@ public class AIInsightService : IAIInsightService
         LLMChartContextRequest request,
         CancellationToken cancellationToken = default)
     {
+        var language = NormalizeLanguage(request.Language);
         var contextResult = await _contextBuilder.BuildChartContextAsync(request, cancellationToken);
         if (!contextResult.IsSuccess || contextResult.Data == null)
         {
@@ -204,11 +208,11 @@ public class AIInsightService : IAIInsightService
             DatasetId = request.DatasetId,
             RecommendationId = request.RecommendationId,
             QueryHash = context.QueryHash,
-            FeatureKind = "explain-chart",
+            FeatureKind = $"explain-chart-{language}",
             PromptVersion = LLMPromptVersion.Value,
             ResponseFormat = LLMResponseFormat.Json,
-            SystemPrompt = BuildExplainSystemPrompt(),
-            UserPrompt = BuildExplainUserPrompt(),
+            SystemPrompt = BuildExplainSystemPrompt(language),
+            UserPrompt = BuildExplainUserPrompt(language),
             ContextObjects = context.ContextObjects
         };
 
@@ -235,7 +239,7 @@ public class AIInsightService : IAIInsightService
 
         return Result.Success(new ChartExplanationResult
         {
-            Explanation = BuildFallbackExplanation(context.HeuristicSummary),
+            Explanation = BuildFallbackExplanation(context.HeuristicSummary, language),
             Meta = new AiGenerationMeta
             {
                 Provider = llmResult.Data?.Provider ?? LLMProvider.None,
@@ -298,34 +302,47 @@ public class AIInsightService : IAIInsightService
         }
     }
 
-    private static AiInsightSummary BuildFallbackSummary(InsightSummary? heuristic)
+    private static AiInsightSummary BuildFallbackSummary(InsightSummary? heuristic, string language)
     {
+        var portuguese = IsPortuguese(language);
         if (heuristic == null)
         {
             return new AiInsightSummary
             {
-                Headline = "AI summary unavailable",
+                Headline = portuguese ? "Resumo de IA indisponível" : "AI summary unavailable",
                 BulletPoints =
                 [
-                    "There is not enough information to build a reliable AI summary right now."
+                    portuguese
+                        ? "Não há informação suficiente para gerar um resumo de IA confiável agora."
+                        : "There is not enough information to build a reliable AI summary right now."
                 ],
                 Cautions =
                 [
-                    "This fallback does not include additional AI interpretation."
+                    portuguese
+                        ? "Este fallback não inclui interpretação adicional da IA."
+                        : "This fallback does not include additional AI interpretation."
                 ],
                 NextQuestions =
                 [
-                    "Can you adjust aggregation or filters and try again?"
+                    portuguese
+                        ? "Você pode ajustar agregação ou filtros e tentar novamente?"
+                        : "Can you adjust aggregation or filters and try again?"
                 ],
                 Confidence = 0.2
             };
         }
 
-        var nextQuestions = new List<string>
-        {
-            "Should we compare this metric across another dimension?",
-            "Do outliers persist after applying a narrower time range?"
-        };
+        var nextQuestions = portuguese
+            ? new List<string>
+            {
+                "Devemos comparar esta métrica em outra dimensão?",
+                "Os outliers persistem após aplicar um intervalo de tempo menor?"
+            }
+            : new List<string>
+            {
+                "Should we compare this metric across another dimension?",
+                "Do outliers persist after applying a narrower time range?"
+            };
 
         return new AiInsightSummary
         {
@@ -333,7 +350,9 @@ public class AIInsightService : IAIInsightService
             BulletPoints = heuristic.BulletPoints.Take(6).ToList(),
             Cautions =
             [
-                "AI output was unavailable. Showing heuristic insight summary."
+                portuguese
+                    ? "A saída da IA não estava disponível. Exibindo resumo heurístico."
+                    : "AI output was unavailable. Showing heuristic insight summary."
             ],
             NextQuestions = nextQuestions,
             Confidence = Math.Clamp(heuristic.Confidence, 0.0, 1.0)
@@ -375,32 +394,45 @@ public class AIInsightService : IAIInsightService
         }
     }
 
-    private static ChartExplanation BuildFallbackExplanation(InsightSummary? heuristic)
+    private static ChartExplanation BuildFallbackExplanation(InsightSummary? heuristic, string language)
     {
+        var portuguese = IsPortuguese(language);
         if (heuristic == null)
         {
             return new ChartExplanation
             {
                 Explanation =
                 [
-                    "AI explanation is unavailable for this chart in the current environment."
+                    portuguese
+                        ? "A explicação por IA está indisponível para este gráfico no ambiente atual."
+                        : "AI explanation is unavailable for this chart in the current environment."
                 ],
                 KeyTakeaways =
                 [
-                    "Try adjusting filters or aggregation and request explanation again."
+                    portuguese
+                        ? "Tente ajustar filtros ou agregação e solicite a explicação novamente."
+                        : "Try adjusting filters or aggregation and request explanation again."
                 ],
                 Caveats =
                 [
-                    "Fallback explanation is based on limited heuristic context."
+                    portuguese
+                        ? "A explicação de fallback é baseada em contexto heurístico limitado."
+                        : "Fallback explanation is based on limited heuristic context."
                 ],
                 SuggestedNextSteps =
                 [
-                    "Run the chart with a different time range.",
-                    "Compare with a second metric."
+                    portuguese
+                        ? "Execute o gráfico com outro período."
+                        : "Run the chart with a different time range.",
+                    portuguese
+                        ? "Compare com uma segunda métrica."
+                        : "Compare with a second metric."
                 ],
                 QuestionsToAsk =
                 [
-                    "Which segment contributes most to the observed change?"
+                    portuguese
+                        ? "Qual segmento mais contribui para a mudança observada?"
+                        : "Which segment contributes most to the observed change?"
                 ]
             };
         }
@@ -414,23 +446,39 @@ public class AIInsightService : IAIInsightService
             KeyTakeaways = heuristic.BulletPoints.Take(6).ToList(),
             PotentialCauses =
             [
-                "Variance may be driven by category mix, seasonality, or outlier concentration.",
-                "Review dimension-level breakdowns to validate likely drivers."
+                portuguese
+                    ? "A variação pode ser causada por mix de categorias, sazonalidade ou concentração de outliers."
+                    : "Variance may be driven by category mix, seasonality, or outlier concentration.",
+                portuguese
+                    ? "Revise quebras por dimensão para validar os principais direcionadores."
+                    : "Review dimension-level breakdowns to validate likely drivers."
             ],
             Caveats =
             [
-                "AI explanation fallback is active; this output uses heuristic rules.",
-                "Correlation does not imply causation."
+                portuguese
+                    ? "Fallback de explicação por IA ativo; esta saída usa regras heurísticas."
+                    : "AI explanation fallback is active; this output uses heuristic rules.",
+                portuguese
+                    ? "Correlação não implica causalidade."
+                    : "Correlation does not imply causation."
             ],
             SuggestedNextSteps =
             [
-                "Break down the metric by groupBy to isolate contributors.",
-                "Apply drilldown filters around anomalous points."
+                portuguese
+                    ? "Quebre a métrica por groupBy para isolar os principais contribuintes."
+                    : "Break down the metric by groupBy to isolate contributors.",
+                portuguese
+                    ? "Aplique filtros de drilldown em torno de pontos anômalos."
+                    : "Apply drilldown filters around anomalous points."
             ],
             QuestionsToAsk =
             [
-                "Does the same pattern hold in another time window?",
-                "Are outliers concentrated in a specific segment?"
+                portuguese
+                    ? "O mesmo padrão se mantém em outra janela de tempo?"
+                    : "Does the same pattern hold in another time window?",
+                portuguese
+                    ? "Os outliers estão concentrados em um segmento específico?"
+                    : "Are outliers concentrated in a specific segment?"
             ]
         };
     }
@@ -477,14 +525,18 @@ public class AIInsightService : IAIInsightService
         }
     }
 
-    private static AskAnalysisPlan BuildFallbackPlan(string question)
+    private static AskAnalysisPlan BuildFallbackPlan(string question, string language)
     {
+        var portuguese = IsPortuguese(language);
         var lowered = question.ToLowerInvariant();
         var intent = lowered.Contains("trend", StringComparison.OrdinalIgnoreCase)
+            || lowered.Contains("tend", StringComparison.OrdinalIgnoreCase)
             ? "Trend"
             : lowered.Contains("outlier", StringComparison.OrdinalIgnoreCase)
+                || lowered.Contains("anom", StringComparison.OrdinalIgnoreCase)
                 ? "Outliers"
                 : lowered.Contains("break", StringComparison.OrdinalIgnoreCase)
+                    || lowered.Contains("quebra", StringComparison.OrdinalIgnoreCase)
                     ? "Breakdown"
                     : "Compare";
 
@@ -496,33 +548,41 @@ public class AIInsightService : IAIInsightService
             SuggestedChartType = chartType,
             Reasoning =
             [
-                "Fallback planning is active because AI output was unavailable.",
-                "The plan uses keyword intent detection and current dataset schema."
+                portuguese
+                    ? "O planejamento de fallback está ativo porque a saída de IA está indisponível."
+                    : "Fallback planning is active because AI output was unavailable.",
+                portuguese
+                    ? "O plano usa detecção de intenção por palavras-chave e o schema atual do dataset."
+                    : "The plan uses keyword intent detection and current dataset schema."
             ]
         };
     }
 
-    private static string BuildSystemPrompt()
+    private static string BuildSystemPrompt(string language)
     {
         return """
 You are a data insight assistant. Return valid JSON only.
 Do not include markdown or prose outside JSON.
 Keep language business-friendly and concise.
 Include limitations and assumptions in cautions when uncertainty exists.
-""";
+"""
+        + Environment.NewLine
+        + BuildOutputLanguageInstruction(language);
     }
 
-    private static string BuildExplainSystemPrompt()
+    private static string BuildExplainSystemPrompt(string language)
     {
         return """
 You are a business analytics assistant.
 Return JSON only. No markdown.
 Use plain business language and avoid SQL/database jargon.
 Include caveats when evidence is weak.
-""";
+"""
+        + Environment.NewLine
+        + BuildOutputLanguageInstruction(language);
     }
 
-    private static string BuildUserPrompt()
+    private static string BuildUserPrompt(string language)
     {
         return """
 Generate an insight summary from the provided chart context.
@@ -539,10 +599,12 @@ Rules:
 - cautions: 0 to 4 bullets with assumptions/limitations.
 - nextQuestions: 2 to 5 actionable follow-up questions.
 - confidence: number between 0 and 1.
-""";
+"""
+        + Environment.NewLine
+        + BuildOutputLanguageInstruction(language);
     }
 
-    private static string BuildExplainUserPrompt()
+    private static string BuildExplainUserPrompt(string language)
     {
         return """
 Explain the chart context and return JSON using this schema:
@@ -561,20 +623,24 @@ Rules:
 - caveats: 1 to 4 bullets.
 - suggestedNextSteps: 2 to 5 bullets.
 - questionsToAsk: 2 to 6 bullets.
-""";
+"""
+        + Environment.NewLine
+        + BuildOutputLanguageInstruction(language);
     }
 
-    private static string BuildAskSystemPrompt()
+    private static string BuildAskSystemPrompt(string language)
     {
         return """
 You convert user questions into a chart analysis plan.
 Return JSON only.
 Do not produce SQL.
 Use one of these intents: Compare, Trend, Breakdown, Outliers.
-""";
+"""
+        + Environment.NewLine
+        + BuildOutputLanguageInstruction(language);
     }
 
-    private static string BuildAskUserPrompt(string question)
+    private static string BuildAskUserPrompt(string question, string language)
     {
         return string.Join('\n',
             "User question:",
@@ -597,8 +663,31 @@ Use one of these intents: Compare, Trend, Breakdown, Outliers.
             "    }",
             "  ],",
             "  \"reasoning\": [\"string\"]",
-            "}");
+            "}",
+            string.Empty,
+            BuildOutputLanguageInstruction(language));
     }
+
+    private static bool IsPortuguese(string language) =>
+        string.Equals(NormalizeLanguage(language), "pt-br", StringComparison.Ordinal);
+
+    private static string NormalizeLanguage(string? language)
+    {
+        var normalized = language?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "pt" => "pt-br",
+            "pt-br" => "pt-br",
+            "en" => "en",
+            "en-us" => "en",
+            _ => "pt-br"
+        };
+    }
+
+    private static string BuildOutputLanguageInstruction(string language) =>
+        IsPortuguese(language)
+            ? "All user-facing strings in JSON must be Brazilian Portuguese (pt-BR)."
+            : "All user-facing strings in JSON must be English (en).";
 
     private static List<string> NormalizeList(List<string>? values, int maxItems)
     {

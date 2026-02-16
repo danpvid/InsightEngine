@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+﻿import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
@@ -12,12 +12,15 @@ import { ApiError } from '../../../../core/models/api-response.model';
 import { DataSetSummary } from '../../../../core/models/dataset.model';
 import { RuntimeConfig } from '../../../../core/models/runtime-config.model';
 import { environment } from '../../../../../environments/environment';
+import { LanguageService } from '../../../../core/services/language.service';
+import { TranslatePipe } from '../../../../core/pipes/translate.pipe';
 
 @Component({
   selector: 'app-dataset-upload-page',
   standalone: true,
   imports: [
     CommonModule,
+    TranslatePipe,
     ...MATERIAL_MODULES,
     LoadingBarComponent,
     ErrorPanelComponent,
@@ -30,14 +33,11 @@ export class DatasetUploadPageComponent implements OnInit {
   selectedFile: File | null = null;
   loading: boolean = false;
   error: ApiError | null = null;
-  
+
   datasets: DataSetSummary[] = [];
   loadingDatasets: boolean = false;
 
-  // Drag & drop
   isDragging: boolean = false;
-
-  // Upload progress
   uploadProgress: number = 0;
   runtimeConfig: RuntimeConfig | null = null;
   uploadMaxBytes: number = 20 * 1024 * 1024;
@@ -45,8 +45,13 @@ export class DatasetUploadPageComponent implements OnInit {
   constructor(
     private datasetApi: DatasetApiService,
     private router: Router,
-    private toast: ToastService
+    private toast: ToastService,
+    private languageService: LanguageService
   ) {}
+
+  get currentLanguage(): string {
+    return this.languageService.currentLanguage;
+  }
 
   ngOnInit(): void {
     this.loadRuntimeConfig();
@@ -71,7 +76,7 @@ export class DatasetUploadPageComponent implements OnInit {
 
   loadDatasets(): void {
     this.loadingDatasets = true;
-    
+
     this.datasetApi.listDatasets().subscribe({
       next: (response) => {
         this.loadingDatasets = false;
@@ -82,7 +87,6 @@ export class DatasetUploadPageComponent implements OnInit {
       error: (err) => {
         this.loadingDatasets = false;
         console.error('Error loading datasets:', err);
-        // Silently fail - não interrompe o fluxo de upload
       }
     });
   }
@@ -94,7 +98,6 @@ export class DatasetUploadPageComponent implements OnInit {
     }
   }
 
-  // Drag & Drop handlers
   onDragOver(event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
@@ -118,21 +121,19 @@ export class DatasetUploadPageComponent implements OnInit {
   }
 
   private handleFile(file: File): void {
-    // Validate file type
     if (!file.name.toLowerCase().endsWith('.csv')) {
       this.error = {
         code: 'INVALID_FILE_TYPE',
-        message: 'Por favor, selecione um arquivo CSV válido.'
+        message: this.languageService.translate('upload.errorInvalidFileType')
       };
       this.selectedFile = null;
       return;
     }
 
-    // Validate file size using backend runtime config
     if (file.size > this.uploadMaxBytes) {
       this.error = {
         code: 'FILE_TOO_LARGE',
-        message: `O arquivo é muito grande. Tamanho máximo: ${this.getUploadMaxLabel()}.`
+        message: this.languageService.translate('upload.errorFileTooLarge', { maxSize: this.getUploadMaxLabel() })
       };
       this.selectedFile = null;
       return;
@@ -146,7 +147,7 @@ export class DatasetUploadPageComponent implements OnInit {
     if (!this.selectedFile) {
       this.error = {
         code: 'NO_FILE',
-        message: 'Por favor, selecione um arquivo CSV primeiro.'
+        message: this.languageService.translate('upload.errorNoFileSelected')
       };
       return;
     }
@@ -162,14 +163,14 @@ export class DatasetUploadPageComponent implements OnInit {
 
         if (progressEvent.response) {
           this.loading = false;
-          
+
           if (progressEvent.response.success && progressEvent.response.data) {
             this.logDevTiming('dataset-upload', uploadStart, {
               datasetId: progressEvent.response.data.datasetId,
               fileSizeBytes: this.selectedFile?.size || 0
             });
-            this.toast.success('Dataset enviado com sucesso!');
-            this.router.navigate(['/datasets', progressEvent.response.data.datasetId, 'recommendations']);
+            this.toast.success(this.languageService.translate('upload.successDatasetUploaded'));
+            this.router.navigate(['/', this.currentLanguage, 'datasets', progressEvent.response.data.datasetId, 'recommendations']);
           } else if (progressEvent.response.errors && progressEvent.response.errors.length > 0) {
             const first = progressEvent.response.errors[0];
             this.error = {
@@ -200,11 +201,14 @@ export class DatasetUploadPageComponent implements OnInit {
   }
 
   getFileSizeText(): string {
-    if (!this.selectedFile) return '';
-    const sizeInMB = this.selectedFile.size / (1024 * 1024);
-    return sizeInMB < 1 
+    if (!this.selectedFile) {
+      return '';
+    }
+
+    const sizeInMb = this.selectedFile.size / (1024 * 1024);
+    return sizeInMb < 1
       ? `${(this.selectedFile.size / 1024).toFixed(2)} KB`
-      : `${sizeInMB.toFixed(2)} MB`;
+      : `${sizeInMb.toFixed(2)} MB`;
   }
 
   changeFile(): void {
@@ -212,19 +216,19 @@ export class DatasetUploadPageComponent implements OnInit {
   }
 
   openDataset(dataset: DataSetSummary): void {
-    this.router.navigate(['/datasets', dataset.datasetId, 'recommendations']);
+    this.router.navigate(['/', this.currentLanguage, 'datasets', dataset.datasetId, 'recommendations']);
   }
 
   formatFileSize(sizeInBytes: number): string {
-    const sizeInMB = sizeInBytes / (1024 * 1024);
-    return sizeInMB < 1 
+    const sizeInMb = sizeInBytes / (1024 * 1024);
+    return sizeInMb < 1
       ? `${(sizeInBytes / 1024).toFixed(2)} KB`
-      : `${sizeInMB.toFixed(2)} MB`;
+      : `${sizeInMb.toFixed(2)} MB`;
   }
 
   formatDate(dateString: string): string {
     const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR', {
+    return date.toLocaleDateString(this.currentLanguage === 'pt-br' ? 'pt-BR' : 'en-US', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -253,3 +257,4 @@ export class DatasetUploadPageComponent implements OnInit {
     });
   }
 }
+

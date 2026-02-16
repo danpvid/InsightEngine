@@ -9,6 +9,8 @@ import { PageEvent } from '@angular/material/paginator';
 import { Sort } from '@angular/material/sort';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
 import { ToastService } from '../../../../core/services/toast.service';
+import { LanguageService } from '../../../../core/services/language.service';
+import { TranslatePipe } from '../../../../core/pipes/translate.pipe';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
 import { MATERIAL_MODULES } from '../../../../shared/material/material.imports';
 import { LoadingBarComponent } from '../../../../shared/components/loading-bar/loading-bar.component';
@@ -75,6 +77,7 @@ interface ChartTableRow {
     CommonModule,
     FormsModule,
     RouterLink,
+    TranslatePipe,
     NgxEchartsModule,
     ...MATERIAL_MODULES,
     LoadingBarComponent,
@@ -292,8 +295,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private router: Router,
     private datasetApi: DatasetApiService,
-    private toast: ToastService
+    private toast: ToastService,
+    private languageService: LanguageService
   ) {}
+
+  get currentLanguage(): string {
+    return this.languageService.currentLanguage;
+  }
 
   @HostListener('window:resize')
   onResize(): void {
@@ -852,7 +860,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     const keepContext = this.keepNavigationContext;
     const queryParams = keepContext ? this.buildCurrentQueryParams() : {};
 
-    this.router.navigate(['/datasets', this.datasetId, 'charts', recId], {
+    this.router.navigate(['/', this.currentLanguage, 'datasets', this.datasetId, 'charts', recId], {
       queryParams,
       replaceUrl: true
     }).then(() => {

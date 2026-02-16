@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+﻿import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -14,6 +14,8 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { SkeletonCardComponent } from '../../../../shared/components/skeleton-card/skeleton-card.component';
 import { ChartRecommendation } from '../../../../core/models/recommendation.model';
 import { ApiError } from '../../../../core/models/api-response.model';
+import { LanguageService } from '../../../../core/services/language.service';
+import { TranslatePipe } from '../../../../core/pipes/translate.pipe';
 
 @Component({
   selector: 'app-recommendations-page',
@@ -23,6 +25,7 @@ import { ApiError } from '../../../../core/models/api-response.model';
     FormsModule,
     RouterLink,
     NgxEchartsModule,
+    TranslatePipe,
     ...MATERIAL_MODULES,
     LoadingBarComponent,
     ErrorPanelComponent,
@@ -42,16 +45,21 @@ export class RecommendationsPageComponent implements OnInit {
 
   selectedChartType: string = 'All';
   sortBy: string = 'score';
-  private previewOptionCache: Record<string, EChartsOption> = {};
-
   chartTypes: string[] = ['All', 'Line', 'Bar', 'Scatter', 'Histogram'];
+
+  private previewOptionCache: Record<string, EChartsOption> = {};
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private datasetApi: DatasetApiService,
-    private toast: ToastService
+    private toast: ToastService,
+    private languageService: LanguageService
   ) {}
+
+  get currentLanguage(): string {
+    return this.languageService.currentLanguage;
+  }
 
   ngOnInit(): void {
     this.datasetId = this.route.snapshot.paramMap.get('datasetId') || '';
@@ -59,7 +67,7 @@ export class RecommendationsPageComponent implements OnInit {
     if (!this.datasetId) {
       this.error = {
         code: 'MISSING_DATASET_ID',
-        message: 'ID do dataset nao fornecido.'
+        message: this.languageService.translate('recommendations.errorMissingDatasetId')
       };
       return;
     }
@@ -97,7 +105,7 @@ export class RecommendationsPageComponent implements OnInit {
           this.applyFilters();
 
           if (this.recommendations.length === 0) {
-            this.toast.info('Nenhuma recomendacao encontrada para este dataset.');
+            this.toast.info(this.languageService.translate('recommendations.emptyInfo'));
           }
         } else if (response.errors && response.errors.length > 0) {
           const first = response.errors[0];
@@ -121,7 +129,7 @@ export class RecommendationsPageComponent implements OnInit {
   }
 
   viewChart(recommendation: ChartRecommendation): void {
-    this.router.navigate(['/datasets', this.datasetId, 'charts', recommendation.id]);
+    this.router.navigate(['/', this.currentLanguage, 'datasets', this.datasetId, 'charts', recommendation.id]);
   }
 
   getChartTypeColor(chartType: string): string {
@@ -327,7 +335,8 @@ export class RecommendationsPageComponent implements OnInit {
 
   copyDatasetId(): void {
     navigator.clipboard.writeText(this.datasetId).then(() => {
-      this.toast.success('ID copiado para a area de transferencia');
+      this.toast.success(this.languageService.translate('common.copied'));
     });
   }
 }
+

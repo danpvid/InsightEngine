@@ -46,6 +46,7 @@ public class ChartExplanationResult
 public class AskAnalysisPlanRequest
 {
     public Guid DatasetId { get; set; }
+    public string Language { get; set; } = "pt-br";
     public string Question { get; set; } = string.Empty;
     public Dictionary<string, object?> CurrentView { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

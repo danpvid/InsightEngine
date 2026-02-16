@@ -1,19 +1,19 @@
-<div class="container">
+﻿<div class="container">
   <nav class="breadcrumb">
-    <a routerLink="/" class="breadcrumb-item">
+    <a [routerLink]="['/', currentLanguage, 'datasets', 'new']" class="breadcrumb-item">
       <mat-icon>home</mat-icon>
-      <span>Datasets</span>
+      <span>{{ 'common.datasets' | translate }}</span>
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
     <span class="breadcrumb-item active">
       <mat-icon>auto_awesome</mat-icon>
-      <span>Recomendacoes</span>
+      <span>{{ 'recommendations.breadcrumb' | translate }}</span>
     </span>
   </nav>
 
   <app-page-header
-    title="Recomendacoes de Graficos"
-    [subtitle]="datasetName ? ('Dataset: ' + datasetName + ' (' + datasetId + ')') : ('Dataset: ' + datasetId)"
+    [title]="'recommendations.title' | translate"
+    [subtitle]="datasetName ? (('recommendations.datasetLabel' | translate) + ': ' + datasetName + ' (' + datasetId + ')') : (('recommendations.datasetLabel' | translate) + ': ' + datasetId)"
     icon="auto_awesome">
   </app-page-header>
 
@@ -22,7 +22,7 @@
       <div class="dataset-name-section" *ngIf="datasetName">
         <div class="dataset-id-label">
           <mat-icon>description</mat-icon>
-          <span>Arquivo:</span>
+          <span>{{ 'recommendations.fileLabel' | translate }}</span>
         </div>
         <div class="dataset-name-value">{{ datasetName }}</div>
       </div>
@@ -30,14 +30,14 @@
       <div class="dataset-id-section">
         <div class="dataset-id-label">
           <mat-icon>fingerprint</mat-icon>
-          <span>ID do Dataset:</span>
+          <span>{{ 'recommendations.datasetIdLabel' | translate }}</span>
         </div>
         <div class="dataset-id-value">
           <code>{{ datasetId }}</code>
           <button
             mat-icon-button
             (click)="copyDatasetId()"
-            matTooltip="Copiar ID">
+            matTooltip="Copy ID">
             <mat-icon>content_copy</mat-icon>
           </button>
         </div>
@@ -53,10 +53,10 @@
         <div class="filter-group">
           <mat-icon>filter_list</mat-icon>
           <mat-form-field appearance="outline">
-            <mat-label>Tipo de Grafico</mat-label>
+            <mat-label>{{ 'recommendations.filterChartType' | translate }}</mat-label>
             <mat-select [(ngModel)]="selectedChartType" (selectionChange)="onChartTypeChange()">
               <mat-option *ngFor="let type of chartTypes" [value]="type">
-                {{ type === 'All' ? 'Todos' : type }}
+                {{ type === 'All' ? ('recommendations.allTypes' | translate) : type }}
               </mat-option>
             </mat-select>
           </mat-form-field>
@@ -65,20 +65,20 @@
         <div class="filter-group">
           <mat-icon>sort</mat-icon>
           <mat-form-field appearance="outline">
-            <mat-label>Ordenar por</mat-label>
+            <mat-label>{{ 'recommendations.filterSortBy' | translate }}</mat-label>
             <mat-select [(ngModel)]="sortBy" (selectionChange)="onSortChange()">
-              <mat-option value="score">Score</mat-option>
-              <mat-option value="impact">Impacto</mat-option>
-              <mat-option value="type">Tipo</mat-option>
-              <mat-option value="title">Titulo</mat-option>
-              <mat-option value="default">Ordem original</mat-option>
+              <mat-option value="score">{{ 'recommendations.filterSortScore' | translate }}</mat-option>
+              <mat-option value="impact">{{ 'recommendations.filterSortImpact' | translate }}</mat-option>
+              <mat-option value="type">{{ 'recommendations.filterSortType' | translate }}</mat-option>
+              <mat-option value="title">{{ 'recommendations.filterSortTitle' | translate }}</mat-option>
+              <mat-option value="default">{{ 'recommendations.filterSortDefault' | translate }}</mat-option>
             </mat-select>
           </mat-form-field>
         </div>
 
         <div class="results-count">
           <mat-icon>bar_chart</mat-icon>
-          <span>{{ filteredRecommendations.length }} recomendacoes</span>
+          <span>{{ 'recommendations.resultsCount' | translate:{ count: filteredRecommendations.length } }}</span>
         </div>
       </div>
     </mat-card-content>
@@ -117,34 +117,34 @@
             {{ getChartType(rec) }}
           </mat-chip>
           <mat-chip highlighted>
-            Score {{ formatScore(rec.score) }}
+            {{ 'recommendations.score' | translate:{ value: formatScore(rec.score) } }}
           </mat-chip>
           <mat-chip highlighted>
-            Impacto {{ formatScore(rec.impactScore) }}
+            {{ 'recommendations.impact' | translate:{ value: formatScore(rec.impactScore) } }}
           </mat-chip>
         </div>
 
         <div class="chart-details" *ngIf="rec.xColumn || rec.yColumn">
           <div class="detail-row" *ngIf="rec.xColumn">
             <mat-icon>arrow_forward</mat-icon>
-            <span><strong>Eixo X:</strong> {{ rec.xColumn }}</span>
+            <span><strong>{{ 'recommendations.xAxis' | translate }}</strong> {{ rec.xColumn }}</span>
           </div>
           <div class="detail-row" *ngIf="rec.yColumn">
             <mat-icon>arrow_upward</mat-icon>
-            <span><strong>Eixo Y:</strong> {{ rec.yColumn }}</span>
+            <span><strong>{{ 'recommendations.yAxis' | translate }}</strong> {{ rec.yColumn }}</span>
           </div>
           <div class="detail-row" *ngIf="rec.aggregation">
             <mat-icon>functions</mat-icon>
-            <span><strong>Agregacao:</strong> {{ rec.aggregation }}</span>
+            <span><strong>{{ 'recommendations.aggregation' | translate }}</strong> {{ rec.aggregation }}</span>
           </div>
           <div class="detail-row" *ngIf="rec.timeBin">
             <mat-icon>calendar_today</mat-icon>
-            <span><strong>Periodo:</strong> {{ rec.timeBin }}</span>
+            <span><strong>{{ 'recommendations.period' | translate }}</strong> {{ rec.timeBin }}</span>
           </div>
         </div>
 
         <div class="criteria" *ngIf="rec.scoreCriteria && rec.scoreCriteria.length > 0">
-          <div class="criteria-title">Criterios de score</div>
+          <div class="criteria-title">{{ 'recommendations.scoreCriteria' | translate }}</div>
           <ul>
             <li *ngFor="let criterion of rec.scoreCriteria | slice:0:3">{{ criterion }}</li>
           </ul>
@@ -159,7 +159,7 @@
       <mat-card-actions>
         <button mat-raised-button color="primary" class="open-chart-btn">
           <mat-icon>visibility</mat-icon>
-          Abrir Grafico
+          {{ 'recommendations.openChart' | translate }}
         </button>
       </mat-card-actions>
     </mat-card>
@@ -167,11 +167,12 @@
 
   <div class="empty-state" *ngIf="!loading && !error && recommendations.length === 0">
     <mat-icon>search_off</mat-icon>
-    <h3>Nenhuma recomendacao disponivel</h3>
-    <p>Nao foi possivel gerar recomendacoes de graficos para este dataset.</p>
-    <button mat-raised-button color="primary" routerLink="/datasets/new">
+    <h3>{{ 'recommendations.emptyTitle' | translate }}</h3>
+    <p>{{ 'recommendations.emptySubtitle' | translate }}</p>
+    <button mat-raised-button color="primary" [routerLink]="['/', currentLanguage, 'datasets', 'new']">
       <mat-icon>upload_file</mat-icon>
-      Enviar Novo Dataset
+      {{ 'recommendations.uploadNewDataset' | translate }}
     </button>
   </div>
 </div>
+

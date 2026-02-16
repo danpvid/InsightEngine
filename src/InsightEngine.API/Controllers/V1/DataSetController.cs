@@ -620,6 +620,7 @@ OFFSET {offset};
         [FromBody] AiChartRequest? request)
     {
         request ??= new AiChartRequest();
+        var language = ResolveLanguage();
 
         var filterErrors = new List<string>();
         var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
@@ -633,6 +634,7 @@ OFFSET {offset};
             {
                 DatasetId = id,
                 RecommendationId = recommendationId,
+                Language = language,
                 Aggregation = request.Aggregation,
                 TimeBin = request.TimeBin,
                 MetricY = request.MetricY,
@@ -665,6 +667,7 @@ OFFSET {offset};
         [FromBody] AiChartRequest? request)
     {
         request ??= new AiChartRequest();
+        var language = ResolveLanguage();
 
         var filterErrors = new List<string>();
         var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
@@ -678,6 +681,7 @@ OFFSET {offset};
             {
                 DatasetId = id,
                 RecommendationId = recommendationId,
+                Language = language,
                 Aggregation = request.Aggregation,
                 TimeBin = request.TimeBin,
                 MetricY = request.MetricY,
@@ -714,6 +718,7 @@ OFFSET {offset};
         [FromBody] AskDatasetRequest? request)
     {
         request ??= new AskDatasetRequest();
+        var language = ResolveLanguage();
         if (string.IsNullOrWhiteSpace(request.Question))
         {
             return ResponseResult(Result.Failure<object>("Question is required."));
@@ -723,6 +728,7 @@ OFFSET {offset};
             new AskAnalysisPlanRequest
             {
                 DatasetId = id,
+                Language = language,
                 Question = request.Question,
                 CurrentView = request.CurrentView
             },
@@ -864,6 +870,25 @@ OFFSET {offset};
         }
 
         return parsed;
+    }
+
+    private string ResolveLanguage()
+    {
+        var languageFromQuery = HttpContext?.Request?.Query["lang"].ToString();
+        if (string.IsNullOrWhiteSpace(languageFromQuery))
+        {
+            return "pt-br";
+        }
+
+        var normalized = languageFromQuery.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "pt" => "pt-br",
+            "pt-br" => "pt-br",
+            "en" => "en",
+            "en-us" => "en",
+            _ => "pt-br"
+        };
     }
 
     private static List<RawSortRule> ParseRawSort(

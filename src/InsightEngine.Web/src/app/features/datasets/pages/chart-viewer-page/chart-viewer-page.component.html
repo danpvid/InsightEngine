@@ -1,16 +1,16 @@
 <div class="container-wide">
   <nav class="breadcrumb">
-    <a routerLink="/datasets/new" mat-button>
+    <a [routerLink]="['/', currentLanguage, 'datasets', 'new']" mat-button>
       <mat-icon>upload_file</mat-icon>
-      Datasets
+      {{ 'common.datasets' | translate }}
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
-    <a [routerLink]="['/datasets', datasetId, 'recommendations']" mat-button>
+    <a [routerLink]="['/', currentLanguage, 'datasets', datasetId, 'recommendations']" mat-button>
       <mat-icon>auto_awesome</mat-icon>
-      Recomendacoes
+      {{ 'recommendations.breadcrumb' | translate }}
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
-    <span class="breadcrumb-current">Grafico</span>
+    <span class="breadcrumb-current">{{ 'chartViewer.chart' | translate }}</span>
   </nav>
 
   <div class="navigation-controls" *ngIf="recommendations.length > 0">

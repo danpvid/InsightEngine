@@ -1,14 +1,13 @@
-<div class="container">
+﻿<div class="container">
   <app-page-header
-    title="Novo Dataset"
-    subtitle="Faça upload de um arquivo CSV para gerar visualizações automaticamente"
+    [title]="'upload.title' | translate"
+    [subtitle]="'upload.subtitle' | translate"
     icon="upload_file">
   </app-page-header>
 
   <mat-card>
     <mat-card-content>
       <div class="upload-section">
-        <!-- Drag & Drop Zone -->
         <div
           class="drag-drop-zone"
           [class.dragging]="isDragging"
@@ -20,9 +19,9 @@
           <div class="upload-icon">
             <mat-icon color="primary">cloud_upload</mat-icon>
           </div>
-          
-          <h3>Arraste e solte seu arquivo aqui</h3>
-          <p class="text-muted">ou</p>
+
+          <h3>{{ 'upload.dragDropTitle' | translate }}</h3>
+          <p class="text-muted">{{ 'upload.or' | translate }}</p>
 
           <div class="file-input-wrapper">
             <input
@@ -32,20 +31,20 @@
               #fileInput
               id="file-input"
               class="file-input">
-            
+
             <button
               mat-raised-button
               color="primary"
               (click)="fileInput.click()"
               [disabled]="loading">
               <mat-icon>attach_file</mat-icon>
-              Selecionar Arquivo CSV
+              {{ 'upload.selectCsvFile' | translate }}
             </button>
           </div>
 
           <p class="drag-hint">
             <mat-icon>info</mat-icon>
-            Apenas arquivos CSV até {{ getUploadMaxLabel() }}
+            {{ 'upload.dragHint' | translate:{ maxSize: getUploadMaxLabel() } }}
           </p>
         </div>
 
@@ -67,7 +66,7 @@
               color="accent"
               (click)="fileInputChange.click()"
               [disabled]="loading"
-              matTooltip="Trocar arquivo">
+              [matTooltip]="'upload.replaceFile' | translate">
               <mat-icon>sync</mat-icon>
             </button>
             <button
@@ -75,23 +74,22 @@
               color="warn"
               (click)="clearFile()"
               [disabled]="loading"
-              matTooltip="Remover arquivo">
+              [matTooltip]="'upload.removeFile' | translate">
               <mat-icon>close</mat-icon>
             </button>
           </div>
         </div>
 
-        <!-- Upload Progress Bar -->
         <div class="upload-progress" *ngIf="loading">
           <mat-progress-bar [mode]="uploadProgress > 0 ? 'determinate' : 'indeterminate'" [value]="uploadProgress"></mat-progress-bar>
           <p class="progress-text">
-            <span *ngIf="uploadProgress > 0">Enviando... {{ uploadProgress }}%</span>
-            <span *ngIf="uploadProgress === 0">Preparando upload...</span>
+            <span *ngIf="uploadProgress > 0">{{ 'upload.uploading' | translate:{ progress: uploadProgress } }}</span>
+            <span *ngIf="uploadProgress === 0">{{ 'upload.preparing' | translate }}</span>
           </p>
         </div>
 
         <app-loading-bar [loading]="loading && uploadProgress === 0"></app-loading-bar>
-        
+
         <app-error-panel [error]="error"></app-error-panel>
 
         <div class="upload-actions" *ngIf="selectedFile">
@@ -103,19 +101,19 @@
             class="upload-button">
             <mat-icon *ngIf="!loading">send</mat-icon>
             <mat-icon *ngIf="loading" class="spin">hourglass_top</mat-icon>
-            {{ loading ? 'Enviando...' : 'Enviar e Gerar Recomendações' }}
+            {{ loading ? ('upload.sendInProgress' | translate) : ('upload.sendAndGenerate' | translate) }}
           </button>
         </div>
 
         <div class="upload-info">
           <mat-icon>info</mat-icon>
           <div>
-            <p><strong>Requisitos:</strong></p>
+            <p><strong>{{ 'upload.requirements' | translate }}</strong></p>
             <ul>
-              <li>Formato: CSV (valores separados por vírgula)</li>
-              <li>Tamanho máximo: {{ getUploadMaxLabel() }}</li>
-              <li>Primeira linha deve conter os nomes das colunas</li>
-              <li>Codificação recomendada: UTF-8</li>
+              <li>{{ 'upload.requirementFormat' | translate }}</li>
+              <li>{{ 'upload.requirementMaxSize' | translate:{ maxSize: getUploadMaxLabel() } }}</li>
+              <li>{{ 'upload.requirementHeader' | translate }}</li>
+              <li>{{ 'upload.requirementEncoding' | translate }}</li>
             </ul>
           </div>
         </div>
@@ -123,26 +121,23 @@
     </mat-card-content>
   </mat-card>
 
-  <!-- Datasets Carregados -->
   <mat-card class="datasets-card" *ngIf="datasets.length > 0 || loadingDatasets">
     <mat-card-header>
       <mat-card-title>
         <mat-icon>folder_open</mat-icon>
-        Datasets Carregados
+        {{ 'upload.loadedDatasets' | translate }}
       </mat-card-title>
-      <mat-card-subtitle>Acessar datasets enviados anteriormente</mat-card-subtitle>
+      <mat-card-subtitle>{{ 'upload.loadedDatasetsSubtitle' | translate }}</mat-card-subtitle>
     </mat-card-header>
     <mat-card-content>
-      <!-- Loading -->
       <div *ngIf="loadingDatasets" class="datasets-loading">
         <mat-spinner diameter="40"></mat-spinner>
-        <p>Carregando datasets...</p>
+        <p>{{ 'upload.loadingDatasets' | translate }}</p>
       </div>
 
-      <!-- Grid de Datasets -->
       <div *ngIf="!loadingDatasets && datasets.length > 0" class="datasets-grid">
-        <mat-card 
-          *ngFor="let dataset of datasets" 
+        <mat-card
+          *ngFor="let dataset of datasets"
           class="dataset-card"
           (click)="openDataset(dataset)">
           <mat-card-header>
@@ -164,46 +159,46 @@
           <mat-card-actions>
             <button mat-button color="primary">
               <mat-icon>analytics</mat-icon>
-              Ver Recomendações
+              {{ 'upload.viewRecommendations' | translate }}
             </button>
           </mat-card-actions>
         </mat-card>
       </div>
 
-      <!-- Empty State -->
       <div *ngIf="!loadingDatasets && datasets.length === 0" class="empty-state">
         <mat-icon>folder_off</mat-icon>
-        <p>Nenhum dataset carregado ainda</p>
+        <p>{{ 'upload.noDatasets' | translate }}</p>
       </div>
     </mat-card-content>
   </mat-card>
 
   <mat-card class="samples-card">
     <mat-card-header>
-      <mat-card-title>Exemplos de Datasets</mat-card-title>
+      <mat-card-title>{{ 'upload.samplesTitle' | translate }}</mat-card-title>
     </mat-card-header>
     <mat-card-content>
-      <p class="text-muted">Você pode testar a plataforma com nossos datasets de exemplo:</p>
+      <p class="text-muted">{{ 'upload.samplesSubtitle' | translate }}</p>
       <mat-list>
         <mat-list-item>
           <mat-icon matListItemIcon>shopping_cart</mat-icon>
           <div matListItemTitle>ecommerce_sales.csv</div>
-          <div matListItemLine>Vendas de e-commerce com análises temporais</div>
+          <div matListItemLine>{{ 'upload.sampleEcommerce' | translate }}</div>
         </mat-list-item>
         <mat-divider></mat-divider>
         <mat-list-item>
           <mat-icon matListItemIcon>person</mat-icon>
           <div matListItemTitle>employee_records.csv</div>
-          <div matListItemLine>Registros de funcionários e análise salarial</div>
+          <div matListItemLine>{{ 'upload.sampleEmployee' | translate }}</div>
         </mat-list-item>
         <mat-divider></mat-divider>
         <mat-list-item>
           <mat-icon matListItemIcon>attach_money</mat-icon>
           <div matListItemTitle>financial_transactions.csv</div>
-          <div matListItemLine>Transações financeiras e categorias</div>
+          <div matListItemLine>{{ 'upload.sampleFinancial' | translate }}</div>
         </mat-list-item>
       </mat-list>
-      <p class="text-muted mt-3">Os arquivos estão disponíveis na pasta <code>samples/</code> do projeto.</p>
+      <p class="text-muted mt-3">{{ 'upload.samplesLocation' | translate }}</p>
     </mat-card-content>
   </mat-card>
 </div>
+

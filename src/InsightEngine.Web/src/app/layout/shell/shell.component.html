@@ -1,14 +1,21 @@
-<mat-toolbar color="primary" class="toolbar">
+﻿<mat-toolbar color="primary" class="toolbar">
   <div class="toolbar-content">
     <div class="toolbar-left">
       <mat-icon class="logo-icon">insights</mat-icon>
-      <span class="app-name" routerLink="/datasets/new">InsightEngine</span>
+      <span class="app-name" [routerLink]="['/', currentLanguage, 'datasets', 'new']">InsightEngine</span>
     </div>
     <div class="toolbar-right">
-      <button mat-button routerLink="/datasets/new">
+      <button mat-button [routerLink]="['/', currentLanguage, 'datasets', 'new']">
         <mat-icon>upload_file</mat-icon>
-        <span>Novo Dataset</span>
+        <span>{{ 'shell.newDataset' | translate }}</span>
       </button>
+      <mat-form-field appearance="outline" class="language-select">
+        <mat-label>{{ 'shell.language' | translate }}</mat-label>
+        <mat-select [ngModel]="currentLanguage" (ngModelChange)="onLanguageChange($event)">
+          <mat-option value="pt-br">PT-BR</mat-option>
+          <mat-option value="en">EN</mat-option>
+        </mat-select>
+      </mat-form-field>
     </div>
   </div>
 </mat-toolbar>
@@ -19,6 +26,7 @@
 
 <footer class="footer">
   <div class="container">
-    <p>InsightEngine © 2026 - Data Visualization Platform</p>
+    <p>{{ 'shell.footer' | translate }}</p>
   </div>
 </footer>
+

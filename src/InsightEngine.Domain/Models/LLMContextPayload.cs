@@ -4,6 +4,7 @@ public class LLMChartContextRequest
 {
     public Guid DatasetId { get; set; }
     public string RecommendationId { get; set; } = string.Empty;
+    public string Language { get; set; } = "pt-br";
     public string? Aggregation { get; set; }
     public string? TimeBin { get; set; }
     public string? MetricY { get; set; }
@@ -15,6 +16,7 @@ public class LLMChartContextRequest
 public class LLMAskContextRequest
 {
     public Guid DatasetId { get; set; }
+    public string Language { get; set; } = "pt-br";
     public Dictionary<string, object?> CurrentView { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
