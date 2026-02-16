@@ -1,82 +1,103 @@
+using Microsoft.AspNetCore.Http;
+
 namespace InsightEngine.API.Models;
 
 /// <summary>
-/// Standard error response envelope for all API errors
+/// Standard error response envelope for all API errors.
 /// </summary>
 public class ApiErrorResponse
 {
-    /// <summary>
-    /// Always false for error responses
-    /// </summary>
     public bool Success { get; set; } = false;
-
-    /// <summary>
-    /// Always null for error responses
-    /// </summary>
-    public object? Data { get; set; }
-
-    /// <summary>
-    /// Machine-readable error code
-    /// </summary>
-    public string Code { get; set; } = "internal_error";
-
-    /// <summary>
-    /// Human-readable error message
-    /// </summary>
-    public string Message { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Field-level error details
-    /// </summary>
-    public Dictionary<string, List<string>>? Details { get; set; }
-
-    /// <summary>
-    /// Request trace ID
-    /// </summary>
+    public List<ApiErrorItem> Errors { get; set; } = new();
     public string TraceId { get; set; } = string.Empty;
+    public int Status { get; set; }
 
-    public ApiErrorResponse()
+    public static ApiErrorResponse FromMessage(
+        string message,
+        string traceId,
+        string code = "internal_error",
+        int status = StatusCodes.Status500InternalServerError,
+        string? target = null)
     {
-    }
-
-    public ApiErrorResponse(string code, string message, string traceId)
-    {
-        Code = code;
-        Message = message;
-        TraceId = traceId;
-    }
-
-    public static ApiErrorResponse FromMessage(string message, string traceId, string code = "internal_error")
-    {
-        return new ApiErrorResponse(code, message, traceId);
-    }
-
-    public static ApiErrorResponse FromValidationErrors(Dictionary<string, List<string>> errors, string traceId)
-    {
-        var firstError = errors.Values.FirstOrDefault()?.FirstOrDefault() ?? "Validation failed";
         return new ApiErrorResponse
         {
-            Code = "validation_error",
-            Message = firstError,
-            Details = errors,
-            TraceId = traceId
+            TraceId = traceId,
+            Status = status,
+            Errors =
+            [
+                new ApiErrorItem
+                {
+                    Code = code,
+                    Message = message,
+                    Target = target
+                }
+            ]
         };
     }
 
-    public static ApiErrorResponse FromList(List<string> errors, string traceId)
+    public static ApiErrorResponse FromList(
+        IReadOnlyCollection<string> errors,
+        string traceId,
+        int status = StatusCodes.Status400BadRequest,
+        string code = "operation_error")
     {
-        var firstError = errors.FirstOrDefault() ?? "Operation failed";
+        var mapped = errors.Count == 0
+            ? [new ApiErrorItem { Code = code, Message = "Operation failed." }]
+            : errors.Select(message => new ApiErrorItem { Code = code, Message = message }).ToList();
+
         return new ApiErrorResponse
         {
-            Code = "operation_error",
-            Message = firstError,
-            Details = new Dictionary<string, List<string>> { ["Errors"] = errors },
-            TraceId = traceId
+            TraceId = traceId,
+            Status = status,
+            Errors = mapped
+        };
+    }
+
+    public static ApiErrorResponse FromValidationErrors(
+        Dictionary<string, List<string>> errors,
+        string traceId,
+        int status = StatusCodes.Status400BadRequest)
+    {
+        var mapped = new List<ApiErrorItem>();
+        foreach (var (target, messages) in errors)
+        {
+            foreach (var message in messages)
+            {
+                mapped.Add(new ApiErrorItem
+                {
+                    Code = "validation_error",
+                    Message = message,
+                    Target = target
+                });
+            }
+        }
+
+        if (mapped.Count == 0)
+        {
+            mapped.Add(new ApiErrorItem
+            {
+                Code = "validation_error",
+                Message = "Validation failed."
+            });
+        }
+
+        return new ApiErrorResponse
+        {
+            TraceId = traceId,
+            Status = status,
+            Errors = mapped
         };
     }
 
     public static ApiErrorResponse NotFound(string message, string traceId)
     {
-        return new ApiErrorResponse("not_found", message, traceId);
+        return FromMessage(message, traceId, "not_found", StatusCodes.Status404NotFound);
     }
+}
+
+public class ApiErrorItem
+{
+    public string Code { get; set; } = "error";
+    public string Message { get; set; } = string.Empty;
+    public string? Target { get; set; }
 }

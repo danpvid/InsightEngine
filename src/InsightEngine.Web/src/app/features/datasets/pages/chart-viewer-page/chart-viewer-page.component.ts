@@ -518,8 +518,15 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           return;
         }
 
-        if (response.error) {
-          this.error = response.error;
+        if (response.errors && response.errors.length > 0) {
+          const first = response.errors[0];
+          this.error = {
+            code: first.code,
+            message: first.message,
+            target: first.target,
+            errors: response.errors,
+            traceId: response.traceId
+          };
         }
       },
       error: (err) => {
@@ -528,12 +535,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         }
 
         this.loading = false;
-        const apiError = HttpErrorUtil.extractApiError(err);
-        this.error = apiError || {
+        this.error = HttpErrorUtil.extractApiError(err) || {
           code: 'LOAD_ERROR',
           message: HttpErrorUtil.extractErrorMessage(err)
         };
-        this.toast.error('Erro ao carregar grafico');
       }
     });
   }
@@ -1073,16 +1078,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           return;
         }
 
-        if (response.error) {
-          this.simulationError = response.error.message;
-          this.toast.error(response.error.message);
+        if (response.errors && response.errors.length > 0) {
+          this.simulationError = response.errors[0].message;
         }
       },
       error: (err) => {
         this.simulationLoading = false;
-        const apiError = HttpErrorUtil.extractApiError(err);
-        this.simulationError = apiError?.message || HttpErrorUtil.extractErrorMessage(err);
-        this.toast.error(this.simulationError || 'Erro ao executar simulacao');
+        this.simulationError = HttpErrorUtil.extractApiError(err)?.message || HttpErrorUtil.extractErrorMessage(err);
       }
     });
   }
@@ -1380,7 +1382,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         this.rawDataLoading = false;
 
         if (!response.success || !response.data) {
-          this.rawDataError = response.error?.message || 'Falha ao carregar dados brutos.';
+          this.rawDataError = response.errors?.[0]?.message || 'Falha ao carregar dados brutos.';
           return;
         }
 

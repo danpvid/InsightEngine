@@ -1,5 +1,5 @@
-import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Component, Input } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { ApiError } from '../../../core/models/api-response.model';
@@ -16,7 +16,9 @@ import { ApiError } from '../../../core/models/api-response.model';
         </div>
         <h3>{{ error.message || 'Ocorreu um erro' }}</h3>
         <p class="error-code" *ngIf="error.code">Código: {{ error.code }}</p>
-        <div class="error-details" *ngIf="error.details && hasDetails()">
+        <p class="error-code" *ngIf="error.traceId">TraceId: {{ error.traceId }}</p>
+
+        <div class="error-details" *ngIf="hasDetails()">
           <p><strong>Detalhes:</strong></p>
           <ul>
             <li *ngFor="let detail of getDetailsList()">{{ detail }}</li>
@@ -52,7 +54,8 @@ import { ApiError } from '../../../core/models/api-response.model';
       text-align: center;
       color: #666;
       font-size: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 8px;
+      word-break: break-all;
     }
 
     .error-details {
@@ -77,20 +80,13 @@ export class ErrorPanelComponent {
   @Input() error: ApiError | null = null;
 
   hasDetails(): boolean {
-    return !!this.error?.details && Object.keys(this.error.details).length > 0;
+    return Array.isArray(this.error?.errors) && this.error!.errors.length > 0;
   }
 
   getDetailsList(): string[] {
-    if (!this.error?.details) return [];
-    
-    const details: string[] = [];
-    for (const [key, values] of Object.entries(this.error.details)) {
-      if (Array.isArray(values)) {
-        values.forEach(value => details.push(`${key}: ${value}`));
-      } else {
-        details.push(`${key}: ${values}`);
-      }
-    }
-    return details;
+    return this.error?.errors?.map(item =>
+      item.target
+        ? `${item.code} (${item.target}): ${item.message}`
+        : `${item.code}: ${item.message}`) || [];
   }
 }

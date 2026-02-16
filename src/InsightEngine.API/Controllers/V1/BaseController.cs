@@ -2,6 +2,7 @@ using InsightEngine.API.Models;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Core.Notifications;
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 
@@ -44,9 +45,8 @@ public abstract class BaseController : ControllerBase
         {
             // Determinar status code baseado no tipo de erro
             var statusCode = DetermineStatusCode(result.Errors);
-            
-            var errorResponse = ApiErrorResponse.FromList(result.Errors, traceId);
-            
+            var errorCode = MapStatusCodeToErrorCode(statusCode);
+            var errorResponse = ApiErrorResponse.FromList(result.Errors, traceId, statusCode, errorCode);
             return StatusCode(statusCode, errorResponse);
         }
 
@@ -83,7 +83,12 @@ public abstract class BaseController : ControllerBase
         }
 
         var errorResponse = ApiErrorResponse.FromValidationErrors(errors, traceId);
-        errorResponse.Code = MapErrorTypeToCode(notifications.FirstOrDefault()?.Type ?? ErrorType.Validation);
+        var mappedCode = MapErrorTypeToCode(notifications.FirstOrDefault()?.Type ?? ErrorType.Validation);
+        foreach (var error in errorResponse.Errors)
+        {
+            error.Code = mappedCode;
+        }
+        errorResponse.Status = statusCode;
         
         return StatusCode(statusCode, errorResponse);
     }
@@ -97,7 +102,12 @@ public abstract class BaseController : ControllerBase
 
         if (result == null)
         {
-            return NotFound(ApiErrorResponse.FromMessage("Recurso não encontrado", traceId));
+            var response = ApiErrorResponse.FromMessage(
+                "Recurso não encontrado",
+                traceId,
+                "not_found",
+                StatusCodes.Status404NotFound);
+            return NotFound(response);
         }
 
         return Ok(new ApiResponse<object>(result, traceId));
@@ -167,6 +177,31 @@ public abstract class BaseController : ControllerBase
             ErrorType.Conflict => "conflict",
             ErrorType.UnprocessableEntity => "unprocessable_entity",
             ErrorType.InternalError => "internal_error",
+            _ => "internal_error"
+        };
+    }
+
+    protected IActionResult ErrorResponse(int statusCode, string code, string message, string? target = null)
+    {
+        var traceId = GetTraceId();
+        var response = ApiErrorResponse.FromMessage(message, traceId, code, statusCode, target);
+        return StatusCode(statusCode, response);
+    }
+
+    protected IActionResult ErrorResponse(int statusCode, List<string> errors, string code = "operation_error")
+    {
+        var traceId = GetTraceId();
+        var response = ApiErrorResponse.FromList(errors, traceId, statusCode, code);
+        return StatusCode(statusCode, response);
+    }
+
+    private string MapStatusCodeToErrorCode(int statusCode)
+    {
+        return statusCode switch
+        {
+            StatusCodes.Status400BadRequest => "validation_error",
+            StatusCodes.Status404NotFound => "not_found",
+            StatusCodes.Status413PayloadTooLarge => "payload_too_large",
             _ => "internal_error"
         };
     }

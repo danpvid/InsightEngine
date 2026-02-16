@@ -164,24 +164,25 @@ export class DatasetUploadPageComponent implements OnInit {
           if (progressEvent.response.success && progressEvent.response.data) {
             this.toast.success('Dataset enviado com sucesso!');
             this.router.navigate(['/datasets', progressEvent.response.data.datasetId, 'recommendations']);
-          } else if (progressEvent.response.error) {
-            this.error = progressEvent.response.error;
+          } else if (progressEvent.response.errors && progressEvent.response.errors.length > 0) {
+            const first = progressEvent.response.errors[0];
+            this.error = {
+              code: first.code,
+              message: first.message,
+              target: first.target,
+              errors: progressEvent.response.errors,
+              traceId: progressEvent.response.traceId
+            };
           }
         }
       },
       error: (err) => {
         this.loading = false;
         this.uploadProgress = 0;
-        const apiError = HttpErrorUtil.extractApiError(err);
-        if (apiError) {
-          this.error = apiError;
-        } else {
-          this.error = {
-            code: 'UPLOAD_ERROR',
-            message: HttpErrorUtil.extractErrorMessage(err)
-          };
-        }
-        this.toast.error('Erro ao enviar dataset');
+        this.error = HttpErrorUtil.extractApiError(err) || {
+          code: 'UPLOAD_ERROR',
+          message: HttpErrorUtil.extractErrorMessage(err)
+        };
       }
     });
   }

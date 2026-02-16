@@ -92,23 +92,18 @@ public class DataSetController : BaseController
             if (file.Length > _runtimeSettings.UploadMaxBytes)
             {
                 var maxMb = Math.Round(_runtimeSettings.UploadMaxBytes / (1024d * 1024d), 2);
-                var traceId = GetTraceId();
-                var errorResponse = ApiErrorResponse.FromMessage(
+                return ErrorResponse(
+                    StatusCodes.Status413PayloadTooLarge,
+                    "payload_too_large",
                     $"File size exceeds the maximum allowed size of {maxMb}MB.",
-                    traceId,
-                    "payload_too_large");
-                return StatusCode(StatusCodes.Status413PayloadTooLarge, errorResponse);
+                    "file");
             }
 
             var result = await _dataSetApplicationService.UploadAsync(file, _runtimeSettings.UploadMaxBytes);
 
             if (!result.IsSuccess)
             {
-                return BadRequest(new
-                {
-                    success = false,
-                    errors = result.Errors
-                });
+                return ErrorResponse(StatusCodes.Status400BadRequest, result.Errors, "validation_error");
             }
 
             var response = new
@@ -133,13 +128,10 @@ public class DataSetController : BaseController
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing file upload");
-            
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                success = false,
-                message = "Erro interno ao processar o arquivo.",
-                error = ex.Message
-            });
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro interno ao processar o arquivo.");
         }
     }
 
@@ -158,11 +150,7 @@ public class DataSetController : BaseController
 
             if (!result.IsSuccess)
             {
-                return StatusCode(StatusCodes.Status500InternalServerError, new
-                {
-                    success = false,
-                    errors = result.Errors
-                });
+                return ErrorResponse(StatusCodes.Status500InternalServerError, result.Errors, "internal_error");
             }
 
             return Ok(new
@@ -174,13 +162,10 @@ public class DataSetController : BaseController
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving datasets");
-            
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                success = false,
-                message = "Erro ao listar datasets.",
-                error = ex.Message
-            });
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao listar datasets.");
         }
     }
 
@@ -193,11 +178,7 @@ public class DataSetController : BaseController
     public async Task<IActionResult> GetById(Guid id)
     {
         // TODO: Implement GetByIdQuery when needed
-        return NotFound(new
-        {
-            success = false,
-            message = "Dataset não encontrado."
-        });
+        return ErrorResponse(StatusCodes.Status404NotFound, "not_found", "Dataset not found.");
     }
 
     /// <summary>
@@ -252,11 +233,7 @@ public class DataSetController : BaseController
 
             if (!result.IsSuccess)
             {
-                return NotFound(new
-                {
-                    success = false,
-                    errors = result.Errors
-                });
+                return ErrorResponse(StatusCodes.Status404NotFound, result.Errors, "not_found");
             }
 
             var profile = result.Data;
@@ -283,13 +260,10 @@ public class DataSetController : BaseController
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error generating profile for dataset {DatasetId}", id);
-            
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                success = false,
-                message = "Erro ao gerar profile do dataset.",
-                error = ex.Message
-            });
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao gerar profile do dataset.");
         }
     }
 
@@ -309,11 +283,7 @@ public class DataSetController : BaseController
         var csvPath = _fileStorageService.GetFullPath($"{id}.csv");
         if (!System.IO.File.Exists(csvPath))
         {
-            return NotFound(new
-            {
-                success = false,
-                message = $"Dataset not found: {id}"
-            });
+            return ErrorResponse(StatusCodes.Status404NotFound, "not_found", $"Dataset not found: {id}");
         }
 
         var effectivePage = Math.Max(page ?? 1, 1);
@@ -367,11 +337,7 @@ public class DataSetController : BaseController
             var sortRules = ParseRawSort(sort, columnLookup, errors);
             if (errors.Count > 0)
             {
-                return BadRequest(new
-                {
-                    success = false,
-                    errors
-                });
+                return ErrorResponse(StatusCodes.Status400BadRequest, errors, "validation_error");
             }
 
             var escapedPath = csvPath.Replace("'", "''");
@@ -449,12 +415,10 @@ OFFSET {offset};
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error loading raw rows for dataset {DatasetId}", id);
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                success = false,
-                message = "Erro ao carregar os dados brutos do dataset.",
-                error = ex.Message
-            });
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao carregar os dados brutos do dataset.");
         }
     }
 
@@ -495,11 +459,7 @@ OFFSET {offset};
 
             if (!result.IsSuccess)
             {
-                return NotFound(new
-                {
-                    success = false,
-                    errors = result.Errors
-                });
+                return ErrorResponse(StatusCodes.Status404NotFound, result.Errors, "not_found");
             }
 
             return Ok(new
@@ -511,13 +471,10 @@ OFFSET {offset};
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error generating recommendations for dataset {DatasetId}", id);
-            
-            return StatusCode(StatusCodes.Status500InternalServerError, new
-            {
-                success = false,
-                message = "Erro ao gerar recomendações do dataset.",
-                error = ex.Message
-            });
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao gerar recomendações do dataset.");
         }
     }
 

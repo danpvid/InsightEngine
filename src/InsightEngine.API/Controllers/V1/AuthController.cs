@@ -2,6 +2,7 @@ using InsightEngine.API.Services;
 using InsightEngine.Domain.Core.Notifications;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InsightEngine.API.Controllers.V1;
@@ -34,11 +35,10 @@ public class AuthController : BaseController
         
         if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Password))
         {
-            return BadRequest(new
-            {
-                success = false,
-                message = "Email e senha são obrigatórios"
-            });
+            return ErrorResponse(
+                StatusCodes.Status400BadRequest,
+                "validation_error",
+                "Email e senha são obrigatórios");
         }
 
         // Exemplo: validar credenciais (implementar sua lógica real aqui)

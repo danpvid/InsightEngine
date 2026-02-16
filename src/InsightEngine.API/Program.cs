@@ -1,12 +1,16 @@
 using InsightEngine.API.Configuration;
+using InsightEngine.API.Models;
 using InsightEngine.API.Services;
 using InsightEngine.CrossCutting.IoC;
 using InsightEngine.Domain.Settings;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
 using Swashbuckle.AspNetCore.SwaggerGen;
+using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 var runtimeSettingsSection = builder.Configuration.GetSection(InsightEngineSettings.SectionName);
@@ -58,6 +62,23 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.NumberHandling = 
             System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
     });
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var traceId = Activity.Current?.Id ?? context.HttpContext.TraceIdentifier;
+        var errors = context.ModelState
+            .Where(entry => entry.Value?.Errors.Count > 0)
+            .ToDictionary(
+                entry => entry.Key,
+                entry => entry.Value!.Errors
+                    .Select(error => string.IsNullOrWhiteSpace(error.ErrorMessage) ? "Invalid value." : error.ErrorMessage)
+                    .ToList());
+
+        var response = ApiErrorResponse.FromValidationErrors(errors, traceId, StatusCodes.Status400BadRequest);
+        return new BadRequestObjectResult(response);
+    };
+});
 builder.Services.AddEndpointsApiExplorer();
 
 // Configure API Versioning
@@ -136,6 +157,61 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwaggerConfiguration(apiVersionDescriptionProvider);
 }
+
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var feature = context.Features.Get<IExceptionHandlerPathFeature>();
+        if (feature?.Error != null)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+            logger.LogError(feature.Error, "Unhandled exception for {Method} {Path}", context.Request.Method, context.Request.Path);
+        }
+
+        var traceId = Activity.Current?.Id ?? context.TraceIdentifier;
+        var response = ApiErrorResponse.FromMessage(
+            "Unexpected server error.",
+            traceId,
+            "internal_error",
+            StatusCodes.Status500InternalServerError);
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(response);
+    });
+});
+
+app.UseStatusCodePages(async statusContext =>
+{
+    var context = statusContext.HttpContext;
+    var statusCode = context.Response.StatusCode;
+    if (statusCode < 400 || context.Response.HasStarted)
+    {
+        return;
+    }
+
+    var traceId = Activity.Current?.Id ?? context.TraceIdentifier;
+    var code = statusCode switch
+    {
+        StatusCodes.Status400BadRequest => "validation_error",
+        StatusCodes.Status404NotFound => "not_found",
+        StatusCodes.Status413PayloadTooLarge => "payload_too_large",
+        _ => "http_error"
+    };
+
+    var message = statusCode switch
+    {
+        StatusCodes.Status400BadRequest => "Invalid request.",
+        StatusCodes.Status404NotFound => "Resource not found.",
+        StatusCodes.Status413PayloadTooLarge => "Payload too large.",
+        _ => "Request failed."
+    };
+
+    var response = ApiErrorResponse.FromMessage(message, traceId, code, statusCode);
+    context.Response.ContentType = "application/json";
+    await context.Response.WriteAsJsonAsync(response);
+});
 
 app.UseHttpsRedirection();
 

@@ -97,7 +97,8 @@ public class SimulationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var result = await response.Content.ReadFromJsonAsync<ApiErrorResponse>(TestHelpers.JsonOptions);
-        result!.Message.ToLowerInvariant().Should().Contain("operations");
+        result!.Errors.Should().NotBeEmpty();
+        result.Errors.Any(error => error.Message.ToLowerInvariant().Contains("operations")).Should().BeTrue();
     }
 
     public class SimulationResponseDto

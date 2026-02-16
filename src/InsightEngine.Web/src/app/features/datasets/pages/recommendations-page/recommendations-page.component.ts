@@ -95,22 +95,23 @@ export class RecommendationsPageComponent implements OnInit {
           if (this.recommendations.length === 0) {
             this.toast.info('Nenhuma recomendacao encontrada para este dataset.');
           }
-        } else if (response.error) {
-          this.error = response.error;
+        } else if (response.errors && response.errors.length > 0) {
+          const first = response.errors[0];
+          this.error = {
+            code: first.code,
+            message: first.message,
+            target: first.target,
+            errors: response.errors,
+            traceId: response.traceId
+          };
         }
       },
       error: (err) => {
         this.loading = false;
-        const apiError = HttpErrorUtil.extractApiError(err);
-        if (apiError) {
-          this.error = apiError;
-        } else {
-          this.error = {
-            code: 'LOAD_ERROR',
-            message: HttpErrorUtil.extractErrorMessage(err)
-          };
-        }
-        this.toast.error('Erro ao carregar recomendacoes');
+        this.error = HttpErrorUtil.extractApiError(err) || {
+          code: 'LOAD_ERROR',
+          message: HttpErrorUtil.extractErrorMessage(err)
+        };
       }
     });
   }
