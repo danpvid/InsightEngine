@@ -1,9 +1,15 @@
 using InsightEngine.Domain.Enums;
+using InsightEngine.Domain.Constants;
 
 namespace InsightEngine.Domain.Models;
 
 public class LLMRequest
 {
+    public Guid? DatasetId { get; set; }
+    public string? RecommendationId { get; set; }
+    public string? QueryHash { get; set; }
+    public string FeatureKind { get; set; } = "generic";
+    public string PromptVersion { get; set; } = LLMPromptVersion.Value;
     public string SystemPrompt { get; set; } = string.Empty;
     public string UserPrompt { get; set; } = string.Empty;
     public Dictionary<string, object?> ContextObjects { get; set; } = new(StringComparer.OrdinalIgnoreCase);
