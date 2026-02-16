@@ -1,11 +1,11 @@
 <div class="container-wide">
   <nav class="breadcrumb">
-    <a [routerLink]="['/', currentLanguage, 'datasets', 'new']" mat-button>
+    <a [routerLink]="newDatasetLink" mat-button>
       <mat-icon>upload_file</mat-icon>
       {{ 'common.datasets' | translate }}
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
-    <a [routerLink]="['/', currentLanguage, 'datasets', datasetId, 'recommendations']" mat-button>
+    <a [routerLink]="recommendationsLink" mat-button>
       <mat-icon>auto_awesome</mat-icon>
       {{ 'recommendations.breadcrumb' | translate }}
     </a>
@@ -16,17 +16,17 @@
   <div class="navigation-controls" *ngIf="recommendations.length > 0">
     <button mat-button (click)="goToPrevious()" [disabled]="!hasPrevious" class="nav-btn">
       <mat-icon>chevron_left</mat-icon>
-      Anterior
+      {{ 'chartViewer.previous' | translate }}
     </button>
 
     <mat-form-field appearance="outline" class="insight-search">
-      <mat-label>Buscar insight</mat-label>
-      <input matInput [(ngModel)]="navigationSearch" placeholder="Titulo, tipo, score" />
+      <mat-label>{{ 'chartViewer.searchInsight' | translate }}</mat-label>
+      <input matInput [(ngModel)]="navigationSearch" [placeholder]="'chartViewer.searchInsightPlaceholder' | translate" />
       <mat-icon matSuffix>search</mat-icon>
     </mat-form-field>
 
     <mat-form-field appearance="outline" class="insight-selector">
-      <mat-label>Todos os insights</mat-label>
+      <mat-label>{{ 'chartViewer.allInsights' | translate }}</mat-label>
       <mat-select [value]="recommendationId" (selectionChange)="onRecommendationChange($event.value)">
         <mat-option *ngFor="let rec of filteredNavigationRecommendations" [value]="rec.id">
           {{ recommendationDisplay(rec) }}
@@ -35,12 +35,12 @@
     </mat-form-field>
 
     <button mat-button (click)="goToNext()" [disabled]="!hasNext" class="nav-btn">
-      Proximo
+      {{ 'chartViewer.next' | translate }}
       <mat-icon>chevron_right</mat-icon>
     </button>
 
     <mat-slide-toggle [(ngModel)]="keepNavigationContext" color="primary" class="keep-context-toggle">
-      Manter contexto
+      {{ 'chartViewer.keepContext' | translate }}
     </mat-slide-toggle>
   </div>
 
@@ -61,20 +61,20 @@
             <div class="insight-title">
               <mat-icon>lightbulb</mat-icon>
               <div class="insight-text">
-                <h3>Resumo do Insight</h3>
+                <h3>{{ 'chartViewer.insightSummary' | translate }}</h3>
                 <p class="insight-headline">{{ insightSummary.headline }}</p>
               </div>
             </div>
             <span class="confidence" *ngIf="insightSummary.confidence !== null">
-              Confianca {{ insightSummary.confidence | percent:'1.0-0' }}
+              {{ 'chartViewer.confidence' | translate }} {{ insightSummary.confidence | percent:'1.0-0' }}
             </span>
           </div>
 
           <div class="insight-chips">
-            <mat-chip color="primary" selected>Tendencia: {{ insightSummary.signals.trend }}</mat-chip>
-            <mat-chip color="primary" selected>Volatilidade: {{ insightSummary.signals.volatility }}</mat-chip>
-            <mat-chip color="primary" selected>Outliers: {{ insightSummary.signals.outliers }}</mat-chip>
-            <mat-chip color="primary" selected>Sazonalidade: {{ insightSummary.signals.seasonality }}</mat-chip>
+            <mat-chip color="primary" selected>{{ 'chartViewer.trend' | translate }}: {{ insightSummary.signals.trend }}</mat-chip>
+            <mat-chip color="primary" selected>{{ 'chartViewer.volatility' | translate }}: {{ insightSummary.signals.volatility }}</mat-chip>
+            <mat-chip color="primary" selected>{{ 'chartViewer.outliers' | translate }}: {{ insightSummary.signals.outliers }}</mat-chip>
+            <mat-chip color="primary" selected>{{ 'chartViewer.seasonality' | translate }}: {{ insightSummary.signals.seasonality }}</mat-chip>
           </div>
 
           <ul class="insight-bullets">
@@ -87,17 +87,17 @@
             <div class="insight-title">
               <mat-icon>smart_toy</mat-icon>
               <div class="insight-text">
-                <h3>AI Summary</h3>
+                <h3>{{ 'chartViewer.aiSummaryTitle' | translate }}</h3>
                 <p class="insight-headline" *ngIf="aiSummary">{{ aiSummary.headline }}</p>
-                <p class="insight-headline" *ngIf="!aiSummary">Generate an AI summary for the current chart view.</p>
+                <p class="insight-headline" *ngIf="!aiSummary">{{ 'chartViewer.aiSummaryHint' | translate }}</p>
               </div>
             </div>
             <div class="ai-actions">
               <button mat-flat-button color="primary" (click)="generateAiSummary()" [disabled]="aiSummaryLoading">
-                {{ aiSummaryLoading ? 'Generating...' : 'Generate AI Summary' }}
+                {{ aiSummaryLoading ? ('chartViewer.generating' | translate) : ('chartViewer.generateAiSummary' | translate) }}
               </button>
               <button mat-stroked-button color="primary" (click)="openExplainChart()" [disabled]="explainLoading">
-                Explain chart
+                {{ 'chartViewer.explainChart' | translate }}
               </button>
             </div>
           </div>
@@ -113,16 +113,16 @@
           <ng-container *ngIf="aiSummary">
             <div class="insight-chips">
               <mat-chip color="primary" selected *ngIf="aiSummaryMeta?.provider">
-                Provider: {{ aiSummaryMeta?.provider }}
+                {{ 'chartViewer.provider' | translate }}: {{ aiSummaryMeta?.provider }}
               </mat-chip>
               <mat-chip color="primary" selected *ngIf="aiSummaryMeta?.model">
-                Model: {{ aiSummaryMeta?.model }}
+                {{ 'chartViewer.model' | translate }}: {{ aiSummaryMeta?.model }}
               </mat-chip>
               <mat-chip color="accent" selected *ngIf="aiSummaryMeta?.cacheHit">
-                Cached ⚡
+                {{ 'chartViewer.cached' | translate }} ⚡
               </mat-chip>
               <mat-chip color="warn" selected *ngIf="aiSummaryMeta?.fallbackUsed">
-                Fallback
+                {{ 'chartViewer.fallback' | translate }}
               </mat-chip>
             </div>
 
@@ -131,14 +131,14 @@
             </ul>
 
             <div class="insight-subsection" *ngIf="aiSummary.cautions?.length">
-              <h4>Cautions</h4>
+              <h4>{{ 'chartViewer.cautions' | translate }}</h4>
               <ul class="insight-bullets">
                 <li *ngFor="let caution of aiSummary.cautions">{{ caution }}</li>
               </ul>
             </div>
 
             <div class="insight-subsection" *ngIf="aiSummary.nextQuestions?.length">
-              <h4>Next Questions</h4>
+              <h4>{{ 'chartViewer.nextQuestions' | translate }}</h4>
               <ul class="insight-bullets">
                 <li *ngFor="let question of aiSummary.nextQuestions">{{ question }}</li>
               </ul>
@@ -151,13 +151,13 @@
             <div class="insight-title">
               <mat-icon>forum</mat-icon>
               <div class="insight-text">
-                <h3>Chart Explanation</h3>
-                <p class="insight-headline">Business-focused explanation for the active chart.</p>
+                <h3>{{ 'chartViewer.chartExplanation' | translate }}</h3>
+                <p class="insight-headline">{{ 'chartViewer.chartExplanationHint' | translate }}</p>
               </div>
             </div>
             <div class="ai-actions">
               <button mat-button color="primary" (click)="copyExplanationToClipboard()" [disabled]="!explainResult">
-                Copy
+                {{ 'chartViewer.copy' | translate }}
               </button>
               <button mat-icon-button (click)="closeExplainPanel()">
                 <mat-icon>close</mat-icon>
@@ -176,37 +176,37 @@
           <ng-container *ngIf="explainResult">
             <div class="insight-chips">
               <mat-chip color="primary" selected *ngIf="explainResult.meta.provider">
-                Provider: {{ explainResult.meta.provider }}
+                {{ 'chartViewer.provider' | translate }}: {{ explainResult.meta.provider }}
               </mat-chip>
               <mat-chip color="primary" selected *ngIf="explainResult.meta.model">
-                Model: {{ explainResult.meta.model }}
+                {{ 'chartViewer.model' | translate }}: {{ explainResult.meta.model }}
               </mat-chip>
               <mat-chip color="accent" selected *ngIf="explainResult.meta.cacheHit">
-                Cached ⚡
+                {{ 'chartViewer.cached' | translate }} ⚡
               </mat-chip>
             </div>
 
             <div class="insight-subsection">
-              <h4>Explanation</h4>
+              <h4>{{ 'chartViewer.explanation' | translate }}</h4>
               <p *ngFor="let paragraph of explainResult.explanation">{{ paragraph }}</p>
             </div>
 
             <div class="insight-subsection">
-              <h4>Key Takeaways</h4>
+              <h4>{{ 'chartViewer.keyTakeaways' | translate }}</h4>
               <ul class="insight-bullets">
                 <li *ngFor="let item of explainResult.keyTakeaways">{{ item }}</li>
               </ul>
             </div>
 
             <div class="insight-subsection" *ngIf="explainResult.caveats?.length">
-              <h4>Caveats</h4>
+              <h4>{{ 'chartViewer.caveats' | translate }}</h4>
               <ul class="insight-bullets">
                 <li *ngFor="let item of explainResult.caveats">{{ item }}</li>
               </ul>
             </div>
 
             <div class="insight-subsection" *ngIf="explainResult.suggestedNextSteps?.length">
-              <h4>Next Steps</h4>
+              <h4>{{ 'chartViewer.nextSteps' | translate }}</h4>
               <ul class="insight-bullets">
                 <li *ngFor="let item of explainResult.suggestedNextSteps">{{ item }}</li>
               </ul>
@@ -219,19 +219,19 @@
             <div class="insight-title">
               <mat-icon>quiz</mat-icon>
               <div class="insight-text">
-                <h3>Ask Dataset</h3>
-                <p class="insight-headline">Ask in natural language and map the plan to chart controls.</p>
+                <h3>{{ 'chartViewer.askDataset' | translate }}</h3>
+                <p class="insight-headline">{{ 'chartViewer.askDatasetHint' | translate }}</p>
               </div>
             </div>
           </div>
 
           <div class="ask-row">
             <mat-form-field appearance="outline" class="ask-input">
-              <mat-label>Ask a question about this dataset</mat-label>
-              <input matInput [(ngModel)]="askQuestion" placeholder="Ex: Compare monthly revenue by region and highlight outliers" />
+              <mat-label>{{ 'chartViewer.askLabel' | translate }}</mat-label>
+              <input matInput [(ngModel)]="askQuestion" [placeholder]="'chartViewer.askPlaceholder' | translate" />
             </mat-form-field>
             <button mat-flat-button color="primary" (click)="submitAskQuestion()" [disabled]="askLoading">
-              {{ askLoading ? 'Analyzing...' : 'Ask' }}
+              {{ askLoading ? ('chartViewer.analyzing' | translate) : ('chartViewer.ask' | translate) }}
             </button>
           </div>
 
@@ -244,19 +244,19 @@
 
           <ng-container *ngIf="askPlan">
             <div class="insight-chips">
-              <mat-chip color="primary" selected>Intent: {{ askPlan.intent }}</mat-chip>
-              <mat-chip color="primary" selected>Chart: {{ askPlan.suggestedChartType }}</mat-chip>
-              <mat-chip color="accent" selected *ngIf="askPlan.meta?.cacheHit">Cached ⚡</mat-chip>
+              <mat-chip color="primary" selected>{{ 'chartViewer.intent' | translate }}: {{ askPlan.intent }}</mat-chip>
+              <mat-chip color="primary" selected>{{ 'chartViewer.chart' | translate }}: {{ askPlan.suggestedChartType }}</mat-chip>
+              <mat-chip color="accent" selected *ngIf="askPlan.meta?.cacheHit">{{ 'chartViewer.cached' | translate }} ⚡</mat-chip>
             </div>
 
             <div class="ask-plan-grid">
               <div><strong>X:</strong> {{ askPlan.proposedDimensions.x || '-' }}</div>
               <div><strong>Y:</strong> {{ askPlan.proposedDimensions.y || '-' }}</div>
-              <div><strong>GroupBy:</strong> {{ askPlan.proposedDimensions.groupBy || '-' }}</div>
+              <div><strong>{{ 'chartViewer.groupBy' | translate }}:</strong> {{ askPlan.proposedDimensions.groupBy || '-' }}</div>
             </div>
 
             <div class="insight-subsection" *ngIf="askPlan.suggestedFilters?.length">
-              <h4>Suggested Filters</h4>
+              <h4>{{ 'chartViewer.suggestedFilters' | translate }}</h4>
               <ul class="insight-bullets">
                 <li *ngFor="let filter of askPlan.suggestedFilters">
                   {{ filter.column }} {{ filter.operator }} {{ filter.values.join(', ') }}
@@ -265,7 +265,7 @@
             </div>
 
             <button mat-button color="primary" (click)="askReasoningExpanded = !askReasoningExpanded">
-              {{ askReasoningExpanded ? 'Hide reasoning' : 'Show reasoning' }}
+              {{ askReasoningExpanded ? ('chartViewer.hideReasoning' | translate) : ('chartViewer.showReasoning' | translate) }}
             </button>
 
             <div class="insight-subsection" *ngIf="askReasoningExpanded">
@@ -276,10 +276,10 @@
 
             <div class="ai-actions">
               <button mat-stroked-button color="primary" (click)="applyAskPlan(false)">
-                Apply Plan
+                {{ 'chartViewer.applyPlan' | translate }}
               </button>
               <button mat-flat-button color="primary" (click)="applyAskPlan(true)">
-                Apply &amp; Run
+                {{ 'chartViewer.applyAndRun' | translate }}
               </button>
             </div>
           </ng-container>
@@ -287,20 +287,20 @@
 
         <mat-card class="shared-filters-card">
           <div class="inline-filters-header">
-            <h3>Filtros globais</h3>
+            <h3>{{ 'chartViewer.globalFilters' | translate }}</h3>
             <div class="inline-filters-actions">
               <button mat-stroked-button (click)="addFilterRule()" [disabled]="filterRules.length >= 3">
-                Adicionar filtro
+                {{ 'chartViewer.addFilter' | translate }}
               </button>
               <button mat-flat-button color="primary" (click)="applyFilterChanges()" [disabled]="!filterPreviewPending">
-                Aplicar na URL
+                {{ 'chartViewer.applyToUrl' | translate }}
               </button>
             </div>
           </div>
 
           <div class="filter-rule" *ngFor="let rule of filterRules; let i = index">
             <mat-form-field appearance="outline">
-              <mat-label>Coluna</mat-label>
+              <mat-label>{{ 'chartViewer.column' | translate }}</mat-label>
               <mat-select [(ngModel)]="rule.column" (selectionChange)="onFilterRuleChange()">
                 <mat-option *ngFor="let col of profileColumns" [value]="col.name">
                   {{ col.name }}
@@ -309,7 +309,7 @@
             </mat-form-field>
 
             <mat-form-field appearance="outline">
-              <mat-label>Operador</mat-label>
+              <mat-label>{{ 'chartViewer.operator' | translate }}</mat-label>
               <mat-select [(ngModel)]="rule.operator" (selectionChange)="onFilterRuleChange()">
                 <mat-option *ngFor="let op of filterOperators" [value]="op.value">
                   {{ op.label }}
@@ -318,7 +318,7 @@
             </mat-form-field>
 
             <mat-form-field appearance="outline">
-              <mat-label>Valor</mat-label>
+              <mat-label>{{ 'chartViewer.value' | translate }}</mat-label>
               <input matInput [(ngModel)]="rule.value" (ngModelChange)="onFilterRuleChange()" />
             </mat-form-field>
 
@@ -328,34 +328,34 @@
           </div>
 
           <p class="filters-hint">
-            Os filtros afetam grafico, dados brutos e simulacao.
+            {{ 'chartViewer.filtersHint' | translate }}
           </p>
         </mat-card>
 
         <mat-tab-group [(selectedIndex)]="activeTab" class="viewer-tabs">
-          <mat-tab label="Grafico">
+          <mat-tab [label]="'chartViewer.tabChart' | translate">
             <mat-card class="chart-card">
               <mat-card-header>
                 <mat-card-title>
-                  Visualizacao Interativa
+                  {{ 'chartViewer.interactiveView' | translate }}
                   <span class="cached-badge" *ngIf="isCached">
-                    <mat-icon>bolt</mat-icon> Cached
+                    <mat-icon>bolt</mat-icon> {{ 'chartViewer.cached' | translate }}
                   </span>
                 </mat-card-title>
                 <div class="header-actions">
-                  <button mat-icon-button (click)="toggleControls()" *ngIf="isMobile" matTooltip="Controles" color="primary">
+                  <button mat-icon-button (click)="toggleControls()" *ngIf="isMobile" [matTooltip]="'chartViewer.controls' | translate" color="primary">
                     <mat-icon>tune</mat-icon>
                   </button>
-                  <button mat-icon-button (click)="copyChartLink()" matTooltip="Copiar link" color="primary">
+                  <button mat-icon-button (click)="copyChartLink()" [matTooltip]="'chartViewer.copyLink' | translate" color="primary">
                     <mat-icon>link</mat-icon>
                   </button>
-                  <button mat-icon-button (click)="exportChartPNG()" matTooltip="Exportar PNG" color="primary">
+                  <button mat-icon-button (click)="exportChartPNG()" [matTooltip]="'chartViewer.exportPng' | translate" color="primary">
                     <mat-icon>download</mat-icon>
                   </button>
-                  <button mat-icon-button (click)="openSelectedPointDataModal()" matTooltip="Dados do ponto selecionado" color="primary" [disabled]="!selectedPoint">
+                  <button mat-icon-button (click)="openSelectedPointDataModal()" [matTooltip]="'chartViewer.selectedPointData' | translate" color="primary" [disabled]="!selectedPoint">
                     <mat-icon>fact_check</mat-icon>
                   </button>
-                  <button mat-icon-button (click)="refreshChart()" matTooltip="Recarregar" color="primary">
+                  <button mat-icon-button (click)="refreshChart()" [matTooltip]="'chartViewer.reload' | translate" color="primary">
                     <mat-icon>refresh</mat-icon>
                   </button>
                 </div>
@@ -380,20 +380,20 @@
                   </div>
 
                   <div class="chart-loading-overlay" *ngIf="loading">
-                    Atualizando grafico...
+                    {{ 'chartViewer.updatingChart' | translate }}
                   </div>
                 </div>
 
                 <div class="drilldown-panel" *ngIf="pendingDrilldownCategory && supportsDrilldown">
                   <div class="drilldown-copy">
-                    Drilldown selecionado: <strong>{{ pendingDrilldownCategory }}</strong>
+                    {{ 'chartViewer.selectedDrilldown' | translate }}: <strong>{{ pendingDrilldownCategory }}</strong>
                   </div>
                   <div class="drilldown-actions">
                     <button mat-stroked-button color="primary" (click)="applyDrilldown()">
-                      Aplicar filtro
+                      {{ 'chartViewer.applyFilter' | translate }}
                     </button>
                     <button mat-button (click)="clearDrilldownSelection()">
-                      Cancelar
+                      {{ 'chartViewer.cancel' | translate }}
                     </button>
                   </div>
                 </div>
@@ -401,24 +401,24 @@
             </mat-card>
           </mat-tab>
 
-          <mat-tab label="Dados Brutos">
+          <mat-tab [label]="'chartViewer.tabRawData' | translate">
             <mat-card class="data-grid-card">
               <mat-card-header>
                 <mat-card-title>
                   <mat-icon>table_chart</mat-icon>
-                  Grid interativa
+                  {{ 'chartViewer.interactiveGrid' | translate }}
                 </mat-card-title>
               </mat-card-header>
 
               <mat-card-content>
                 <div class="data-grid-toolbar">
                   <mat-form-field appearance="outline">
-                    <mat-label>Buscar na tabela</mat-label>
-                    <input matInput [(ngModel)]="rawDataSearch" (ngModelChange)="onRawSearchChange()" placeholder="qualquer coluna" />
+                    <mat-label>{{ 'chartViewer.searchTable' | translate }}</mat-label>
+                    <input matInput [(ngModel)]="rawDataSearch" (ngModelChange)="onRawSearchChange()" [placeholder]="'chartViewer.searchTablePlaceholder' | translate" />
                     <mat-icon matSuffix>search</mat-icon>
                   </mat-form-field>
                   <span class="data-grid-count">
-                    {{ rawDataRows.length }} de {{ rawTotalRows }} linhas (pagina {{ rawPageIndex + 1 }} de {{ rawTotalPages || 1 }})
+                    {{ 'chartViewer.gridCount' | translate:{ shown: rawDataRows.length, total: rawTotalRows, page: (rawPageIndex + 1), pages: (rawTotalPages || 1) } }}
                   </span>
                 </div>
 
@@ -456,25 +456,25 @@
                 </mat-paginator>
 
                 <ng-template #noDataGrid>
-                  <p class="data-grid-empty">Dados brutos indisponiveis para este dataset.</p>
+                  <p class="data-grid-empty">{{ 'chartViewer.rawDataUnavailable' | translate }}</p>
                 </ng-template>
               </mat-card-content>
             </mat-card>
           </mat-tab>
 
-          <mat-tab label="Simulacao">
+          <mat-tab [label]="'chartViewer.tabSimulation' | translate">
             <mat-card class="simulation-card">
               <mat-card-header>
                 <mat-card-title>
                   <mat-icon>science</mat-icon>
-                  What-if Simulation
+                  {{ 'chartViewer.whatIfSimulation' | translate }}
                 </mat-card-title>
               </mat-card-header>
 
               <mat-card-content>
                 <div class="simulation-grid">
                   <mat-form-field appearance="outline">
-                    <mat-label>Target Metric</mat-label>
+                    <mat-label>{{ 'chartViewer.targetMetric' | translate }}</mat-label>
                     <mat-select [(ngModel)]="simulationTargetMetric">
                       <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
                         {{ metric }}
@@ -483,7 +483,7 @@
                   </mat-form-field>
 
                   <mat-form-field appearance="outline">
-                    <mat-label>Target Dimension</mat-label>
+                    <mat-label>{{ 'chartViewer.targetDimension' | translate }}</mat-label>
                     <mat-select [(ngModel)]="simulationTargetDimension">
                       <mat-option *ngFor="let col of profileColumns" [value]="col.name">
                         {{ col.name }}
@@ -492,7 +492,7 @@
                   </mat-form-field>
 
                   <mat-form-field appearance="outline">
-                    <mat-label>Aggregation</mat-label>
+                    <mat-label>{{ 'chartViewer.aggregation' | translate }}</mat-label>
                     <mat-select [(ngModel)]="selectedAggregation">
                       <mat-option *ngFor="let agg of availableAggregations" [value]="agg">
                         {{ agg }}
@@ -502,15 +502,15 @@
                 </div>
 
                 <div class="simulation-ops-header">
-                  <h3>Operacoes (max 3)</h3>
+                  <h3>{{ 'chartViewer.operationsMax' | translate }}</h3>
                   <button mat-stroked-button color="primary" (click)="addSimulationOperation()" [disabled]="simulationOperations.length >= 3">
-                    Adicionar operacao
+                    {{ 'chartViewer.addOperation' | translate }}
                   </button>
                 </div>
 
                 <div class="simulation-operation" *ngFor="let op of simulationOperations; let i = index">
                   <mat-form-field appearance="outline">
-                    <mat-label>Tipo</mat-label>
+                    <mat-label>{{ 'chartViewer.type' | translate }}</mat-label>
                     <mat-select [(ngModel)]="op.type" (selectionChange)="onSimulationOperationTypeChange(op)">
                       <mat-option *ngFor="let type of simulationOperationTypes" [value]="type.value">
                         {{ type.label }}
@@ -519,7 +519,7 @@
                   </mat-form-field>
 
                   <mat-form-field appearance="outline" *ngIf="op.type === 'RemoveCategory' || op.type === 'FilterOut'">
-                    <mat-label>Coluna</mat-label>
+                    <mat-label>{{ 'chartViewer.column' | translate }}</mat-label>
                     <mat-select [(ngModel)]="op.column">
                       <mat-option *ngFor="let col of profileColumns" [value]="col.name">
                         {{ col.name }}
@@ -528,27 +528,27 @@
                   </mat-form-field>
 
                   <mat-form-field appearance="outline" *ngIf="op.type === 'RemoveCategory' || op.type === 'FilterOut'">
-                    <mat-label>Valores (CSV)</mat-label>
-                    <input matInput [(ngModel)]="op.values" placeholder="A,B,C" />
+                    <mat-label>{{ 'chartViewer.valuesCsv' | translate }}</mat-label>
+                    <input matInput [(ngModel)]="op.values" [placeholder]="'chartViewer.valuesCsvPlaceholder' | translate" />
                   </mat-form-field>
 
                   <mat-form-field appearance="outline" *ngIf="op.type === 'MultiplyMetric'">
-                    <mat-label>Factor</mat-label>
+                    <mat-label>{{ 'chartViewer.factor' | translate }}</mat-label>
                     <input matInput type="number" [(ngModel)]="op.factor" />
                   </mat-form-field>
 
                   <mat-form-field appearance="outline" *ngIf="op.type === 'AddConstant'">
-                    <mat-label>Constante</mat-label>
+                    <mat-label>{{ 'chartViewer.constant' | translate }}</mat-label>
                     <input matInput type="number" [(ngModel)]="op.constant" />
                   </mat-form-field>
 
                   <mat-form-field appearance="outline" *ngIf="op.type === 'Clamp'">
-                    <mat-label>Min</mat-label>
+                    <mat-label>{{ 'chartViewer.min' | translate }}</mat-label>
                     <input matInput type="number" [(ngModel)]="op.min" />
                   </mat-form-field>
 
                   <mat-form-field appearance="outline" *ngIf="op.type === 'Clamp'">
-                    <mat-label>Max</mat-label>
+                    <mat-label>{{ 'chartViewer.max' | translate }}</mat-label>
                     <input matInput type="number" [(ngModel)]="op.max" />
                   </mat-form-field>
 
@@ -561,7 +561,7 @@
 
                 <div class="simulation-actions">
                   <button mat-raised-button color="primary" (click)="runSimulation()" [disabled]="!canRunSimulation">
-                    Run simulation
+                    {{ 'chartViewer.runSimulation' | translate }}
                   </button>
                 </div>
 
@@ -571,19 +571,19 @@
                 <div class="simulation-result" *ngIf="simulationResult && simulationChartOption">
                   <div class="delta-cards">
                     <mat-card>
-                      <div class="delta-title">Average Delta</div>
+                      <div class="delta-title">{{ 'chartViewer.averageDelta' | translate }}</div>
                       <div class="delta-value">{{ formatDeltaPercent(simulationResult.deltaSummary.averageDeltaPercent) }}</div>
                     </mat-card>
                     <mat-card>
-                      <div class="delta-title">Max Delta</div>
+                      <div class="delta-title">{{ 'chartViewer.maxDelta' | translate }}</div>
                       <div class="delta-value">{{ formatDeltaPercent(simulationResult.deltaSummary.maxDeltaPercent) }}</div>
                     </mat-card>
                     <mat-card>
-                      <div class="delta-title">Min Delta</div>
+                      <div class="delta-title">{{ 'chartViewer.minDelta' | translate }}</div>
                       <div class="delta-value">{{ formatDeltaPercent(simulationResult.deltaSummary.minDeltaPercent) }}</div>
                     </mat-card>
                     <mat-card>
-                      <div class="delta-title">Changed Points</div>
+                      <div class="delta-title">{{ 'chartViewer.changedPoints' | translate }}</div>
                       <div class="delta-value">{{ simulationResult.deltaSummary.changedPoints }}</div>
                     </mat-card>
                   </div>
@@ -598,9 +598,9 @@
                   </div>
 
                   <div class="simulation-meta">
-                    <span>Rows: {{ simulationResult.rowCountReturned }}</span>
+                    <span>{{ 'chartViewer.rows' | translate }}: {{ simulationResult.rowCountReturned }}</span>
                     <span>DuckDB: {{ formatExecutionTime(simulationResult.duckDbMs) }}</span>
-                    <span>Hash: {{ simulationResult.queryHash }}</span>
+                    <span>{{ 'chartViewer.hash' | translate }}: {{ simulationResult.queryHash }}</span>
                   </div>
                 </div>
               </mat-card-content>
@@ -615,25 +615,25 @@
         <mat-card-header>
           <mat-card-title>
             <mat-icon>tune</mat-icon>
-            Controles
+            {{ 'chartViewer.controls' | translate }}
           </mat-card-title>
         </mat-card-header>
 
         <mat-card-content>
           <div class="controls-actions">
             <button mat-stroked-button color="primary" (click)="resetToRecommended()">
-              Reset to Recommended
+              {{ 'chartViewer.resetToRecommended' | translate }}
             </button>
           </div>
 
           <mat-divider></mat-divider>
 
           <div class="controls-section">
-            <h3>Visualizacao</h3>
+            <h3>{{ 'chartViewer.visualization' | translate }}</h3>
             <mat-form-field appearance="outline">
-              <mat-label>Tipo</mat-label>
+              <mat-label>{{ 'chartViewer.type' | translate }}</mat-label>
               <mat-select [(ngModel)]="selectedVisualizationType" (selectionChange)="onVisualizationTypeChange()">
-                <mat-option [value]="''">Recomendado ({{ currentBaseChartType }})</mat-option>
+                <mat-option [value]="''">{{ 'chartViewer.recommended' | translate }} ({{ currentBaseChartType }})</mat-option>
                 <mat-option *ngFor="let chartType of availableVisualizationTypes" [value]="chartType">
                   {{ chartType }}
                 </mat-option>
@@ -644,9 +644,9 @@
           <mat-divider></mat-divider>
 
           <div class="controls-section" *ngIf="supportsAggregationControl">
-            <h3>Agregacao</h3>
+            <h3>{{ 'chartViewer.aggregation' | translate }}</h3>
             <mat-form-field appearance="outline">
-              <mat-label>Tipo</mat-label>
+              <mat-label>{{ 'chartViewer.type' | translate }}</mat-label>
               <mat-select [(ngModel)]="selectedAggregation" (selectionChange)="onAggregationChange()">
                 <mat-option *ngFor="let agg of availableAggregations" [value]="agg">
                   {{ agg }}
@@ -658,9 +658,9 @@
           <mat-divider *ngIf="supportsAggregationControl"></mat-divider>
 
           <div class="controls-section" *ngIf="supportsTimeBinControl">
-            <h3>Periodo</h3>
+            <h3>{{ 'chartViewer.period' | translate }}</h3>
             <mat-form-field appearance="outline">
-              <mat-label>Intervalo</mat-label>
+              <mat-label>{{ 'chartViewer.interval' | translate }}</mat-label>
               <mat-select [(ngModel)]="selectedTimeBin" (selectionChange)="onTimeBinChange()">
                 <mat-option *ngFor="let bin of availableTimeBins" [value]="bin">
                   {{ bin }}
@@ -672,23 +672,23 @@
           <mat-divider *ngIf="supportsTimeBinControl"></mat-divider>
 
           <div class="controls-section" *ngIf="supportsMetricControl">
-            <h3>Metrica Y</h3>
+            <h3>{{ 'chartViewer.metricY' | translate }}</h3>
             <mat-form-field appearance="outline">
-              <mat-label>Metrica principal</mat-label>
+              <mat-label>{{ 'chartViewer.primaryMetric' | translate }}</mat-label>
               <mat-select [(ngModel)]="selectedMetric" (selectionChange)="onMetricChange()" [disabled]="availableMetrics.length === 0">
                 <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
                   {{ metric }}
                 </mat-option>
               </mat-select>
               <mat-hint *ngIf="availableMetrics.length === 0">
-                Baseado na recomendacao
+                {{ 'chartViewer.basedOnRecommendation' | translate }}
               </mat-hint>
             </mat-form-field>
 
             <div class="multi-metric" *ngIf="supportsMultiMetricControl">
               <div class="multi-metric-builder">
                 <mat-form-field appearance="outline">
-                  <mat-label>Adicionar metrica</mat-label>
+                  <mat-label>{{ 'chartViewer.addMetric' | translate }}</mat-label>
                   <mat-select [(ngModel)]="metricToAdd">
                     <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
                       {{ metric }}
@@ -697,7 +697,7 @@
                 </mat-form-field>
 
                 <button mat-stroked-button color="primary" (click)="addMetricY()" [disabled]="!canAddMetric">
-                  Adicionar
+                  {{ 'chartViewer.add' | translate }}
                 </button>
               </div>
 
@@ -715,17 +715,17 @@
           <mat-divider *ngIf="supportsMetricControl"></mat-divider>
 
           <div class="controls-section" *ngIf="supportsGroupByControl">
-            <h3>Group By</h3>
+            <h3>{{ 'chartViewer.groupBy' | translate }}</h3>
             <mat-form-field appearance="outline">
-              <mat-label>Coluna</mat-label>
+              <mat-label>{{ 'chartViewer.column' | translate }}</mat-label>
               <mat-select [(ngModel)]="selectedGroupBy" (selectionChange)="onGroupByChange()">
-                <mat-option [value]="''">Nenhum</mat-option>
+                <mat-option [value]="''">{{ 'chartViewer.none' | translate }}</mat-option>
                 <mat-option *ngFor="let col of availableGroupBy" [value]="col">
                   {{ col }}
                 </mat-option>
               </mat-select>
               <mat-hint *ngIf="availableGroupBy.length === 0">
-                Sem colunas de baixa cardinalidade
+                {{ 'chartViewer.noLowCardinalityColumns' | translate }}
               </mat-hint>
             </mat-form-field>
           </div>
@@ -735,7 +735,7 @@
           <div class="controls-info">
             <mat-icon>info</mat-icon>
             <p>
-              Filtros ficam no topo do grafico e atualizam so a visualizacao.
+              {{ 'chartViewer.controlsInfo' | translate }}
             </p>
           </div>
         </mat-card-content>
@@ -746,21 +746,21 @@
   <div class="point-modal-backdrop" *ngIf="selectedPointModalOpen" (click)="closeSelectedPointDataModal()">
     <mat-card class="point-modal" (click)="$event.stopPropagation()">
       <div class="point-modal-header">
-        <h3>Dados do ponto selecionado</h3>
+        <h3>{{ 'chartViewer.selectedPointData' | translate }}</h3>
         <button mat-icon-button (click)="closeSelectedPointDataModal()">
           <mat-icon>close</mat-icon>
         </button>
       </div>
 
       <div class="point-modal-summary" *ngIf="selectedPoint">
-        <span><strong>Serie:</strong> {{ selectedPoint['series'] }}</span>
+        <span><strong>{{ 'chartViewer.series' | translate }}:</strong> {{ selectedPoint['series'] }}</span>
         <span><strong>X:</strong> {{ selectedPoint['x'] }}</span>
         <span><strong>Y:</strong> {{ selectedPoint['y'] }}</span>
       </div>
 
       <mat-form-field appearance="outline">
-        <mat-label>Buscar nos dados do ponto</mat-label>
-        <input matInput [(ngModel)]="pointDataSearch" placeholder="filtro textual" />
+        <mat-label>{{ 'chartViewer.searchPointData' | translate }}</mat-label>
+        <input matInput [(ngModel)]="pointDataSearch" [placeholder]="'chartViewer.searchPointDataPlaceholder' | translate" />
         <mat-icon matSuffix>search</mat-icon>
       </mat-form-field>
 
@@ -777,14 +777,14 @@
       </div>
 
       <ng-template #noPointRows>
-        <p class="data-grid-empty">Sem linhas correlacionadas para o ponto selecionado.</p>
+        <p class="data-grid-empty">{{ 'chartViewer.noRowsForPoint' | translate }}</p>
       </ng-template>
     </mat-card>
   </div>
 
   <mat-card *ngIf="!loading && chartMeta" class="meta-card">
     <mat-card-header>
-      <mat-card-title>Informacoes de Execucao</mat-card-title>
+      <mat-card-title>{{ 'chartViewer.executionInfo' | translate }}</mat-card-title>
     </mat-card-header>
 
     <mat-card-content>
@@ -792,7 +792,7 @@
         <div class="meta-item">
           <mat-icon>dataset</mat-icon>
           <div class="meta-content">
-            <span class="meta-label">Linhas Retornadas</span>
+            <span class="meta-label">{{ 'chartViewer.rowsReturned' | translate }}</span>
             <span class="meta-value">{{ chartMeta.rowCountReturned }}</span>
           </div>
         </div>
@@ -800,7 +800,7 @@
         <div class="meta-item" *ngIf="chartMeta.executionMs">
           <mat-icon>speed</mat-icon>
           <div class="meta-content">
-            <span class="meta-label">Tempo de Execucao</span>
+            <span class="meta-label">{{ 'chartViewer.executionTime' | translate }}</span>
             <span class="meta-value">{{ formatExecutionTime(chartMeta.executionMs) }}</span>
           </div>
         </div>
@@ -808,7 +808,7 @@
         <div class="meta-item" *ngIf="chartMeta.chartType">
           <mat-icon>insert_chart</mat-icon>
           <div class="meta-content">
-            <span class="meta-label">Tipo de Grafico</span>
+            <span class="meta-label">{{ 'chartViewer.chartType' | translate }}</span>
             <span class="meta-value">{{ chartMeta.chartType }}</span>
           </div>
         </div>
@@ -816,7 +816,7 @@
         <div class="meta-item" *ngIf="chartMeta.generatedAt">
           <mat-icon>schedule</mat-icon>
           <div class="meta-content">
-            <span class="meta-label">Gerado em</span>
+            <span class="meta-label">{{ 'chartViewer.generatedAt' | translate }}</span>
             <span class="meta-value">{{ chartMeta.generatedAt | date:'short' }}</span>
           </div>
         </div>
@@ -824,7 +824,7 @@
         <div class="meta-item" *ngIf="chartMeta.queryHash">
           <mat-icon>tag</mat-icon>
           <div class="meta-content">
-            <span class="meta-label">Query Hash</span>
+            <span class="meta-label">{{ 'chartViewer.queryHash' | translate }}</span>
             <span class="meta-value hash">{{ chartMeta.queryHash }}</span>
           </div>
         </div>
@@ -837,16 +837,16 @@
       <mat-card-content>
         <div class="tips-header">
           <mat-icon>info</mat-icon>
-          <strong>Dicas de Interacao</strong>
+          <strong>{{ 'chartViewer.interactionTips' | translate }}</strong>
         </div>
         <ul>
-          <li>Passe o mouse sobre os elementos para ver detalhes</li>
-          <li>Clique nos itens da legenda para mostrar ou ocultar series</li>
-          <li>Use data zoom (toolbox) para selecionar o periodo com drag</li>
-          <li>Clique em barras para drilldown automatico por categoria/range</li>
-          <li>Use "Dados do ponto" para abrir detalhes em modal</li>
-          <li>Aba Dados Brutos permite busca e ordenacao multicoluna</li>
-          <li>Use a aba Simulacao para comparar baseline e cenario</li>
+          <li>{{ 'chartViewer.tipHover' | translate }}</li>
+          <li>{{ 'chartViewer.tipLegend' | translate }}</li>
+          <li>{{ 'chartViewer.tipZoom' | translate }}</li>
+          <li>{{ 'chartViewer.tipDrilldown' | translate }}</li>
+          <li>{{ 'chartViewer.tipPointData' | translate }}</li>
+          <li>{{ 'chartViewer.tipRawData' | translate }}</li>
+          <li>{{ 'chartViewer.tipSimulation' | translate }}</li>
         </ul>
       </mat-card-content>
     </mat-card>

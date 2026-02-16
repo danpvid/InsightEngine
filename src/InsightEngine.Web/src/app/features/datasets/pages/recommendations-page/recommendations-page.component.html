@@ -1,6 +1,6 @@
 ﻿<div class="container">
   <nav class="breadcrumb">
-    <a [routerLink]="['/', currentLanguage, 'datasets', 'new']" class="breadcrumb-item">
+    <a [routerLink]="newDatasetLink" class="breadcrumb-item">
       <mat-icon>home</mat-icon>
       <span>{{ 'common.datasets' | translate }}</span>
     </a>
@@ -37,7 +37,7 @@
           <button
             mat-icon-button
             (click)="copyDatasetId()"
-            matTooltip="Copy ID">
+            [matTooltip]="'common.copyId' | translate">
             <mat-icon>content_copy</mat-icon>
           </button>
         </div>
@@ -169,7 +169,7 @@
     <mat-icon>search_off</mat-icon>
     <h3>{{ 'recommendations.emptyTitle' | translate }}</h3>
     <p>{{ 'recommendations.emptySubtitle' | translate }}</p>
-    <button mat-raised-button color="primary" [routerLink]="['/', currentLanguage, 'datasets', 'new']">
+    <button mat-raised-button color="primary" [routerLink]="newDatasetLink">
       <mat-icon>upload_file</mat-icon>
       {{ 'recommendations.uploadNewDataset' | translate }}
     </button>

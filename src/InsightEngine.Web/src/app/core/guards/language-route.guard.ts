@@ -14,4 +14,3 @@ export const languageRouteGuard: CanActivateFn = (route) => {
   languageService.setCurrentLanguage(routeLanguage);
   return true;
 };
-

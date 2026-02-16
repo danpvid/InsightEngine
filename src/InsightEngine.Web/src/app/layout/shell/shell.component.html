@@ -2,10 +2,10 @@
   <div class="toolbar-content">
     <div class="toolbar-left">
       <mat-icon class="logo-icon">insights</mat-icon>
-      <span class="app-name" [routerLink]="['/', currentLanguage, 'datasets', 'new']">InsightEngine</span>
+      <span class="app-name" [routerLink]="newDatasetLink">InsightEngine</span>
     </div>
     <div class="toolbar-right">
-      <button mat-button [routerLink]="['/', currentLanguage, 'datasets', 'new']">
+      <button mat-button [routerLink]="newDatasetLink">
         <mat-icon>upload_file</mat-icon>
         <span>{{ 'shell.newDataset' | translate }}</span>
       </button>

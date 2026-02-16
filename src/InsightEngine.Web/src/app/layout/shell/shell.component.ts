@@ -38,6 +38,10 @@ export class ShellComponent {
     return this.languageService.currentLanguage;
   }
 
+  get newDatasetLink(): string {
+    return `/${this.currentLanguage}/datasets/new`;
+  }
+
   async onLanguageChange(language: string): Promise<void> {
     await this.languageService.switchLanguage(language, this.router);
   }

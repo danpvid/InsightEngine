@@ -303,6 +303,14 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     return this.languageService.currentLanguage;
   }
 
+  get newDatasetLink(): string {
+    return `/${this.currentLanguage}/datasets/new`;
+  }
+
+  get recommendationsLink(): string {
+    return `/${this.currentLanguage}/datasets/${this.datasetId}/recommendations`;
+  }
+
   @HostListener('window:resize')
   onResize(): void {
     this.updateLayout();

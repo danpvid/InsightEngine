@@ -61,6 +61,10 @@ export class RecommendationsPageComponent implements OnInit {
     return this.languageService.currentLanguage;
   }
 
+  get newDatasetLink(): string {
+    return `/${this.currentLanguage}/datasets/new`;
+  }
+
   ngOnInit(): void {
     this.datasetId = this.route.snapshot.paramMap.get('datasetId') || '';
 
