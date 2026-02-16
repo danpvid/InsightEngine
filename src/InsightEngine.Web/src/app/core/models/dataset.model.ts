@@ -29,3 +29,16 @@ export interface DatasetColumnProfile {
   distinctCount: number;
   topValues: string[];
 }
+
+export interface RawDatasetRowsResponse {
+  datasetId: string;
+  columns: string[];
+  rowCountTotal: number;
+  rowCountReturned: number;
+  truncated: boolean;
+  rows: RawDatasetRow[];
+}
+
+export interface RawDatasetRow {
+  [key: string]: string | null;
+}

@@ -16,6 +16,20 @@
   gap: 16px;
 }
 
+.dataset-name-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.dataset-name-value {
+  font-weight: 600;
+  font-size: 15px;
+}
+
 .dataset-id-label {
   display: flex;
   align-items: center;

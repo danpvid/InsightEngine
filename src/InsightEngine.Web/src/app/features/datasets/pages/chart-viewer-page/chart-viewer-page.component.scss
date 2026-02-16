@@ -31,7 +31,6 @@
   }
 }
 
-// Navigation Controls
 .navigation-controls {
   display: flex;
   align-items: center;
@@ -68,7 +67,6 @@
   }
 }
 
-// Chart Layout (2 columns)
 .chart-layout {
   width: 100%;
   margin-bottom: 24px;
@@ -210,6 +208,103 @@
     display: flex;
     gap: 8px;
   }
+
+  .inline-filters {
+    padding: 8px 0 12px;
+  }
+
+  .inline-filters-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+
+  .inline-filters-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .filter-rule {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    gap: 8px;
+    align-items: start;
+    margin-bottom: 8px;
+  }
+
+  .filters-hint {
+    margin: 0;
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .drilldown-panel {
+    margin: 8px 0 4px;
+    padding: 10px 12px;
+    border: 1px solid #c7d2fe;
+    border-radius: 8px;
+    background: #eef2ff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .drilldown-copy {
+    color: #3730a3;
+    font-size: 13px;
+  }
+
+  .drilldown-actions {
+    display: flex;
+    gap: 8px;
+  }
+}
+
+.data-grid-card {
+  .data-grid-toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+
+    mat-form-field {
+      flex: 1;
+      min-width: 240px;
+    }
+  }
+
+  .data-grid-table-wrapper {
+    overflow: auto;
+    max-height: 440px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+  }
+
+  .data-grid-table {
+    width: 100%;
+  }
+
+  .data-grid-sort-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 220px) auto auto;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+
+  .sort-rules {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
 }
 
 .simulation-card {
@@ -327,6 +422,7 @@
   width: 100%;
   min-height: 520px;
   padding: 16px 0;
+  position: relative;
 }
 
 .chart {
@@ -334,63 +430,24 @@
   height: 520px;
 }
 
-// Chart Skeleton Loading
+.chart-loading-overlay {
+  position: absolute;
+  right: 16px;
+  top: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.74);
+  color: #fff;
+  font-size: 12px;
+}
+
 .chart-skeleton {
   width: 100%;
   height: 520px;
-  padding: 40px;
-  background: #fafafa;
+  background: linear-gradient(90deg, #f8fafc 25%, #eef2f7 50%, #f8fafc 75%);
+  background-size: 200% 100%;
   border-radius: 8px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  animation: pulse 2s ease-in-out infinite;
-
-  .skeleton-axis-y {
-    position: absolute;
-    left: 40px;
-    top: 40px;
-    bottom: 100px;
-    width: 2px;
-    background: linear-gradient(180deg, #e0e0e0 0%, #f5f5f5 100%);
-  }
-
-  .skeleton-bars {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-around;
-    height: 380px;
-    margin: 40px 60px 20px 60px;
-    gap: 8px;
-
-    .skeleton-bar {
-      flex: 1;
-      background: linear-gradient(180deg, #3f51b5 0%, #7986cb 100%);
-      border-radius: 4px 4px 0 0;
-      animation: grow 1.5s ease-in-out infinite;
-      opacity: 0.3;
-
-      @for $i from 1 through 10 {
-        &:nth-child(#{$i}) {
-          animation-delay: #{$i * 0.1}s;
-        }
-      }
-    }
-  }
-
-  .skeleton-axis-x {
-    height: 2px;
-    margin: 0 60px;
-    background: linear-gradient(90deg, #e0e0e0 0%, #f5f5f5 50%, #e0e0e0 100%);
-  }
-
-  .skeleton-legend {
-    height: 24px;
-    margin: 20px auto 0;
-    width: 200px;
-    background: linear-gradient(90deg, #e0e0e0 0%, #f5f5f5 50%, #e0e0e0 100%);
-    border-radius: 4px;
-  }
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
 @keyframes pulse {
@@ -402,16 +459,6 @@
   }
 }
 
-@keyframes grow {
-  0%, 100% {
-    transform: scaleY(0.7);
-  }
-  50% {
-    transform: scaleY(1);
-  }
-}
-
-// Controls Panel
 .controls-card {
   mat-card-header {
     mat-card-title {
@@ -441,41 +488,31 @@
     mat-form-field {
       width: 100%;
     }
+
+    .multi-metric {
+      margin-top: 8px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .multi-metric-builder {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .selected-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
   }
 
   .controls-actions {
     padding: 16px;
     display: flex;
     justify-content: flex-end;
-  }
-
-  .filters-section {
-    padding-top: 8px;
-
-    .filters-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-
-    .filter-rule {
-      display: grid;
-      grid-template-columns: 1fr 90px 1fr auto;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .filter-value {
-      min-width: 120px;
-    }
-
-    .filters-hint {
-      margin: 4px 0 0;
-      font-size: 12px;
-      color: #64748b;
-    }
   }
 
   mat-divider {
@@ -508,6 +545,49 @@
 
 .meta-card {
   margin-bottom: 24px;
+}
+
+.point-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.point-modal {
+  width: min(1100px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 12px;
+}
+
+.point-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.point-modal-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 8px 0 12px;
+  color: #334155;
+}
+
+.point-modal-table-wrapper {
+  overflow: auto;
+  max-height: 56vh;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.point-modal-table {
+  width: 100%;
 }
 
 .meta-grid {
@@ -625,12 +705,6 @@
     grid-template-columns: 1fr;
   }
 
-  .filters-section {
-    .filter-rule {
-      grid-template-columns: 1fr;
-    }
-  }
-
   .simulation-card {
     .simulation-operation {
       grid-template-columns: 1fr;
@@ -642,6 +716,26 @@
 
     .simulation-chart {
       height: 360px;
+    }
+  }
+
+  .controls-card {
+    .controls-section {
+      .multi-metric-builder {
+        grid-template-columns: 1fr;
+      }
+    }
+  }
+
+  .chart-card {
+    .filter-rule {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .data-grid-card {
+    .data-grid-sort-panel {
+      grid-template-columns: 1fr;
     }
   }
 }

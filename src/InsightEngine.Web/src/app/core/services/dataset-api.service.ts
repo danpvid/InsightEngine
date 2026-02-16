@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../environments/environment.development';
 import { ApiResponse } from '../models/api-response.model';
-import { UploadDatasetResponse, DataSetSummary, DatasetProfile } from '../models/dataset.model';
+import { UploadDatasetResponse, DataSetSummary, DatasetProfile, RawDatasetRowsResponse } from '../models/dataset.model';
 import { RecommendationsResponse } from '../models/recommendation.model';
 import { ChartResponse, ScenarioSimulationRequest, ScenarioSimulationResponse } from '../models/chart.model';
 
@@ -85,6 +85,13 @@ export class DatasetApiService {
   getProfile(datasetId: string): Observable<ApiResponse<DatasetProfile>> {
     return this.http.get<ApiResponse<DatasetProfile>>(
       `${this.baseUrl}/api/v1/datasets/${datasetId}/profile`
+    );
+  }
+
+  getRawRows(datasetId: string, maxRows: number = 50000): Observable<ApiResponse<RawDatasetRowsResponse>> {
+    const safeMaxRows = Math.max(1, Math.min(200000, maxRows));
+    return this.http.get<ApiResponse<RawDatasetRowsResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/rows?maxRows=${safeMaxRows}`
     );
   }
 

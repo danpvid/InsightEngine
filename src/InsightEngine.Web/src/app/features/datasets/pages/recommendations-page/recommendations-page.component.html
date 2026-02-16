@@ -13,12 +13,20 @@
 
   <app-page-header
     title="Recomendacoes de Graficos"
-    [subtitle]="'Dataset: ' + datasetId"
+    [subtitle]="datasetName ? ('Dataset: ' + datasetName + ' (' + datasetId + ')') : ('Dataset: ' + datasetId)"
     icon="auto_awesome">
   </app-page-header>
 
   <mat-card class="dataset-info-card">
     <mat-card-content>
+      <div class="dataset-name-section" *ngIf="datasetName">
+        <div class="dataset-id-label">
+          <mat-icon>description</mat-icon>
+          <span>Arquivo:</span>
+        </div>
+        <div class="dataset-name-value">{{ datasetName }}</div>
+      </div>
+
       <div class="dataset-id-section">
         <div class="dataset-id-label">
           <mat-icon>fingerprint</mat-icon>

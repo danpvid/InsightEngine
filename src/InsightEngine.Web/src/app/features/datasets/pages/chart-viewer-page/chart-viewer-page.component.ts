@@ -1,9 +1,10 @@
-import { Component, HostListener, OnInit } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgxEchartsModule } from 'ngx-echarts';
 import { ECharts, EChartsOption } from 'echarts';
+import { catchError, forkJoin, map, of } from 'rxjs';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
 import { ToastService } from '../../../../core/services/toast.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
@@ -22,7 +23,7 @@ import {
 } from '../../../../core/models/chart.model';
 import { ChartRecommendation } from '../../../../core/models/recommendation.model';
 import { ApiError } from '../../../../core/models/api-response.model';
-import { DatasetColumnProfile } from '../../../../core/models/dataset.model';
+import { DataSetSummary, DatasetColumnProfile, RawDatasetRow, RawDatasetRowsResponse } from '../../../../core/models/dataset.model';
 
 interface FilterRule {
   column: string;
@@ -38,6 +39,31 @@ interface SimulationOperationRule {
   constant: number | null;
   min: number | null;
   max: number | null;
+}
+
+type VisualizationType = 'Line' | 'Bar' | 'Scatter' | 'Histogram';
+
+interface ChartLoadOptions {
+  aggregation?: string;
+  timeBin?: string;
+  metricY?: string;
+  yColumn?: string;
+  groupBy?: string;
+  filters?: string[];
+}
+
+interface MetricChartResult {
+  metric: string;
+  option: EChartsOption | null;
+}
+
+interface ChartTableRow {
+  [key: string]: string | number | null;
+}
+
+interface RawSortRule {
+  column: string;
+  direction: 'asc' | 'desc';
 }
 
 @Component({
@@ -56,8 +82,9 @@ interface SimulationOperationRule {
   templateUrl: './chart-viewer-page.component.html',
   styleUrls: ['./chart-viewer-page.component.scss']
 })
-export class ChartViewerPageComponent implements OnInit {
+export class ChartViewerPageComponent implements OnInit, OnDestroy {
   datasetId: string = '';
+  datasetName: string = '';
   recommendationId: string = '';
   chartOption: EChartsOption | null = null;
   chartMeta: ChartMeta | null = null;
@@ -68,6 +95,8 @@ export class ChartViewerPageComponent implements OnInit {
   private echartsInstance?: ECharts;
   private simulationEchartsInstance?: ECharts;
   private filterTimer?: number;
+  private zoomTimer?: number;
+  private chartLoadVersion: number = 0;
 
   recommendations: ChartRecommendation[] = [];
   currentRecommendation: ChartRecommendation | null = null;
@@ -95,7 +124,30 @@ export class ChartViewerPageComponent implements OnInit {
   selectedAggregation: string = 'Sum';
   selectedTimeBin: string = 'Month';
   selectedMetric: string = '';
+  selectedMetricsY: string[] = [];
+  metricToAdd: string = '';
   selectedGroupBy: string = '';
+  selectedVisualizationType: VisualizationType | '' = '';
+  zoomStart: number | null = null;
+  zoomEnd: number | null = null;
+  pendingDrilldownCategory: string | null = null;
+  pointDataColumns: string[] = [];
+  pointDataRows: ChartTableRow[] = [];
+  pointDataSearch: string = '';
+  selectedPoint: ChartTableRow | null = null;
+  selectedPointModalOpen: boolean = false;
+
+  rawDataColumns: string[] = [];
+  rawDataRows: RawDatasetRow[] = [];
+  rawDataSearch: string = '';
+  rawDataLoading: boolean = false;
+  rawDataError: string | null = null;
+  rawSortRules: RawSortRule[] = [];
+  rawSortColumnDraft: string = '';
+  rawSortDirectionDraft: 'asc' | 'desc' = 'asc';
+  readonly sortDirections: Array<'asc' | 'desc'> = ['asc', 'desc'];
+
+  filterPreviewPending: boolean = false;
 
   controlsOpen: boolean = true;
   isMobile: boolean = false;
@@ -152,6 +204,103 @@ export class ChartViewerPageComponent implements OnInit {
       !this.simulationLoading;
   }
 
+  get currentBaseChartType(): VisualizationType {
+    const raw = this.currentRecommendation?.chart?.type || this.chartMeta?.chartType || 'Line';
+    return this.normalizeVisualizationType(raw);
+  }
+
+  get currentDisplayChartType(): VisualizationType {
+    return this.selectedVisualizationType || this.currentBaseChartType;
+  }
+
+  get availableVisualizationTypes(): VisualizationType[] {
+    if (this.currentBaseChartType === 'Line') {
+      return ['Line', 'Bar'];
+    }
+
+    if (this.currentBaseChartType === 'Bar') {
+      return ['Bar', 'Line'];
+    }
+
+    return [this.currentBaseChartType];
+  }
+
+  get supportsAggregationControl(): boolean {
+    return this.currentBaseChartType === 'Line' || this.currentBaseChartType === 'Bar';
+  }
+
+  get supportsTimeBinControl(): boolean {
+    return this.currentBaseChartType === 'Line';
+  }
+
+  get supportsMetricControl(): boolean {
+    return this.currentBaseChartType !== 'Histogram';
+  }
+
+  get supportsMultiMetricControl(): boolean {
+    return this.currentBaseChartType === 'Line' || this.currentBaseChartType === 'Bar';
+  }
+
+  get supportsGroupByControl(): boolean {
+    return this.currentBaseChartType === 'Line' || this.currentBaseChartType === 'Bar';
+  }
+
+  get supportsDrilldown(): boolean {
+    return this.currentDisplayChartType === 'Bar';
+  }
+
+  get canAddMetric(): boolean {
+    return !!this.metricToAdd &&
+      this.supportsMultiMetricControl &&
+      !this.selectedMetricsY.includes(this.metricToAdd) &&
+      this.selectedMetricsY.length < 4;
+  }
+
+  get filteredPointDataRows(): ChartTableRow[] {
+    const term = this.pointDataSearch.trim().toLowerCase();
+    if (!term) {
+      return this.pointDataRows;
+    }
+
+    return this.pointDataRows.filter(row =>
+      this.pointDataColumns.some(column => {
+        const value = row[column];
+        return `${value ?? ''}`.toLowerCase().includes(term);
+      }));
+  }
+
+  get filteredRawDataRows(): RawDatasetRow[] {
+    const term = this.rawDataSearch.trim().toLowerCase();
+    let rows = this.rawDataRows;
+
+    if (term) {
+      rows = rows.filter(row =>
+        this.rawDataColumns.some(column => `${row[column] ?? ''}`.toLowerCase().includes(term)));
+    }
+
+    if (this.rawSortRules.length === 0) {
+      return rows;
+    }
+
+    const sorted = [...rows];
+    sorted.sort((left, right) => {
+      for (const rule of this.rawSortRules) {
+        const compare = this.compareRawValues(left[rule.column], right[rule.column], rule.direction);
+        if (compare !== 0) {
+          return compare;
+        }
+      }
+
+      return 0;
+    });
+
+    return sorted;
+  }
+
+  get canAddRawSortRule(): boolean {
+    return !!this.rawSortColumnDraft && this.rawSortRules.length < 3;
+  }
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -177,36 +326,85 @@ export class ChartViewerPageComponent implements OnInit {
       return;
     }
 
+    this.loadDatasetName();
     this.loadProfile();
     this.loadRecommendations();
+    this.loadRawDataRows();
 
     const queryParams = this.route.snapshot.queryParamMap;
     const aggFromUrl = queryParams.get('aggregation');
     const timeBinFromUrl = queryParams.get('timeBin');
     const yColumnFromUrl = queryParams.get('yColumn');
-    const metricYFromUrl = queryParams.get('metricY');
+    const metricYFromUrl = queryParams.getAll('metricY');
     const groupByFromUrl = queryParams.get('groupBy');
+    const chartTypeFromUrl = queryParams.get('chartType');
     const filtersFromUrl = queryParams.getAll('filters');
+    const zoomStartFromUrl = queryParams.get('zoomStart');
+    const zoomEndFromUrl = queryParams.get('zoomEnd');
 
     if (groupByFromUrl) {
       this.selectedGroupBy = groupByFromUrl;
+    }
+
+    if (chartTypeFromUrl) {
+      this.selectedVisualizationType = this.normalizeVisualizationType(chartTypeFromUrl);
+    }
+
+    const parsedZoomStart = this.tryParsePercentage(zoomStartFromUrl);
+    const parsedZoomEnd = this.tryParsePercentage(zoomEndFromUrl);
+    if (parsedZoomStart !== null && parsedZoomEnd !== null) {
+      this.zoomStart = parsedZoomStart;
+      this.zoomEnd = parsedZoomEnd;
     }
 
     if (filtersFromUrl.length > 0) {
       this.filterRules = this.parseFiltersFromUrl(filtersFromUrl);
     }
 
-    if (aggFromUrl || timeBinFromUrl || yColumnFromUrl || metricYFromUrl || groupByFromUrl || filtersFromUrl.length > 0) {
-      const options: any = {};
+    if (metricYFromUrl.length > 0) {
+      this.selectedMetricsY = this.distinctValues(metricYFromUrl);
+      this.selectedMetric = this.selectedMetricsY[0] || '';
+    } else if (yColumnFromUrl) {
+      this.selectedMetric = yColumnFromUrl;
+      this.selectedMetricsY = [yColumnFromUrl];
+    }
+
+    const shouldLoadWithOverrides =
+      !!aggFromUrl ||
+      !!timeBinFromUrl ||
+      !!yColumnFromUrl ||
+      metricYFromUrl.length > 0 ||
+      !!groupByFromUrl ||
+      !!chartTypeFromUrl ||
+      filtersFromUrl.length > 0 ||
+      (this.zoomStart !== null && this.zoomEnd !== null);
+
+    if (shouldLoadWithOverrides) {
+      const options: ChartLoadOptions = {};
       if (aggFromUrl) options.aggregation = aggFromUrl;
       if (timeBinFromUrl) options.timeBin = timeBinFromUrl;
-      if (metricYFromUrl) options.metricY = metricYFromUrl;
+      if (this.selectedMetric) options.metricY = this.selectedMetric;
       if (yColumnFromUrl) options.yColumn = yColumnFromUrl;
       if (groupByFromUrl) options.groupBy = groupByFromUrl;
       if (filtersFromUrl.length > 0) options.filters = filtersFromUrl;
       this.loadChart(options);
     } else {
       this.loadChart();
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.filterTimer) {
+      window.clearTimeout(this.filterTimer);
+    }
+
+    if (this.zoomTimer) {
+      window.clearTimeout(this.zoomTimer);
+    }
+
+    if (this.echartsInstance) {
+      this.echartsInstance.off('datazoom');
+      this.echartsInstance.off('click');
     }
   }
 
@@ -245,13 +443,20 @@ export class ChartViewerPageComponent implements OnInit {
           const aggFromUrl = queryParams.get('aggregation');
           const timeBinFromUrl = queryParams.get('timeBin');
           const yColumnFromUrl = queryParams.get('yColumn');
-          const metricYFromUrl = queryParams.get('metricY');
+          const metricYFromUrl = queryParams.getAll('metricY');
           const groupByFromUrl = queryParams.get('groupBy');
 
           this.selectedAggregation = aggFromUrl || this.currentRecommendation.aggregation || 'Sum';
           this.selectedTimeBin = timeBinFromUrl || this.currentRecommendation.timeBin || 'Month';
-          this.selectedMetric = metricYFromUrl || yColumnFromUrl || this.currentRecommendation.yColumn || '';
+          if (metricYFromUrl.length > 0) {
+            this.selectedMetricsY = this.distinctValues(metricYFromUrl);
+            this.selectedMetric = this.selectedMetricsY[0] || '';
+          } else {
+            this.selectedMetric = yColumnFromUrl || this.currentRecommendation.yColumn || '';
+            this.selectedMetricsY = this.selectedMetric ? [this.selectedMetric] : [];
+          }
           this.selectedGroupBy = groupByFromUrl || '';
+          this.selectedVisualizationType = this.ensureAllowedVisualization(this.selectedVisualizationType);
         }
 
         this.initializeScenarioDefaults();
@@ -281,6 +486,8 @@ export class ChartViewerPageComponent implements OnInit {
           .filter(c => c.inferredType !== 'Number' && c.distinctCount <= maxDistinct)
           .map(c => c.name);
 
+        this.syncSelectedMetricsWithAvailability();
+
         if (this.selectedMetric && !this.availableMetrics.includes(this.selectedMetric)) {
           this.availableMetrics = [this.selectedMetric, ...this.availableMetrics];
         }
@@ -293,27 +500,40 @@ export class ChartViewerPageComponent implements OnInit {
     });
   }
 
-  loadChart(options?: {
-    aggregation?: string;
-    timeBin?: string;
-    metricY?: string;
-    yColumn?: string;
-    groupBy?: string;
-    filters?: string[];
-  }): void {
+  loadChart(options?: ChartLoadOptions): void {
+    const requestOptions: ChartLoadOptions = options ? { ...options } : {};
+
+    if (this.supportsMetricControl) {
+      const primaryMetric = requestOptions.metricY || this.selectedMetric;
+      if (primaryMetric) {
+        requestOptions.metricY = primaryMetric;
+      }
+    }
+
     this.loading = true;
     this.error = null;
-    this.chartOption = null;
-    this.insightSummary = null;
+    this.pendingDrilldownCategory = null;
 
-    this.datasetApi.getChart(this.datasetId, this.recommendationId, options).subscribe({
+    const loadVersion = ++this.chartLoadVersion;
+
+    this.datasetApi.getChart(this.datasetId, this.recommendationId, requestOptions).subscribe({
       next: (response) => {
+        if (loadVersion !== this.chartLoadVersion) {
+          return;
+        }
+
         this.loading = false;
 
         if (response.success && response.data) {
-          this.chartOption = { ...response.data.option };
           this.chartMeta = response.data.meta || null;
           this.insightSummary = response.data.insightSummary || null;
+          const primaryMetric = requestOptions.metricY || this.selectedMetric;
+
+          this.applyChartOptionWithEnhancements(
+            response.data.option,
+            primaryMetric,
+            requestOptions,
+            loadVersion);
 
           if (!this.chartOption) {
             this.error = {
@@ -329,6 +549,10 @@ export class ChartViewerPageComponent implements OnInit {
         }
       },
       error: (err) => {
+        if (loadVersion !== this.chartLoadVersion) {
+          return;
+        }
+
         this.loading = false;
         const apiError = HttpErrorUtil.extractApiError(err);
         this.error = apiError || {
@@ -367,10 +591,17 @@ export class ChartViewerPageComponent implements OnInit {
       this.selectedAggregation = this.currentRecommendation.aggregation || 'Sum';
       this.selectedTimeBin = this.currentRecommendation.timeBin || 'Month';
       this.selectedMetric = this.currentRecommendation.yColumn || '';
+      this.selectedMetricsY = this.selectedMetric ? [this.selectedMetric] : [];
     }
 
     this.selectedGroupBy = '';
+    this.selectedVisualizationType = '';
+    this.zoomStart = null;
+    this.zoomEnd = null;
+    this.metricToAdd = '';
     this.filterRules = [];
+    this.pendingDrilldownCategory = null;
+    this.filterPreviewPending = false;
 
     this.router.navigate([], {
       relativeTo: this.route,
@@ -383,6 +614,10 @@ export class ChartViewerPageComponent implements OnInit {
 
   onChartInit(ec: ECharts): void {
     this.echartsInstance = ec;
+    this.echartsInstance.off('datazoom');
+    this.echartsInstance.off('click');
+    this.echartsInstance.on('datazoom', event => this.onDataZoom(event));
+    this.echartsInstance.on('click', event => this.onChartClick(event));
   }
 
   onSimulationChartInit(ec: ECharts): void {
@@ -421,17 +656,23 @@ export class ChartViewerPageComponent implements OnInit {
       this.currentIndex = this.recommendations.findIndex(r => r.id === recId);
       this.currentRecommendation = this.currentIndex >= 0 ? this.recommendations[this.currentIndex] : null;
 
-      let chartOptions: any = undefined;
+      let chartOptions: ChartLoadOptions | undefined;
       if (!keepContext && this.currentRecommendation) {
         this.selectedAggregation = this.currentRecommendation.aggregation || 'Sum';
         this.selectedTimeBin = this.currentRecommendation.timeBin || 'Month';
         this.selectedMetric = this.currentRecommendation.yColumn || '';
+        this.selectedMetricsY = this.selectedMetric ? [this.selectedMetric] : [];
+        this.metricToAdd = '';
         this.selectedGroupBy = '';
         this.filterRules = [];
+        this.zoomStart = null;
+        this.zoomEnd = null;
+        this.selectedVisualizationType = '';
       } else if (keepContext) {
-        chartOptions = this.buildCurrentQueryParams();
+        chartOptions = this.buildLoadOptionsFromState();
       }
 
+      this.selectedVisualizationType = this.ensureAllowedVisualization(this.selectedVisualizationType);
       this.initializeScenarioDefaults();
       this.loadChart(chartOptions);
     });
@@ -458,6 +699,13 @@ export class ChartViewerPageComponent implements OnInit {
   }
 
   onMetricChange(): void {
+    if (this.selectedMetric) {
+      this.selectedMetricsY = [
+        this.selectedMetric,
+        ...this.selectedMetricsY.filter(metric => metric !== this.selectedMetric)
+      ].slice(0, 4);
+    }
+
     this.reloadChartWithCurrentParameters();
     if (!this.simulationTargetMetric) {
       this.simulationTargetMetric = this.selectedMetric;
@@ -471,35 +719,165 @@ export class ChartViewerPageComponent implements OnInit {
     }
   }
 
+  onVisualizationTypeChange(): void {
+    this.selectedVisualizationType = this.ensureAllowedVisualization(this.selectedVisualizationType);
+
+    if (this.chartOption) {
+      const transformed = this.applyPresentationTransforms(this.cloneOption(this.chartOption));
+      this.chartOption = transformed;
+      this.buildChartDataGrid(transformed);
+    }
+
+    this.syncUrlWithoutReload();
+  }
+
+  addMetricY(): void {
+    if (!this.canAddMetric) {
+      return;
+    }
+
+    this.selectedMetricsY = [...this.selectedMetricsY, this.metricToAdd];
+    this.metricToAdd = '';
+    this.reloadChartWithCurrentParameters();
+  }
+
+  removeMetricY(metric: string): void {
+    if (!this.selectedMetricsY.includes(metric)) {
+      return;
+    }
+
+    this.selectedMetricsY = this.selectedMetricsY.filter(item => item !== metric);
+
+    if (this.selectedMetric === metric) {
+      this.selectedMetric = this.selectedMetricsY[0] || '';
+    }
+
+    if (this.selectedMetricsY.length === 0 && this.selectedMetric) {
+      this.selectedMetricsY = [this.selectedMetric];
+    }
+
+    this.reloadChartWithCurrentParameters();
+  }
+
+  applyDrilldown(categoryOverride?: string): void {
+    const selectedCategory = categoryOverride ?? this.pendingDrilldownCategory;
+    if (!selectedCategory) {
+      return;
+    }
+
+    const column = this.currentRecommendation?.xColumn || this.readAxisName(this.chartOption, 'xAxis') || '';
+    if (!column) {
+      this.toast.error('Nao foi possivel identificar a coluna para drilldown.');
+      return;
+    }
+
+    const existing = this.filterRules.find(rule => rule.column === column && rule.operator === 'Eq');
+    if (existing) {
+      existing.value = selectedCategory;
+    } else if (this.filterRules.length < 3) {
+      this.filterRules.push({
+        column,
+        operator: 'Eq',
+        value: selectedCategory
+      });
+    } else {
+      this.filterRules[0] = {
+        column,
+        operator: 'Eq',
+        value: selectedCategory
+      };
+      this.toast.info('Limite de filtros atingido. O filtro mais antigo foi substituido.');
+    }
+
+    this.pendingDrilldownCategory = null;
+    this.reloadChartWithCurrentParameters();
+  }
+
+  clearDrilldownSelection(): void {
+    this.pendingDrilldownCategory = null;
+  }
+
   private reloadChartWithCurrentParameters(): void {
-    const options = this.buildCurrentQueryParams();
+    const options = this.buildLoadOptionsFromState();
+    this.filterPreviewPending = false;
 
     this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: options,
+      queryParams: this.buildCurrentQueryParams(),
       replaceUrl: true
     });
 
     this.loadChart(options);
   }
 
-  private buildCurrentQueryParams(): any {
-    const options: any = {
-      aggregation: this.selectedAggregation,
-      timeBin: this.selectedTimeBin
-    };
+  private syncUrlWithoutReload(): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: this.buildCurrentQueryParams(),
+      replaceUrl: true
+    });
+  }
 
-    if (this.selectedMetric) {
+  private buildLoadOptionsFromState(): ChartLoadOptions {
+    const options: ChartLoadOptions = {};
+
+    if (this.supportsAggregationControl && this.selectedAggregation) {
+      options.aggregation = this.selectedAggregation;
+    }
+
+    if (this.supportsTimeBinControl && this.selectedTimeBin) {
+      options.timeBin = this.selectedTimeBin;
+    }
+
+    if (this.supportsMetricControl && this.selectedMetric) {
       options.metricY = this.selectedMetric;
     }
 
-    if (this.selectedGroupBy) {
+    if (this.supportsGroupByControl && this.selectedGroupBy) {
       options.groupBy = this.selectedGroupBy;
     }
 
     const filters = this.buildFilterParams();
     if (filters.length > 0) {
       options.filters = filters;
+    }
+
+    return options;
+  }
+
+  private buildCurrentQueryParams(): Record<string, unknown> {
+    const options: Record<string, unknown> = {};
+
+    if (this.supportsAggregationControl && this.selectedAggregation) {
+      options['aggregation'] = this.selectedAggregation;
+    }
+
+    if (this.supportsTimeBinControl && this.selectedTimeBin) {
+      options['timeBin'] = this.selectedTimeBin;
+    }
+
+    if (this.supportsMetricControl && this.selectedMetricsY.length > 0) {
+      options['metricY'] = this.selectedMetricsY;
+    } else if (this.supportsMetricControl && this.selectedMetric) {
+      options['metricY'] = this.selectedMetric;
+    }
+
+    if (this.supportsGroupByControl && this.selectedGroupBy) {
+      options['groupBy'] = this.selectedGroupBy;
+    }
+
+    const filters = this.buildFilterParams();
+    if (filters.length > 0) {
+      options['filters'] = filters;
+    }
+
+    if (this.selectedVisualizationType && this.selectedVisualizationType !== this.currentBaseChartType) {
+      options['chartType'] = this.selectedVisualizationType;
+    }
+
+    if (this.zoomStart !== null && this.zoomEnd !== null) {
+      options['zoomStart'] = this.zoomStart.toFixed(2);
+      options['zoomEnd'] = this.zoomEnd.toFixed(2);
     }
 
     return options;
@@ -519,11 +897,16 @@ export class ChartViewerPageComponent implements OnInit {
 
   removeFilterRule(index: number): void {
     this.filterRules.splice(index, 1);
-    this.reloadChartWithCurrentParameters();
+    this.previewFilters();
   }
 
   onFilterRuleChange(): void {
     this.scheduleFiltersRefresh();
+  }
+
+  applyFilterChanges(): void {
+    this.filterPreviewPending = false;
+    this.reloadChartWithCurrentParameters();
   }
 
   private scheduleFiltersRefresh(): void {
@@ -532,8 +915,13 @@ export class ChartViewerPageComponent implements OnInit {
     }
 
     this.filterTimer = window.setTimeout(() => {
-      this.reloadChartWithCurrentParameters();
+      this.previewFilters();
     }, 400);
+  }
+
+  private previewFilters(): void {
+    this.filterPreviewPending = true;
+    this.loadChart(this.buildLoadOptionsFromState());
   }
 
   private buildFilterParams(): string[] {
@@ -557,13 +945,23 @@ export class ChartViewerPageComponent implements OnInit {
 
   getChartTitle(): string {
     if (this.chartOption && typeof this.chartOption === 'object') {
-      const option = this.chartOption as any;
-      if (option.title && option.title.text) {
-        return option.title.text;
+      const option = this.chartOption as Record<string, unknown>;
+      const title = option['title'];
+      if (title && typeof title === 'object') {
+        const text = (title as Record<string, unknown>)['text'];
+        if (typeof text === 'string' && text.trim().length > 0) {
+          return text;
+        }
       }
     }
 
     return 'Visualizacao de Grafico';
+  }
+
+  getDatasetSubtitle(): string {
+    return this.datasetName
+      ? `Dataset: ${this.datasetName} (${this.datasetId})`
+      : `Dataset: ${this.datasetId}`;
   }
 
   formatExecutionTime(ms?: number): string {
@@ -574,7 +972,7 @@ export class ChartViewerPageComponent implements OnInit {
   copyChartLink(): void {
     const url = window.location.href;
     navigator.clipboard.writeText(url).then(() => {
-      this.toast.success('Link copiado. Inclui filtros e parametros ativos.');
+      this.toast.success('Link copiado. Inclui filtros, zoom e parametros ativos.');
     });
   }
 
@@ -687,7 +1085,7 @@ export class ChartViewerPageComponent implements OnInit {
         if (response.success && response.data) {
           this.simulationResult = response.data;
           this.simulationChartOption = this.buildSimulationChartOption(response.data);
-          this.activeTab = 1;
+          this.activeTab = 2;
           return;
         }
 
@@ -898,5 +1296,728 @@ export class ChartViewerPageComponent implements OnInit {
       default:
         return '';
     }
+  }
+
+  formatGridCell(row: Record<string, unknown>, column: string): string {
+    const value = row[column];
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    if (typeof value === 'number') {
+      return value.toLocaleString(undefined, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 4
+      });
+    }
+
+    return `${value}`;
+  }
+
+  openSelectedPointDataModal(): void {
+    if (!this.selectedPoint) {
+      this.toast.info('Selecione um ponto no grafico para ver os dados correspondentes.');
+      return;
+    }
+
+    this.selectedPointModalOpen = true;
+  }
+
+  closeSelectedPointDataModal(): void {
+    this.selectedPointModalOpen = false;
+  }
+
+  addRawSortRule(): void {
+    if (!this.canAddRawSortRule) {
+      return;
+    }
+
+    this.rawSortRules = [
+      ...this.rawSortRules,
+      {
+        column: this.rawSortColumnDraft,
+        direction: this.rawSortDirectionDraft
+      }
+    ];
+
+    this.rawSortColumnDraft = '';
+    this.rawSortDirectionDraft = 'asc';
+  }
+
+  removeRawSortRule(index: number): void {
+    this.rawSortRules.splice(index, 1);
+    this.rawSortRules = [...this.rawSortRules];
+  }
+
+  clearRawSortRules(): void {
+    this.rawSortRules = [];
+  }
+
+  sortDirectionLabel(direction: 'asc' | 'desc'): string {
+    return direction === 'asc' ? 'Ascendente' : 'Descendente';
+  }
+
+  private loadDatasetName(): void {
+    this.datasetApi.listDatasets().subscribe({
+      next: response => {
+        if (!response.success || !response.data) {
+          return;
+        }
+
+        const dataset = (response.data as DataSetSummary[])
+          .find(item => item.datasetId.toLowerCase() === this.datasetId.toLowerCase());
+
+        if (dataset?.originalFileName) {
+          this.datasetName = dataset.originalFileName;
+        }
+      },
+      error: err => {
+        console.error('Error loading dataset list for title:', err);
+      }
+    });
+  }
+
+  private loadRawDataRows(): void {
+    this.rawDataLoading = true;
+    this.rawDataError = null;
+
+    this.datasetApi.getRawRows(this.datasetId).subscribe({
+      next: response => {
+        this.rawDataLoading = false;
+
+        if (!response.success || !response.data) {
+          this.rawDataError = response.error?.message || 'Falha ao carregar dados brutos.';
+          return;
+        }
+
+        const payload = response.data as RawDatasetRowsResponse;
+        this.rawDataColumns = payload.columns || [];
+        this.rawDataRows = payload.rows || [];
+        if (!this.rawSortColumnDraft && this.rawDataColumns.length > 0) {
+          this.rawSortColumnDraft = this.rawDataColumns[0];
+        }
+
+        if (payload.truncated) {
+          this.toast.info(`Mostrando ${payload.rowCountReturned} de ${payload.rowCountTotal} linhas brutas.`);
+        }
+
+        this.refreshPointDataFromRawRows();
+      },
+      error: err => {
+        this.rawDataLoading = false;
+        this.rawDataError = HttpErrorUtil.extractErrorMessage(err);
+      }
+    });
+  }
+
+  private applyChartOptionWithEnhancements(
+    baseOption: EChartsOption,
+    primaryMetric: string,
+    options: ChartLoadOptions,
+    loadVersion: number): void {
+    const clonedBase = this.cloneOption(baseOption);
+
+    if (this.supportsMultiMetricControl && this.selectedMetricsY.length > 1) {
+      const additionalMetrics = this.selectedMetricsY
+        .filter(metric => metric !== primaryMetric)
+        .slice(0, 3);
+
+      if (additionalMetrics.length > 0) {
+        this.loadAdditionalMetrics(additionalMetrics, options, loadVersion).subscribe(results => {
+          if (loadVersion !== this.chartLoadVersion) {
+            return;
+          }
+
+          const merged = this.mergeMetricOptions(clonedBase, primaryMetric, results);
+          this.chartOption = this.applyPresentationTransforms(merged);
+          this.buildChartDataGrid(this.chartOption);
+        });
+        return;
+      }
+    }
+
+    this.chartOption = this.applyPresentationTransforms(clonedBase);
+    this.buildChartDataGrid(this.chartOption);
+  }
+
+  private loadAdditionalMetrics(
+    metrics: string[],
+    options: ChartLoadOptions,
+    loadVersion: number) {
+    const requests = metrics.map(metric => {
+      const metricOptions: ChartLoadOptions = {
+        ...options,
+        metricY: metric
+      };
+
+      return this.datasetApi.getChart(this.datasetId, this.recommendationId, metricOptions).pipe(
+        map(response => {
+          if (loadVersion !== this.chartLoadVersion || !response.success || !response.data) {
+            return { metric, option: null } as MetricChartResult;
+          }
+
+          return {
+            metric,
+            option: response.data.option
+          } as MetricChartResult;
+        }),
+        catchError(() => of({ metric, option: null } as MetricChartResult))
+      );
+    });
+
+    return forkJoin(requests);
+  }
+
+  private mergeMetricOptions(
+    baseOption: EChartsOption,
+    primaryMetric: string,
+    additional: MetricChartResult[]): EChartsOption {
+    const mergedOption = this.cloneOption(baseOption) as Record<string, unknown>;
+    const baseSeries = this.readSeriesList(mergedOption);
+    const allSeries: Record<string, unknown>[] = [];
+
+    for (const series of baseSeries) {
+      const namedSeries = { ...series };
+      const originalName = `${namedSeries['name'] ?? primaryMetric}`;
+      namedSeries['name'] = this.selectedMetricsY.length > 1
+        ? `${primaryMetric} - ${originalName}`
+        : originalName;
+      allSeries.push(namedSeries);
+    }
+
+    for (const extra of additional) {
+      if (!extra.option) {
+        continue;
+      }
+
+      const optionRecord = extra.option as Record<string, unknown>;
+      const extraSeries = this.readSeriesList(optionRecord);
+      for (const series of extraSeries) {
+        const namedSeries = { ...series };
+        const originalName = `${namedSeries['name'] ?? extra.metric}`;
+        namedSeries['name'] = `${extra.metric} - ${originalName}`;
+        allSeries.push(namedSeries);
+      }
+    }
+
+    mergedOption['series'] = allSeries;
+    return mergedOption as EChartsOption;
+  }
+
+  private applyPresentationTransforms(option: EChartsOption): EChartsOption {
+    const mutable = option as Record<string, unknown>;
+
+    this.applyChartTypeTransform(mutable);
+    this.ensureLegend(mutable);
+    this.ensureToolbox(mutable);
+    this.ensureZoomWindow(mutable);
+
+    return mutable as EChartsOption;
+  }
+
+  private applyChartTypeTransform(option: Record<string, unknown>): void {
+    const targetType = this.currentDisplayChartType;
+    const seriesList = this.readSeriesList(option);
+
+    if (targetType !== 'Line' && targetType !== 'Bar') {
+      return;
+    }
+
+    const mappedType = targetType.toLowerCase();
+    for (const series of seriesList) {
+      const currentType = `${series['type'] ?? ''}`.toLowerCase();
+      if (currentType === 'line' || currentType === 'bar') {
+        series['type'] = mappedType;
+        if (mappedType === 'line') {
+          series['smooth'] = true;
+        } else {
+          delete series['smooth'];
+        }
+      }
+    }
+
+    const tooltip = this.asObject(option['tooltip']);
+    if (tooltip) {
+      tooltip['trigger'] = 'axis';
+      const axisPointer = this.asObject(tooltip['axisPointer']) || {};
+      axisPointer['type'] = mappedType === 'bar' ? 'shadow' : 'cross';
+      tooltip['axisPointer'] = axisPointer;
+      option['tooltip'] = tooltip;
+    }
+  }
+
+  private ensureLegend(option: Record<string, unknown>): void {
+    const seriesList = this.readSeriesList(option);
+    const names = seriesList
+      .map(series => `${series['name'] ?? ''}`)
+      .filter(name => name.trim().length > 0);
+
+    if (names.length === 0) {
+      return;
+    }
+
+    const legend = this.asObject(option['legend']) || {};
+    legend['show'] = true;
+    legend['type'] = names.length > 6 ? 'scroll' : 'plain';
+    legend['data'] = this.distinctValues(names);
+    option['legend'] = legend;
+  }
+
+  private ensureToolbox(option: Record<string, unknown>): void {
+    const toolbox = this.asObject(option['toolbox']) || {};
+    toolbox['show'] = true;
+
+    const feature = this.asObject(toolbox['feature']) || {};
+    feature['saveAsImage'] = this.asObject(feature['saveAsImage']) || { show: true };
+    feature['restore'] = this.asObject(feature['restore']) || { show: true };
+
+    if (this.currentDisplayChartType === 'Line' || this.currentDisplayChartType === 'Bar') {
+      feature['dataZoom'] = this.asObject(feature['dataZoom']) || {
+        show: true,
+        yAxisIndex: 'none'
+      };
+    }
+
+    toolbox['feature'] = feature;
+    option['toolbox'] = toolbox;
+  }
+
+  private ensureZoomWindow(option: Record<string, unknown>): void {
+    const dataZoomItems = this.readDataZoomList(option);
+    if (dataZoomItems.length === 0 && (this.currentDisplayChartType === 'Line' || this.currentDisplayChartType === 'Bar')) {
+      dataZoomItems.push(
+        {
+          type: 'slider',
+          show: true,
+          xAxisIndex: 0,
+          start: 0,
+          end: 100
+        },
+        {
+          type: 'inside',
+          xAxisIndex: 0,
+          start: 0,
+          end: 100
+        }
+      );
+    }
+
+    if (this.zoomStart !== null && this.zoomEnd !== null) {
+      for (const zoomItem of dataZoomItems) {
+        zoomItem['start'] = this.zoomStart;
+        zoomItem['end'] = this.zoomEnd;
+      }
+    }
+
+    if (dataZoomItems.length > 0) {
+      option['dataZoom'] = dataZoomItems;
+    }
+  }
+
+  private onDataZoom(event: unknown): void {
+    const payload = event as Record<string, unknown>;
+
+    let start: number | null = this.tryParseNumeric(payload['start']);
+    let end: number | null = this.tryParseNumeric(payload['end']);
+
+    if ((start === null || end === null) && Array.isArray(payload['batch']) && payload['batch'].length > 0) {
+      const first = payload['batch'][0] as Record<string, unknown>;
+      start = this.tryParseNumeric(first['start']);
+      end = this.tryParseNumeric(first['end']);
+    }
+
+    if (start === null || end === null) {
+      return;
+    }
+
+    this.zoomStart = Math.max(0, Math.min(100, start));
+    this.zoomEnd = Math.max(0, Math.min(100, end));
+
+    if (this.zoomTimer) {
+      window.clearTimeout(this.zoomTimer);
+    }
+
+    this.zoomTimer = window.setTimeout(() => {
+      this.syncUrlWithoutReload();
+    }, 250);
+  }
+
+  private onChartClick(event: unknown): void {
+    const payload = event as Record<string, unknown>;
+    const componentType = `${payload['componentType'] ?? ''}`;
+    if (componentType !== 'series') {
+      return;
+    }
+
+    const selectedPoint = this.extractPointFromChartEvent(payload);
+    if (!selectedPoint) {
+      return;
+    }
+
+    this.selectedPoint = selectedPoint;
+    this.selectedPointModalOpen = false;
+    this.refreshPointDataFromRawRows();
+
+    if (this.supportsDrilldown) {
+      const category = `${selectedPoint['x'] ?? ''}`.trim();
+      if (category) {
+        this.pendingDrilldownCategory = category;
+        this.applyDrilldown(category);
+        return;
+      }
+    }
+
+    this.toast.info('Ponto selecionado. Use "Dados do ponto" para inspecionar os registros.');
+  }
+
+  private extractPointFromChartEvent(payload: Record<string, unknown>): ChartTableRow | null {
+    const seriesName = `${payload['seriesName'] ?? ''}`.trim() || 'Serie';
+    const pointName = `${payload['name'] ?? ''}`.trim();
+    const rawValue = payload['value'];
+
+    if (Array.isArray(rawValue)) {
+      if (rawValue.length >= 2) {
+        return {
+          series: seriesName,
+          x: this.toScalar(rawValue[0]),
+          y: this.toScalar(rawValue[1])
+        };
+      }
+
+      if (rawValue.length === 1) {
+        return {
+          series: seriesName,
+          x: pointName || null,
+          y: this.toScalar(rawValue[0])
+        };
+      }
+    }
+
+    return {
+      series: seriesName,
+      x: pointName || null,
+      y: this.toScalar(rawValue)
+    };
+  }
+
+  private refreshPointDataFromRawRows(): void {
+    if (!this.selectedPoint) {
+      return;
+    }
+
+    const xColumn = this.currentRecommendation?.xColumn || this.readAxisName(this.chartOption, 'xAxis');
+    if (!xColumn || this.rawDataRows.length === 0) {
+      return;
+    }
+
+    const target = `${this.selectedPoint['x'] ?? ''}`.trim();
+    if (!target) {
+      return;
+    }
+
+    const matchByExact = this.rawDataRows.filter(row => `${row[xColumn] ?? ''}`.trim() === target);
+    const matchByContains = matchByExact.length > 0
+      ? matchByExact
+      : this.rawDataRows.filter(row => `${row[xColumn] ?? ''}`.toLowerCase().includes(target.toLowerCase()));
+
+    const limitedRows = matchByContains.slice(0, 200);
+    this.pointDataColumns = this.rawDataColumns.length > 0 ? this.rawDataColumns : this.pointDataColumns;
+    this.pointDataRows = limitedRows.map(row => {
+      const mapped: ChartTableRow = {};
+      for (const column of this.pointDataColumns) {
+        mapped[column] = row[column] ?? null;
+      }
+
+      return mapped;
+    });
+  }
+
+  private buildChartDataGrid(option: EChartsOption | null): void {
+    if (!option) {
+      this.pointDataColumns = [];
+      this.pointDataRows = [];
+      return;
+    }
+
+    const optionRecord = option as Record<string, unknown>;
+    const seriesList = this.readSeriesList(optionRecord);
+    const xAxisData = this.readAxisData(optionRecord, 'xAxis');
+
+    const rows: ChartTableRow[] = [];
+    for (const series of seriesList) {
+      const seriesName = `${series['name'] ?? 'Serie'}`;
+      const seriesData = Array.isArray(series['data']) ? series['data'] : [];
+
+      for (let index = 0; index < seriesData.length; index++) {
+        const item = seriesData[index];
+        const resolved = this.resolveDataPoint(item, xAxisData, index);
+
+        rows.push({
+          series: seriesName,
+          x: resolved.x,
+          y: resolved.y
+        });
+      }
+    }
+
+    this.pointDataColumns = ['series', 'x', 'y'];
+    this.pointDataRows = rows;
+    this.refreshPointDataFromRawRows();
+  }
+
+  private resolveDataPoint(
+    item: unknown,
+    xAxisData: unknown[],
+    index: number): { x: string | number | null; y: string | number | null } {
+    if (Array.isArray(item)) {
+      if (item.length >= 2) {
+        return {
+          x: this.toScalar(item[0]),
+          y: this.toScalar(item[1])
+        };
+      }
+
+      if (item.length === 1) {
+        return {
+          x: this.toScalar(xAxisData[index]),
+          y: this.toScalar(item[0])
+        };
+      }
+    }
+
+    if (item && typeof item === 'object') {
+      const asRecord = item as Record<string, unknown>;
+      const value = asRecord['value'];
+      if (Array.isArray(value) && value.length >= 2) {
+        return {
+          x: this.toScalar(value[0]),
+          y: this.toScalar(value[1])
+        };
+      }
+
+      return {
+        x: this.toScalar(xAxisData[index]),
+        y: this.toScalar(value)
+      };
+    }
+
+    return {
+      x: this.toScalar(xAxisData[index]),
+      y: this.toScalar(item)
+    };
+  }
+
+  private toScalar(value: unknown): string | number | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    if (typeof value === 'number' || typeof value === 'string') {
+      return value;
+    }
+
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    return `${value}`;
+  }
+
+  private readAxisData(option: Record<string, unknown>, axisKey: 'xAxis' | 'yAxis'): unknown[] {
+    const axisRaw = option[axisKey];
+    if (Array.isArray(axisRaw) && axisRaw.length > 0) {
+      const firstAxis = this.asObject(axisRaw[0]);
+      const data = firstAxis?.['data'];
+      return Array.isArray(data) ? data : [];
+    }
+
+    const axis = this.asObject(axisRaw);
+    const data = axis?.['data'];
+    return Array.isArray(data) ? data : [];
+  }
+
+  private readAxisName(option: EChartsOption | null, axisKey: 'xAxis' | 'yAxis'): string | null {
+    if (!option) {
+      return null;
+    }
+
+    const record = option as Record<string, unknown>;
+    const axisRaw = record[axisKey];
+
+    if (Array.isArray(axisRaw) && axisRaw.length > 0) {
+      const first = this.asObject(axisRaw[0]);
+      const name = first?.['name'];
+      return typeof name === 'string' ? name : null;
+    }
+
+    const axis = this.asObject(axisRaw);
+    const name = axis?.['name'];
+    return typeof name === 'string' ? name : null;
+  }
+
+  private readSeriesList(option: Record<string, unknown>): Record<string, unknown>[] {
+    const raw = option['series'];
+    if (Array.isArray(raw)) {
+      return raw
+        .filter(item => item && typeof item === 'object')
+        .map(item => item as Record<string, unknown>);
+    }
+
+    if (raw && typeof raw === 'object') {
+      return [raw as Record<string, unknown>];
+    }
+
+    return [];
+  }
+
+  private readDataZoomList(option: Record<string, unknown>): Record<string, unknown>[] {
+    const raw = option['dataZoom'];
+    if (Array.isArray(raw)) {
+      return raw
+        .filter(item => item && typeof item === 'object')
+        .map(item => ({ ...(item as Record<string, unknown>) }));
+    }
+
+    if (raw && typeof raw === 'object') {
+      return [{ ...(raw as Record<string, unknown>) }];
+    }
+
+    return [];
+  }
+
+  private asObject(value: unknown): Record<string, unknown> | null {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return { ...(value as Record<string, unknown>) };
+    }
+
+    return null;
+  }
+
+  private compareRawValues(left: string | null | undefined, right: string | null | undefined, direction: 'asc' | 'desc'): number {
+    const normalizedLeft = left ?? '';
+    const normalizedRight = right ?? '';
+
+    const leftNumber = Number(normalizedLeft);
+    const rightNumber = Number(normalizedRight);
+    if (!Number.isNaN(leftNumber) && !Number.isNaN(rightNumber)) {
+      const numericCompare = leftNumber - rightNumber;
+      return direction === 'asc' ? numericCompare : -numericCompare;
+    }
+
+    const leftDate = Date.parse(normalizedLeft);
+    const rightDate = Date.parse(normalizedRight);
+    if (!Number.isNaN(leftDate) && !Number.isNaN(rightDate)) {
+      const dateCompare = leftDate - rightDate;
+      return direction === 'asc' ? dateCompare : -dateCompare;
+    }
+
+    const textCompare = normalizedLeft.localeCompare(normalizedRight, undefined, {
+      sensitivity: 'base',
+      numeric: true
+    });
+
+    return direction === 'asc' ? textCompare : -textCompare;
+  }
+
+  private tryParsePercentage(raw: string | null): number | null {
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = Number(raw);
+    if (Number.isNaN(parsed)) {
+      return null;
+    }
+
+    if (parsed < 0 || parsed > 100) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  private tryParseNumeric(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+  }
+
+  private normalizeVisualizationType(raw: string): VisualizationType {
+    const normalized = raw.trim().toLowerCase();
+
+    switch (normalized) {
+      case 'line':
+        return 'Line';
+      case 'bar':
+        return 'Bar';
+      case 'scatter':
+        return 'Scatter';
+      case 'histogram':
+        return 'Histogram';
+      default:
+        return 'Line';
+    }
+  }
+
+  private ensureAllowedVisualization(value: VisualizationType | ''): VisualizationType | '' {
+    if (!value) {
+      return '';
+    }
+
+    return this.availableVisualizationTypes.includes(value) ? value : '';
+  }
+
+  private syncSelectedMetricsWithAvailability(): void {
+    if (this.selectedMetricsY.length === 0 && this.selectedMetric) {
+      this.selectedMetricsY = [this.selectedMetric];
+    }
+
+    const allowed = new Set(this.availableMetrics);
+    const preserved = this.selectedMetricsY.filter(metric => allowed.has(metric));
+
+    if (preserved.length > 0) {
+      this.selectedMetricsY = preserved;
+      this.selectedMetric = preserved[0];
+      return;
+    }
+
+    if (this.selectedMetric && allowed.has(this.selectedMetric)) {
+      this.selectedMetricsY = [this.selectedMetric];
+      return;
+    }
+
+    if (!this.selectedMetric && this.availableMetrics.length > 0) {
+      this.selectedMetric = this.availableMetrics[0];
+      this.selectedMetricsY = [this.selectedMetric];
+    }
+  }
+
+  private distinctValues(values: string[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    for (const value of values) {
+      const trimmed = value.trim();
+      if (!trimmed || seen.has(trimmed)) {
+        continue;
+      }
+
+      seen.add(trimmed);
+      result.push(trimmed);
+    }
+
+    return result;
+  }
+
+  private cloneOption(option: EChartsOption): EChartsOption {
+    const safeOption = option as Record<string, unknown>;
+    return JSON.parse(JSON.stringify(safeOption)) as EChartsOption;
   }
 }

@@ -31,6 +31,7 @@ import { ApiError } from '../../../../core/models/api-response.model';
 })
 export class RecommendationsPageComponent implements OnInit {
   datasetId: string = '';
+  datasetName: string = '';
   recommendations: ChartRecommendation[] = [];
   filteredRecommendations: ChartRecommendation[] = [];
   loading: boolean = false;
@@ -59,7 +60,24 @@ export class RecommendationsPageComponent implements OnInit {
       return;
     }
 
+    this.loadDatasetName();
     this.loadRecommendations();
+  }
+
+  private loadDatasetName(): void {
+    this.datasetApi.listDatasets().subscribe({
+      next: (response) => {
+        if (!response.success || !response.data) {
+          return;
+        }
+
+        const dataset = response.data.find(item => item.datasetId.toLowerCase() === this.datasetId.toLowerCase());
+        this.datasetName = dataset?.originalFileName || '';
+      },
+      error: (err) => {
+        console.error('Error loading dataset name:', err);
+      }
+    });
   }
 
   loadRecommendations(): void {

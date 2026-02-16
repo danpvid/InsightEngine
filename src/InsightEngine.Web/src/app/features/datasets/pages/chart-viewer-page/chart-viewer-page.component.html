@@ -46,14 +46,14 @@
 
   <app-page-header
     [title]="getChartTitle()"
-    [subtitle]="'Dataset: ' + datasetId"
+    [subtitle]="getDatasetSubtitle()"
     icon="bar_chart">
   </app-page-header>
 
   <app-loading-bar [loading]="loading"></app-loading-bar>
   <app-error-panel [error]="error"></app-error-panel>
 
-  <mat-drawer-container class="chart-layout" *ngIf="!loading && chartOption" autosize>
+  <mat-drawer-container class="chart-layout" *ngIf="chartOption || loading" autosize>
     <mat-drawer-content>
       <div class="chart-column">
         <mat-card class="insight-card" *ngIf="insightSummary">
@@ -102,6 +102,9 @@
                   <button mat-icon-button (click)="exportChartPNG()" matTooltip="Exportar PNG" color="primary">
                     <mat-icon>download</mat-icon>
                   </button>
+                  <button mat-icon-button (click)="openSelectedPointDataModal()" matTooltip="Dados do ponto selecionado" color="primary" [disabled]="!selectedPoint">
+                    <mat-icon>fact_check</mat-icon>
+                  </button>
                   <button mat-icon-button (click)="refreshChart()" matTooltip="Recarregar" color="primary">
                     <mat-icon>refresh</mat-icon>
                   </button>
@@ -109,7 +112,52 @@
               </mat-card-header>
 
               <mat-card-content>
-                <div class="chart-skeleton" *ngIf="loading">
+                <div class="inline-filters">
+                  <div class="inline-filters-header">
+                    <h3>Filtros</h3>
+                    <div class="inline-filters-actions">
+                      <button mat-stroked-button (click)="addFilterRule()" [disabled]="filterRules.length >= 3">
+                        Adicionar filtro
+                      </button>
+                      <button mat-flat-button color="primary" (click)="applyFilterChanges()" [disabled]="!filterPreviewPending">
+                        Aplicar na URL
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="filter-rule" *ngFor="let rule of filterRules; let i = index">
+                    <mat-form-field appearance="outline">
+                      <mat-label>Coluna</mat-label>
+                      <mat-select [(ngModel)]="rule.column" (selectionChange)="onFilterRuleChange()">
+                        <mat-option *ngFor="let col of profileColumns" [value]="col.name">
+                          {{ col.name }}
+                        </mat-option>
+                      </mat-select>
+                    </mat-form-field>
+
+                    <mat-form-field appearance="outline">
+                      <mat-label>Operador</mat-label>
+                      <mat-select [(ngModel)]="rule.operator" (selectionChange)="onFilterRuleChange()">
+                        <mat-option *ngFor="let op of filterOperators" [value]="op.value">
+                          {{ op.label }}
+                        </mat-option>
+                      </mat-select>
+                    </mat-form-field>
+
+                    <mat-form-field appearance="outline">
+                      <mat-label>Valor</mat-label>
+                      <input matInput [(ngModel)]="rule.value" (ngModelChange)="onFilterRuleChange()" />
+                    </mat-form-field>
+
+                    <button mat-icon-button color="warn" (click)="removeFilterRule(i)">
+                      <mat-icon>close</mat-icon>
+                    </button>
+                  </div>
+
+                  <p class="filters-hint">Preview em tempo real sem recarregar a pagina inteira.</p>
+                </div>
+
+                <div class="chart-skeleton" *ngIf="loading && !chartOption">
                   <div class="skeleton-axis-y"></div>
                   <div class="skeleton-bars">
                     <div class="skeleton-bar" *ngFor="let i of [1,2,3,4,5,6,7,8,9,10]" [style.height.%]="50 + (i * 5)"></div>
@@ -118,14 +166,109 @@
                   <div class="skeleton-legend"></div>
                 </div>
 
-                <div class="chart-wrapper" *ngIf="!loading">
+                <div class="chart-wrapper" *ngIf="chartOption">
                   <div
                     echarts
                     [options]="chartOption"
                     (chartInit)="onChartInit($event)"
                     class="chart">
                   </div>
+
+                  <div class="chart-loading-overlay" *ngIf="loading">
+                    Atualizando grafico...
+                  </div>
                 </div>
+
+                <div class="drilldown-panel" *ngIf="pendingDrilldownCategory && supportsDrilldown">
+                  <div class="drilldown-copy">
+                    Drilldown selecionado: <strong>{{ pendingDrilldownCategory }}</strong>
+                  </div>
+                  <div class="drilldown-actions">
+                    <button mat-stroked-button color="primary" (click)="applyDrilldown()">
+                      Aplicar filtro
+                    </button>
+                    <button mat-button (click)="clearDrilldownSelection()">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          </mat-tab>
+
+          <mat-tab label="Dados Brutos">
+            <mat-card class="data-grid-card">
+              <mat-card-header>
+                <mat-card-title>
+                  <mat-icon>table_chart</mat-icon>
+                  Grid interativa
+                </mat-card-title>
+              </mat-card-header>
+
+              <mat-card-content>
+                <div class="data-grid-toolbar">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Buscar na tabela</mat-label>
+                    <input matInput [(ngModel)]="rawDataSearch" placeholder="qualquer coluna" />
+                    <mat-icon matSuffix>search</mat-icon>
+                  </mat-form-field>
+                  <span class="data-grid-count">
+                    {{ filteredRawDataRows.length }} / {{ rawDataRows.length }} linhas
+                  </span>
+                </div>
+
+                <div class="data-grid-sort-panel" *ngIf="rawDataColumns.length > 0">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Ordenar coluna</mat-label>
+                    <mat-select [(ngModel)]="rawSortColumnDraft">
+                      <mat-option *ngFor="let column of rawDataColumns" [value]="column">{{ column }}</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline">
+                    <mat-label>Direcao</mat-label>
+                    <mat-select [(ngModel)]="rawSortDirectionDraft">
+                      <mat-option *ngFor="let direction of sortDirections" [value]="direction">
+                        {{ sortDirectionLabel(direction) }}
+                      </mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <button mat-stroked-button color="primary" (click)="addRawSortRule()" [disabled]="!canAddRawSortRule">
+                    Adicionar ordenacao
+                  </button>
+                  <button mat-button (click)="clearRawSortRules()" [disabled]="rawSortRules.length === 0">
+                    Limpar
+                  </button>
+                </div>
+
+                <div class="sort-rules" *ngIf="rawSortRules.length > 0">
+                  <mat-chip *ngFor="let rule of rawSortRules; let i = index" selected>
+                    {{ i + 1 }}. {{ rule.column }} ({{ sortDirectionLabel(rule.direction) }})
+                    <button mat-icon-button matChipRemove (click)="removeRawSortRule(i)">
+                      <mat-icon>cancel</mat-icon>
+                    </button>
+                  </mat-chip>
+                </div>
+
+                <app-loading-bar [loading]="rawDataLoading"></app-loading-bar>
+                <div class="simulation-error" *ngIf="rawDataError">{{ rawDataError }}</div>
+
+                <div class="data-grid-table-wrapper" *ngIf="rawDataColumns.length > 0; else noDataGrid">
+                  <table mat-table [dataSource]="filteredRawDataRows" class="data-grid-table">
+                    <ng-container *ngFor="let column of rawDataColumns" [matColumnDef]="column">
+                      <th mat-header-cell *matHeaderCellDef>{{ column }}</th>
+                      <td mat-cell *matCellDef="let row">{{ formatGridCell(row, column) }}</td>
+                    </ng-container>
+
+                    <tr mat-header-row *matHeaderRowDef="rawDataColumns"></tr>
+                    <tr mat-row *matRowDef="let row; columns: rawDataColumns;"></tr>
+                  </table>
+                </div>
+
+                <ng-template #noDataGrid>
+                  <p class="data-grid-empty">Dados brutos indisponiveis para este dataset.</p>
+                </ng-template>
               </mat-card-content>
             </mat-card>
           </mat-tab>
@@ -297,6 +440,21 @@
           <mat-divider></mat-divider>
 
           <div class="controls-section">
+            <h3>Visualizacao</h3>
+            <mat-form-field appearance="outline">
+              <mat-label>Tipo</mat-label>
+              <mat-select [(ngModel)]="selectedVisualizationType" (selectionChange)="onVisualizationTypeChange()">
+                <mat-option [value]="''">Recomendado ({{ currentBaseChartType }})</mat-option>
+                <mat-option *ngFor="let chartType of availableVisualizationTypes" [value]="chartType">
+                  {{ chartType }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+
+          <mat-divider></mat-divider>
+
+          <div class="controls-section" *ngIf="supportsAggregationControl">
             <h3>Agregacao</h3>
             <mat-form-field appearance="outline">
               <mat-label>Tipo</mat-label>
@@ -308,9 +466,9 @@
             </mat-form-field>
           </div>
 
-          <mat-divider></mat-divider>
+          <mat-divider *ngIf="supportsAggregationControl"></mat-divider>
 
-          <div class="controls-section">
+          <div class="controls-section" *ngIf="supportsTimeBinControl">
             <h3>Periodo</h3>
             <mat-form-field appearance="outline">
               <mat-label>Intervalo</mat-label>
@@ -322,12 +480,12 @@
             </mat-form-field>
           </div>
 
-          <mat-divider></mat-divider>
+          <mat-divider *ngIf="supportsTimeBinControl"></mat-divider>
 
-          <div class="controls-section">
+          <div class="controls-section" *ngIf="supportsMetricControl">
             <h3>Metrica Y</h3>
             <mat-form-field appearance="outline">
-              <mat-label>Coluna</mat-label>
+              <mat-label>Metrica principal</mat-label>
               <mat-select [(ngModel)]="selectedMetric" (selectionChange)="onMetricChange()" [disabled]="availableMetrics.length === 0">
                 <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
                   {{ metric }}
@@ -337,11 +495,37 @@
                 Baseado na recomendacao
               </mat-hint>
             </mat-form-field>
+
+            <div class="multi-metric" *ngIf="supportsMultiMetricControl">
+              <div class="multi-metric-builder">
+                <mat-form-field appearance="outline">
+                  <mat-label>Adicionar metrica</mat-label>
+                  <mat-select [(ngModel)]="metricToAdd">
+                    <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
+                      {{ metric }}
+                    </mat-option>
+                  </mat-select>
+                </mat-form-field>
+
+                <button mat-stroked-button color="primary" (click)="addMetricY()" [disabled]="!canAddMetric">
+                  Adicionar
+                </button>
+              </div>
+
+              <div class="selected-metrics" *ngIf="selectedMetricsY.length > 0">
+                <mat-chip *ngFor="let metric of selectedMetricsY" selected>
+                  {{ metric }}
+                  <button mat-icon-button matChipRemove (click)="removeMetricY(metric)" [disabled]="selectedMetricsY.length <= 1 && metric === selectedMetric">
+                    <mat-icon>cancel</mat-icon>
+                  </button>
+                </mat-chip>
+              </div>
+            </div>
           </div>
 
-          <mat-divider></mat-divider>
+          <mat-divider *ngIf="supportsMetricControl"></mat-divider>
 
-          <div class="controls-section">
+          <div class="controls-section" *ngIf="supportsGroupByControl">
             <h3>Group By</h3>
             <mat-form-field appearance="outline">
               <mat-label>Coluna</mat-label>
@@ -357,62 +541,57 @@
             </mat-form-field>
           </div>
 
-          <mat-divider></mat-divider>
-
-          <div class="controls-section filters-section">
-            <div class="filters-header">
-              <h3>Filtros</h3>
-              <button mat-stroked-button (click)="addFilterRule()" [disabled]="filterRules.length >= 3">
-                Adicionar
-              </button>
-            </div>
-
-            <div class="filter-rule" *ngFor="let rule of filterRules; let i = index">
-              <mat-form-field appearance="outline">
-                <mat-label>Coluna</mat-label>
-                <mat-select [(ngModel)]="rule.column" (selectionChange)="onFilterRuleChange()">
-                  <mat-option *ngFor="let col of profileColumns" [value]="col.name">
-                    {{ col.name }}
-                  </mat-option>
-                </mat-select>
-              </mat-form-field>
-
-              <mat-form-field appearance="outline">
-                <mat-label>Op</mat-label>
-                <mat-select [(ngModel)]="rule.operator" (selectionChange)="onFilterRuleChange()">
-                  <mat-option *ngFor="let op of filterOperators" [value]="op.value">
-                    {{ op.label }}
-                  </mat-option>
-                </mat-select>
-              </mat-form-field>
-
-              <mat-form-field appearance="outline" class="filter-value">
-                <mat-label>Valor</mat-label>
-                <input matInput [(ngModel)]="rule.value" (ngModelChange)="onFilterRuleChange()" />
-              </mat-form-field>
-
-              <button mat-icon-button color="warn" (click)="removeFilterRule(i)">
-                <mat-icon>close</mat-icon>
-              </button>
-            </div>
-
-            <p class="filters-hint">
-              Use v1,v2 para "in" e "between".
-            </p>
-          </div>
-
-          <mat-divider></mat-divider>
+          <mat-divider *ngIf="supportsGroupByControl"></mat-divider>
 
           <div class="controls-info">
             <mat-icon>info</mat-icon>
             <p>
-              Os mesmos filtros podem ser reaproveitados na aba de simulacao.
+              Filtros ficam no topo do grafico e atualizam so a visualizacao.
             </p>
           </div>
         </mat-card-content>
       </mat-card>
     </mat-drawer>
   </mat-drawer-container>
+
+  <div class="point-modal-backdrop" *ngIf="selectedPointModalOpen" (click)="closeSelectedPointDataModal()">
+    <mat-card class="point-modal" (click)="$event.stopPropagation()">
+      <div class="point-modal-header">
+        <h3>Dados do ponto selecionado</h3>
+        <button mat-icon-button (click)="closeSelectedPointDataModal()">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <div class="point-modal-summary" *ngIf="selectedPoint">
+        <span><strong>Serie:</strong> {{ selectedPoint['series'] }}</span>
+        <span><strong>X:</strong> {{ selectedPoint['x'] }}</span>
+        <span><strong>Y:</strong> {{ selectedPoint['y'] }}</span>
+      </div>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Buscar nos dados do ponto</mat-label>
+        <input matInput [(ngModel)]="pointDataSearch" placeholder="filtro textual" />
+        <mat-icon matSuffix>search</mat-icon>
+      </mat-form-field>
+
+      <div class="point-modal-table-wrapper" *ngIf="pointDataColumns.length > 0; else noPointRows">
+        <table mat-table [dataSource]="filteredPointDataRows" class="point-modal-table">
+          <ng-container *ngFor="let column of pointDataColumns" [matColumnDef]="column">
+            <th mat-header-cell *matHeaderCellDef>{{ column }}</th>
+            <td mat-cell *matCellDef="let row">{{ formatGridCell(row, column) }}</td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="pointDataColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: pointDataColumns;"></tr>
+        </table>
+      </div>
+
+      <ng-template #noPointRows>
+        <p class="data-grid-empty">Sem linhas correlacionadas para o ponto selecionado.</p>
+      </ng-template>
+    </mat-card>
+  </div>
 
   <mat-card *ngIf="!loading && chartMeta" class="meta-card">
     <mat-card-header>
@@ -474,7 +653,10 @@
         <ul>
           <li>Passe o mouse sobre os elementos para ver detalhes</li>
           <li>Clique nos itens da legenda para mostrar ou ocultar series</li>
-          <li>Use a roda do mouse para zoom quando disponivel</li>
+          <li>Use data zoom (toolbox) para selecionar o periodo com drag</li>
+          <li>Clique em barras para drilldown automatico por categoria/range</li>
+          <li>Use "Dados do ponto" para abrir detalhes em modal</li>
+          <li>Aba Dados Brutos permite busca e ordenacao multicoluna</li>
           <li>Use a aba Simulacao para comparar baseline e cenario</li>
         </ul>
       </mat-card-content>
