@@ -10,6 +10,7 @@ import { ErrorPanelComponent } from '../../../../shared/components/error-panel/e
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { ApiError } from '../../../../core/models/api-response.model';
 import { DataSetSummary } from '../../../../core/models/dataset.model';
+import { RuntimeConfig } from '../../../../core/models/runtime-config.model';
 
 @Component({
   selector: 'app-dataset-upload-page',
@@ -37,6 +38,8 @@ export class DatasetUploadPageComponent implements OnInit {
 
   // Upload progress
   uploadProgress: number = 0;
+  runtimeConfig: RuntimeConfig | null = null;
+  uploadMaxBytes: number = 20 * 1024 * 1024;
 
   constructor(
     private datasetApi: DatasetApiService,
@@ -45,7 +48,24 @@ export class DatasetUploadPageComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    this.loadRuntimeConfig();
     this.loadDatasets();
+  }
+
+  loadRuntimeConfig(): void {
+    this.datasetApi.getRuntimeConfig().subscribe({
+      next: (response) => {
+        if (!response.success || !response.data) {
+          return;
+        }
+
+        this.runtimeConfig = response.data;
+        this.uploadMaxBytes = response.data.uploadMaxBytes || this.uploadMaxBytes;
+      },
+      error: (err) => {
+        console.error('Error loading runtime config:', err);
+      }
+    });
   }
 
   loadDatasets(): void {
@@ -107,12 +127,11 @@ export class DatasetUploadPageComponent implements OnInit {
       return;
     }
 
-    // Validate file size (max 20MB)
-    const maxSize = 20 * 1024 * 1024;
-    if (file.size > maxSize) {
+    // Validate file size using backend runtime config
+    if (file.size > this.uploadMaxBytes) {
       this.error = {
         code: 'FILE_TOO_LARGE',
-        message: 'O arquivo é muito grande. Tamanho máximo: 20MB.'
+        message: `O arquivo é muito grande. Tamanho máximo: ${this.getUploadMaxLabel()}.`
       };
       this.selectedFile = null;
       return;
@@ -204,5 +223,14 @@ export class DatasetUploadPageComponent implements OnInit {
       hour: '2-digit',
       minute: '2-digit'
     });
+  }
+
+  getUploadMaxLabel(): string {
+    if (this.runtimeConfig?.uploadMaxMb) {
+      return `${this.runtimeConfig.uploadMaxMb.toFixed(0)}MB`;
+    }
+
+    const mb = this.uploadMaxBytes / (1024 * 1024);
+    return `${mb.toFixed(0)}MB`;
   }
 }

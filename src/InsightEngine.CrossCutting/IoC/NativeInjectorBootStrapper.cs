@@ -13,6 +13,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System;
 
 namespace InsightEngine.CrossCutting.IoC;
 
@@ -20,6 +21,10 @@ public static class NativeInjectorBootStrapper
 {
     public static void RegisterServices(IServiceCollection services, IConfiguration configuration)
     {
+        var runtimeSettings = configuration
+            .GetSection(InsightEngineSettings.SectionName)
+            .Get<InsightEngineSettings>() ?? new InsightEngineSettings();
+
         // Domain - Notifications
         services.AddScoped<IDomainNotificationHandler, DomainNotificationHandler>();
 
@@ -27,6 +32,25 @@ public static class NativeInjectorBootStrapper
         services.Configure<ChartExecutionSettings>(configuration.GetSection("ChartExecution"));
         services.Configure<ChartCacheSettings>(configuration.GetSection("ChartCache"));
         services.Configure<ScenarioSimulationSettings>(configuration.GetSection("ScenarioSimulation"));
+        services.PostConfigure<ChartExecutionSettings>(options =>
+        {
+            options.ScatterMaxPoints = runtimeSettings.ScatterMaxPoints;
+            options.HistogramMinBins = runtimeSettings.HistogramBinsMin;
+            options.HistogramMaxBins = runtimeSettings.HistogramBinsMax;
+            options.TimeSeriesMaxPoints = runtimeSettings.QueryResultMaxRows;
+            if (options.HistogramBins < options.HistogramMinBins || options.HistogramBins > options.HistogramMaxBins)
+            {
+                options.HistogramBins = Math.Clamp(options.HistogramBins, options.HistogramMinBins, options.HistogramMaxBins);
+            }
+        });
+        services.PostConfigure<ChartCacheSettings>(options =>
+        {
+            options.TtlSeconds = runtimeSettings.CacheTtlSeconds;
+        });
+        services.PostConfigure<ScenarioSimulationSettings>(options =>
+        {
+            options.MaxRowsReturned = runtimeSettings.QueryResultMaxRows;
+        });
 
         // Infra - Data
         services.AddDbContext<InsightEngineContext>(options =>

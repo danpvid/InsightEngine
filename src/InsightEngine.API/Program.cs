@@ -9,17 +9,20 @@ using Microsoft.Extensions.Options;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
+var runtimeSettingsSection = builder.Configuration.GetSection(InsightEngineSettings.SectionName);
+var runtimeSettings = runtimeSettingsSection.Get<InsightEngineSettings>() ?? new InsightEngineSettings();
+builder.Services.Configure<InsightEngineSettings>(runtimeSettingsSection);
 
-// Configurar Kestrel para suportar arquivos grandes
+// Configurar Kestrel para suportar uploads com limite centralizado
 builder.Services.Configure<KestrelServerOptions>(options =>
 {
-    options.Limits.MaxRequestBodySize = 20 * 1024 * 1024; // 20MB (MVP)
+    options.Limits.MaxRequestBodySize = runtimeSettings.UploadMaxBytes;
 });
 
-// Configurar Form Options para uploads grandes
+// Configurar Form Options para uploads com limite centralizado
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 20 * 1024 * 1024; // 20MB (MVP)
+    options.MultipartBodyLengthLimit = runtimeSettings.UploadMaxBytes;
     options.ValueLengthLimit = int.MaxValue;
     options.MultipartHeadersLengthLimit = int.MaxValue;
 });
@@ -81,7 +84,11 @@ builder.Services.AddVersionedApiExplorer(options =>
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
 
 // Configure Upload Settings
-builder.Services.Configure<UploadSettings>(builder.Configuration.GetSection("UploadSettings"));
+builder.Services.Configure<UploadSettings>(options =>
+{
+    builder.Configuration.GetSection("UploadSettings").Bind(options);
+    options.MaxFileSizeBytes = runtimeSettings.UploadMaxBytes;
+});
 
 // Configure JWT Authentication
 builder.Services.AddJwtAuthentication(builder.Configuration);

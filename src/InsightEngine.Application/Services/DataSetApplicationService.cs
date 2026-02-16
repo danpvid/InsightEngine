@@ -33,11 +33,16 @@ public class DataSetApplicationService : IDataSetApplicationService
         _scenarioSimulationService = scenarioSimulationService;
     }
 
-    public async Task<Result<UploadDataSetResponse>> UploadAsync(IFormFile file, CancellationToken cancellationToken = default)
+    public async Task<Result<UploadDataSetResponse>> UploadAsync(
+        IFormFile file,
+        long? maxFileSizeBytes = null,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Uploading file: {FileName}, Size: {Size} bytes", file.FileName, file.Length);
 
-        var command = new UploadDataSetCommand(file);
+        var command = maxFileSizeBytes.HasValue
+            ? new UploadDataSetCommand(file, maxFileSizeBytes.Value)
+            : new UploadDataSetCommand(file);
         var result = await _mediator.Send(command, cancellationToken);
 
         if (result.IsSuccess)

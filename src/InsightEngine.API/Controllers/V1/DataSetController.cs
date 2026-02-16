@@ -4,6 +4,7 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Core.Notifications;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Settings;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -28,9 +29,7 @@ public class DataSetController : BaseController
     private readonly IFileStorageService _fileStorageService;
     private readonly ILogger<DataSetController> _logger;
     private readonly IWebHostEnvironment _environment;
-
-    // Limite de 20MB por arquivo (MVP)
-    private const long MaxFileSize = 20L * 1024 * 1024;
+    private readonly InsightEngineSettings _runtimeSettings;
 
     public DataSetController(
         IDataSetApplicationService dataSetApplicationService,
@@ -38,13 +37,15 @@ public class DataSetController : BaseController
         IDomainNotificationHandler notificationHandler,
         IMediator mediator,
         ILogger<DataSetController> logger,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        IOptions<InsightEngineSettings> runtimeSettings)
         : base(notificationHandler, mediator)
     {
         _dataSetApplicationService = dataSetApplicationService;
         _fileStorageService = fileStorageService;
         _logger = logger;
         _environment = environment;
+        _runtimeSettings = runtimeSettings.Value;
     }
 
     /// <summary>
@@ -75,9 +76,6 @@ public class DataSetController : BaseController
     /// - createdAtUtc: Data/hora UTC do upload
     /// </remarks>
     [HttpPost]
-    [RequestSizeLimit(MaxFileSize)]
-    [RequestFormLimits(MultipartBodyLengthLimit = MaxFileSize)]
-    [DisableRequestSizeLimit] // Para Kestrel
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
@@ -86,7 +84,23 @@ public class DataSetController : BaseController
     {
         try
         {
-            var result = await _dataSetApplicationService.UploadAsync(file);
+            if (file == null || file.Length == 0)
+            {
+                return ResponseResult(Result.Failure<object>("File is required."));
+            }
+
+            if (file.Length > _runtimeSettings.UploadMaxBytes)
+            {
+                var maxMb = Math.Round(_runtimeSettings.UploadMaxBytes / (1024d * 1024d), 2);
+                var traceId = GetTraceId();
+                var errorResponse = ApiErrorResponse.FromMessage(
+                    $"File size exceeds the maximum allowed size of {maxMb}MB.",
+                    traceId,
+                    "payload_too_large");
+                return StatusCode(StatusCodes.Status413PayloadTooLarge, errorResponse);
+            }
+
+            var result = await _dataSetApplicationService.UploadAsync(file, _runtimeSettings.UploadMaxBytes);
 
             if (!result.IsSuccess)
             {
@@ -303,7 +317,7 @@ public class DataSetController : BaseController
         }
 
         var effectivePage = Math.Max(page ?? 1, 1);
-        var effectivePageSize = Math.Clamp(pageSize ?? 100, 1, 1000);
+        var effectivePageSize = Math.Clamp(pageSize ?? 100, 1, _runtimeSettings.QueryResultMaxRows);
 
         try
         {
@@ -387,6 +401,7 @@ OFFSET {offset};
             using (var countCommand = connection.CreateCommand())
             {
                 countCommand.CommandText = countSql;
+                countCommand.CommandTimeout = Math.Max(1, _runtimeSettings.DefaultTimeoutSeconds);
                 var countResult = countCommand.ExecuteScalar();
                 rowCountTotal = Convert.ToInt64(countResult ?? 0);
             }
@@ -395,6 +410,7 @@ OFFSET {offset};
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = dataSql;
+                command.CommandTimeout = Math.Max(1, _runtimeSettings.DefaultTimeoutSeconds);
                 using var reader = command.ExecuteReader();
 
                 while (reader.Read())
@@ -440,6 +456,26 @@ OFFSET {offset};
                 error = ex.Message
             });
         }
+    }
+
+    [HttpGet("runtime-config")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult GetRuntimeConfig()
+    {
+        var traceId = GetTraceId();
+        var payload = new RuntimeConfigResponse
+        {
+            UploadMaxBytes = _runtimeSettings.UploadMaxBytes,
+            UploadMaxMb = Math.Round(_runtimeSettings.UploadMaxBytes / (1024d * 1024d), 2),
+            ScatterMaxPoints = _runtimeSettings.ScatterMaxPoints,
+            HistogramBinsMin = _runtimeSettings.HistogramBinsMin,
+            HistogramBinsMax = _runtimeSettings.HistogramBinsMax,
+            QueryResultMaxRows = _runtimeSettings.QueryResultMaxRows,
+            CacheTtlSeconds = _runtimeSettings.CacheTtlSeconds,
+            DefaultTimeoutSeconds = _runtimeSettings.DefaultTimeoutSeconds
+        };
+
+        return Ok(new ApiResponse<RuntimeConfigResponse>(payload, traceId));
     }
 
     /// <summary>

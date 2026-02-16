@@ -45,7 +45,7 @@
 
           <p class="drag-hint">
             <mat-icon>info</mat-icon>
-            Apenas arquivos CSV até 20MB
+            Apenas arquivos CSV até {{ getUploadMaxLabel() }}
           </p>
         </div>
 
@@ -108,7 +108,7 @@
             <p><strong>Requisitos:</strong></p>
             <ul>
               <li>Formato: CSV (valores separados por vírgula)</li>
-              <li>Tamanho máximo: 20MB</li>
+              <li>Tamanho máximo: {{ getUploadMaxLabel() }}</li>
               <li>Primeira linha deve conter os nomes das colunas</li>
               <li>Codificação recomendada: UTF-8</li>
             </ul>

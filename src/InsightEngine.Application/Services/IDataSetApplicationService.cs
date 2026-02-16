@@ -15,7 +15,10 @@ public interface IDataSetApplicationService
     /// <summary>
     /// Upload a CSV dataset file
     /// </summary>
-    Task<Result<UploadDataSetResponse>> UploadAsync(IFormFile file, CancellationToken cancellationToken = default);
+    Task<Result<UploadDataSetResponse>> UploadAsync(
+        IFormFile file,
+        long? maxFileSizeBytes = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get profile analysis for a dataset

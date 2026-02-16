@@ -7,6 +7,7 @@ import { ApiResponse } from '../models/api-response.model';
 import { UploadDatasetResponse, DataSetSummary, DatasetProfile, RawDatasetRowsResponse } from '../models/dataset.model';
 import { RecommendationsResponse } from '../models/recommendation.model';
 import { ChartResponse, ScenarioSimulationRequest, ScenarioSimulationResponse } from '../models/chart.model';
+import { RuntimeConfig } from '../models/runtime-config.model';
 
 export interface UploadProgress {
   progress: number;
@@ -85,6 +86,12 @@ export class DatasetApiService {
   getProfile(datasetId: string): Observable<ApiResponse<DatasetProfile>> {
     return this.http.get<ApiResponse<DatasetProfile>>(
       `${this.baseUrl}/api/v1/datasets/${datasetId}/profile`
+    );
+  }
+
+  getRuntimeConfig(): Observable<ApiResponse<RuntimeConfig>> {
+    return this.http.get<ApiResponse<RuntimeConfig>>(
+      `${this.baseUrl}/api/v1/datasets/runtime-config`
     );
   }
 
