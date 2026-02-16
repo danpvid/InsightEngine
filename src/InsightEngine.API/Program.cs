@@ -4,6 +4,7 @@ using InsightEngine.API.Models;
 using InsightEngine.API.Services;
 using InsightEngine.CrossCutting.IoC;
 using InsightEngine.Domain.Settings;
+using DuckDB.NET.Data;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
@@ -225,6 +226,50 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapGet("/health", () =>
+{
+    return Results.Ok(new
+    {
+        status = "ok",
+        service = "InsightEngine.API",
+        timestampUtc = DateTime.UtcNow
+    });
+});
+
+app.MapGet("/health/ready", (ILogger<Program> logger) =>
+{
+    try
+    {
+        using var connection = new DuckDBConnection("DataSource=:memory:");
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1;";
+        var result = Convert.ToInt32(command.ExecuteScalar() ?? 0);
+        if (result != 1)
+        {
+            throw new InvalidOperationException("DuckDB did not return expected value.");
+        }
+
+        return Results.Ok(new
+        {
+            status = "ready",
+            duckDb = "ok",
+            timestampUtc = DateTime.UtcNow
+        });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Health readiness check failed.");
+        return Results.Json(new
+        {
+            status = "unhealthy",
+            duckDb = "error",
+            timestampUtc = DateTime.UtcNow
+        }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
 
 app.Run();
 
