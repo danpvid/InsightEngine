@@ -2,6 +2,7 @@ using FluentValidation;
 using InsightEngine.Application.Services;
 using InsightEngine.Domain.Behaviors;
 using InsightEngine.Domain.Core.Notifications;
+using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Settings;
 using InsightEngine.Infra.Data.Configuration;
@@ -13,6 +14,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using System;
 using System.IO;
 
@@ -28,7 +30,6 @@ public static class NativeInjectorBootStrapper
         var metadataPersistenceSettings = configuration
             .GetSection(MetadataPersistenceSettings.SectionName)
             .Get<MetadataPersistenceSettings>() ?? new MetadataPersistenceSettings();
-
         // Domain - Notifications
         services.AddScoped<IDomainNotificationHandler, DomainNotificationHandler>();
 
@@ -37,6 +38,7 @@ public static class NativeInjectorBootStrapper
         services.Configure<ChartCacheSettings>(configuration.GetSection("ChartCache"));
         services.Configure<ScenarioSimulationSettings>(configuration.GetSection("ScenarioSimulation"));
         services.Configure<MetadataPersistenceSettings>(configuration.GetSection(MetadataPersistenceSettings.SectionName));
+        services.Configure<LLMSettings>(configuration.GetSection(LLMSettings.SectionName));
         services.PostConfigure<ChartExecutionSettings>(options =>
         {
             options.ScatterMaxPoints = runtimeSettings.ScatterMaxPoints;
@@ -80,6 +82,19 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<IScenarioSimulationService, ScenarioSimulationService>();
         services.AddScoped<IDataSetCleanupService, DataSetCleanupService>();
         services.AddScoped<InsightEngine.Domain.Services.RecommendationEngine>();
+        services.AddHttpClient<LocalHttpLLMClient>();
+        services.AddScoped<NullLLMClient>();
+        services.AddScoped<OpenAiLLMClient>();
+        services.AddScoped<ILLMClient>(sp =>
+        {
+            var currentSettings = sp.GetRequiredService<IOptionsMonitor<LLMSettings>>().CurrentValue;
+            return currentSettings.Provider switch
+            {
+                LLMProvider.LocalHttp => sp.GetRequiredService<LocalHttpLLMClient>(),
+                LLMProvider.OpenAI => sp.GetRequiredService<OpenAiLLMClient>(),
+                _ => sp.GetRequiredService<NullLLMClient>()
+            };
+        });
 
         services.AddMemoryCache();
         services.AddSingleton<IChartQueryCache, ChartQueryCacheService>();
