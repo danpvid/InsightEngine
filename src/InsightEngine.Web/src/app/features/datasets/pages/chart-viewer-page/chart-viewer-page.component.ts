@@ -21,11 +21,14 @@ import {
   AiGenerationMeta,
   AiInsightSummary,
   ChartMeta,
+  ChartPercentilesMeta,
+  ChartViewMeta,
   DeepInsightsResponse,
   DeepInsightsRequest,
   EvidenceFact,
   ExplainChartResponse,
   InsightSummary,
+  PercentileKind,
   ScenarioDeltaPoint,
   ScenarioFilterRequest,
   ScenarioOperationRequest,
@@ -35,13 +38,28 @@ import {
 } from '../../../../core/models/chart.model';
 import { ChartRecommendation } from '../../../../core/models/recommendation.model';
 import { ApiError } from '../../../../core/models/api-response.model';
-import { DataSetSummary, DatasetColumnProfile, RawDatasetRow, RawDatasetRowsResponse } from '../../../../core/models/dataset.model';
+import {
+  DataSetSummary,
+  DatasetColumnProfile,
+  RawDatasetRow,
+  RawDatasetRowsResponse,
+  RawDistinctValueStat,
+  RawFieldStats,
+  RawRangeValueStat
+} from '../../../../core/models/dataset.model';
 import { environment } from '../../../../../environments/environment';
 
 interface FilterRule {
   column: string;
   operator: string;
   value: string;
+  logicalOperator: 'And' | 'Or';
+}
+
+interface DrilldownTrailItem {
+  label: string;
+  filtersState: FilterRule[];
+  activeFilter: FilterRule;
 }
 
 interface SimulationOperationRule {
@@ -63,6 +81,10 @@ interface ChartLoadOptions {
   yColumn?: string;
   groupBy?: string;
   filters?: string[];
+  view?: 'base' | 'percentile';
+  percentile?: PercentileKind;
+  mode?: 'bucket' | 'overall';
+  percentileTarget?: 'y';
 }
 
 interface MetricChartResult {
@@ -72,6 +94,22 @@ interface MetricChartResult {
 
 interface ChartTableRow {
   [key: string]: string | number | null;
+}
+
+interface RecommendedChartState {
+  aggregation: string;
+  timeBin: string;
+  metric: string;
+}
+
+interface RawFieldMetric {
+  name: string;
+  inferredType: string;
+  distinctCountProfile: number;
+  distinctCountPage: number;
+  nullCountPage: number;
+  nullRatePage: number;
+  topValuesProfile: RawDistinctValueStat[];
 }
 
 @Component({
@@ -120,19 +158,28 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   askPlan: AskAnalysisPlanResponse | null = null;
   askReasoningExpanded: boolean = false;
   loading: boolean = false;
+  chartRefreshing: boolean = false;
   error: ApiError | null = null;
 
   private echartsInstance?: ECharts;
   private simulationEchartsInstance?: ECharts;
+  private lastSeriesDrilldownAt: number = 0;
+  private pendingDrilldownRollback: {
+    filters: FilterRule[];
+    trail: DrilldownTrailItem[];
+    baseFilters: FilterRule[] | null;
+  } | null = null;
   private filterTimer?: number;
   private rawSearchTimer?: number;
   private zoomTimer?: number;
   private chartLoadVersion: number = 0;
+  private baseChartOptionSnapshot: EChartsOption | null = null;
 
   recommendations: ChartRecommendation[] = [];
   currentRecommendation: ChartRecommendation | null = null;
   currentIndex: number = -1;
   loadingRecommendations: boolean = false;
+  recommendedState: RecommendedChartState | null = null;
 
   navigationSearch: string = '';
   keepNavigationContext: boolean = true;
@@ -142,15 +189,26 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   availableMetrics: string[] = [];
   availableGroupBy: string[] = [];
   profileColumns: DatasetColumnProfile[] = [];
+  readonly maxGroupByDistinct: number = 50;
 
   filterOperators = [
     { value: 'Eq', label: '=' },
     { value: 'NotEq', label: '!=' },
+    { value: 'Gt', label: '>' },
+    { value: 'Gte', label: '>=' },
+    { value: 'Lt', label: '<' },
+    { value: 'Lte', label: '<=' },
     { value: 'In', label: 'in' },
     { value: 'Between', label: 'between' },
     { value: 'Contains', label: 'contains' }
   ];
+  readonly filterLogicalOperators: Array<{ value: 'And' | 'Or'; label: string }> = [
+    { value: 'And', label: 'AND' },
+    { value: 'Or', label: 'OR' }
+  ];
   filterRules: FilterRule[] = [];
+  drilldownTrail: DrilldownTrailItem[] = [];
+  private drilldownBaseFilters: FilterRule[] | null = null;
 
   selectedAggregation: string = 'Sum';
   selectedTimeBin: string = 'Month';
@@ -162,6 +220,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   zoomStart: number | null = null;
   zoomEnd: number | null = null;
   pendingDrilldownCategory: string | null = null;
+  drilldownLoading: boolean = false;
+  percentileView: 'base' | 'percentile' = 'base';
+  selectedPercentile: PercentileKind | null = null;
+  selectedPercentileMode: 'bucket' | 'overall' | '' = '';
   pointDataColumns: string[] = [];
   pointDataRows: ChartTableRow[] = [];
   pointDataSearch: string = '';
@@ -180,6 +242,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   readonly rawPageSizeOptions: number[] = [50, 100, 250, 500];
   rawSortColumn: string = '';
   rawSortDirection: 'asc' | 'desc' = 'asc';
+  rawFieldMetrics: RawFieldMetric[] = [];
+  rawFieldStats: RawFieldStats | null = null;
+  rawFieldSearch: string = '';
+  selectedRawFieldName: string = '';
 
   filterPreviewPending: boolean = false;
 
@@ -204,6 +270,38 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   get isCached(): boolean {
     return !!this.chartMeta?.cacheHit;
+  }
+
+  get percentilesMeta(): ChartPercentilesMeta | null {
+    return this.chartMeta?.percentiles || null;
+  }
+
+  get chartViewMeta(): ChartViewMeta | null {
+    return this.chartMeta?.view || null;
+  }
+
+  get canUsePercentiles(): boolean {
+    const meta = this.percentilesMeta;
+    return !!meta?.supported && meta.mode !== 'NotApplicable';
+  }
+
+  get percentileKinds(): PercentileKind[] {
+    const available = this.percentilesMeta?.available;
+    if (available && available.length > 0) {
+      return available;
+    }
+
+    return ['P5', 'P10', 'P90', 'P95'];
+  }
+
+  get activePercentile(): PercentileKind | null {
+    return this.chartViewMeta?.kind === 'Percentile'
+      ? (this.chartViewMeta.percentileKind || this.selectedPercentile)
+      : null;
+  }
+
+  get isPercentileView(): boolean {
+    return this.chartViewMeta?.kind === 'Percentile';
   }
 
   get hasPrevious(): boolean {
@@ -280,7 +378,33 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   get supportsDrilldown(): boolean {
-    return this.currentDisplayChartType === 'Bar';
+    return this.currentDisplayChartType === 'Bar' || this.currentDisplayChartType === 'Histogram';
+  }
+
+  get visibleDrilldownTrail(): DrilldownTrailItem[] {
+    if (!this.isDrilldownTrailInSync()) {
+      return [];
+    }
+
+    return this.drilldownTrail;
+  }
+
+  get canZoomOutDrilldown(): boolean {
+    return this.visibleDrilldownTrail.length > 0;
+  }
+
+  get activeDrilldownFilterLabel(): string | null {
+    const trail = this.visibleDrilldownTrail;
+    if (trail.length === 0) {
+      return null;
+    }
+
+    const activeFilter = trail[trail.length - 1].activeFilter;
+    if (!activeFilter) {
+      return null;
+    }
+
+    return `${activeFilter.column} ${this.formatFilterOperator(activeFilter.operator)} ${activeFilter.value}`;
   }
 
   get canAddMetric(): boolean {
@@ -307,6 +431,42 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     return this.deepInsights?.evidencePack?.facts || [];
   }
 
+  get filteredRawFieldMetrics(): RawFieldMetric[] {
+    const term = this.rawFieldSearch.trim().toLowerCase();
+    if (!term) {
+      return this.rawFieldMetrics;
+    }
+
+    return this.rawFieldMetrics.filter(field => {
+      const candidate = `${field.name} ${field.inferredType}`.toLowerCase();
+      return candidate.includes(term);
+    });
+  }
+
+  get selectedRawFieldMetric(): RawFieldMetric | null {
+    if (!this.selectedRawFieldName) {
+      return this.rawFieldMetrics[0] || null;
+    }
+
+    return this.rawFieldMetrics.find(field => field.name === this.selectedRawFieldName) || this.rawFieldMetrics[0] || null;
+  }
+
+  get selectedRawTopValues(): RawDistinctValueStat[] {
+    if (this.rawFieldStats && this.rawFieldStats.column === this.selectedRawFieldName) {
+      return this.rawFieldStats.topValues || [];
+    }
+
+    return this.selectedRawFieldMetric?.topValuesProfile || [];
+  }
+
+  get selectedRawTopRanges(): RawRangeValueStat[] {
+    if (this.rawFieldStats && this.rawFieldStats.column === this.selectedRawFieldName) {
+      return this.rawFieldStats.topRanges || [];
+    }
+
+    return [];
+  }
+
   get topSimulationDeltas(): ScenarioDeltaPoint[] {
     if (!this.simulationResult?.deltaSeries?.length) {
       return [];
@@ -327,15 +487,25 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   ) {}
 
   get currentLanguage(): string {
+    const firstSegment = this.router.url
+      .split('?')[0]
+      .split('#')[0]
+      .split('/')
+      .filter(segment => segment.length > 0)[0];
+
+    if (this.languageService.isSupportedLanguage(firstSegment)) {
+      return firstSegment;
+    }
+
     return this.languageService.currentLanguage;
   }
 
-  get newDatasetLink(): string {
-    return `/${this.currentLanguage}/datasets/new`;
+  get newDatasetLink(): string[] {
+    return ['/', this.currentLanguage, 'datasets', 'new'];
   }
 
-  get recommendationsLink(): string {
-    return `/${this.currentLanguage}/datasets/${this.datasetId}/recommendations`;
+  get recommendationsLink(): string[] {
+    return ['/', this.currentLanguage, 'datasets', this.datasetId, 'recommendations'];
   }
 
   @HostListener('window:resize')
@@ -351,7 +521,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     if (!this.datasetId || !this.recommendationId) {
       this.error = {
         code: 'MISSING_PARAMETERS',
-        message: 'Parametros necessarios nao fornecidos.'
+        message: 'Parâmetros necessários não fornecidos.'
       };
       return;
     }
@@ -370,6 +540,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     const filtersFromUrl = queryParams.getAll('filters');
     const zoomStartFromUrl = queryParams.get('zoomStart');
     const zoomEndFromUrl = queryParams.get('zoomEnd');
+    const viewFromUrl = (queryParams.get('view') || '').toLowerCase();
+    const percentileFromUrl = (queryParams.get('percentile') || '').toUpperCase();
+    const modeFromUrl = (queryParams.get('mode') || '').toLowerCase();
 
     if (groupByFromUrl) {
       this.selectedGroupBy = groupByFromUrl;
@@ -390,6 +563,20 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       this.filterRules = this.parseFiltersFromUrl(filtersFromUrl);
     }
 
+    if (viewFromUrl === 'percentile') {
+      this.percentileView = 'percentile';
+    } else {
+      this.percentileView = 'base';
+    }
+
+    if (percentileFromUrl === 'P5' || percentileFromUrl === 'P10' || percentileFromUrl === 'P90' || percentileFromUrl === 'P95') {
+      this.selectedPercentile = percentileFromUrl as PercentileKind;
+    }
+
+    if (modeFromUrl === 'bucket' || modeFromUrl === 'overall') {
+      this.selectedPercentileMode = modeFromUrl;
+    }
+
     this.loadRawDataRows(true);
 
     if (metricYFromUrl.length > 0) {
@@ -408,6 +595,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       !!groupByFromUrl ||
       !!chartTypeFromUrl ||
       filtersFromUrl.length > 0 ||
+      viewFromUrl === 'percentile' ||
+      !!percentileFromUrl ||
+      !!modeFromUrl ||
       (this.zoomStart !== null && this.zoomEnd !== null);
 
     if (shouldLoadWithOverrides) {
@@ -418,6 +608,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       if (yColumnFromUrl) options.yColumn = yColumnFromUrl;
       if (groupByFromUrl) options.groupBy = groupByFromUrl;
       if (filtersFromUrl.length > 0) options.filters = filtersFromUrl;
+      if (this.percentileView === 'percentile' && this.selectedPercentile) {
+        options.view = 'percentile';
+        options.percentile = this.selectedPercentile;
+      }
+      if (this.selectedPercentileMode) {
+        options.mode = this.selectedPercentileMode;
+      }
       this.loadChart(options);
     } else {
       this.loadChart();
@@ -440,6 +637,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     if (this.echartsInstance) {
       this.echartsInstance.off('datazoom');
       this.echartsInstance.off('click');
+      this.echartsInstance.getZr().off('click');
     }
 
     if (this.simulationEchartsInstance) {
@@ -478,6 +676,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         }
 
         if (this.currentRecommendation) {
+          this.recommendedState = this.buildRecommendedState(this.currentRecommendation);
           const queryParams = this.route.snapshot.queryParamMap;
           const aggFromUrl = queryParams.get('aggregation');
           const timeBinFromUrl = queryParams.get('timeBin');
@@ -515,17 +714,25 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         }
 
         this.profileColumns = response.data.columns || [];
-        const maxDistinct = Math.max(20, Math.floor(response.data.sampleSize * 0.05));
 
         this.availableMetrics = this.profileColumns
           .filter(c => c.inferredType === 'Number')
           .map(c => c.name);
 
         this.availableGroupBy = this.profileColumns
-          .filter(c => c.inferredType !== 'Number' && c.distinctCount <= maxDistinct)
+          .filter(c => c.inferredType !== 'Number' && c.distinctCount <= this.maxGroupByDistinct)
           .map(c => c.name);
 
+        const hadInvalidGroupBy = !!this.selectedGroupBy && !this.isGroupByAllowed(this.selectedGroupBy);
+        if (hadInvalidGroupBy) {
+          this.toast.info(`Não é possível agrupar por '${this.selectedGroupBy}'. O limite máximo é ${this.maxGroupByDistinct} grupos.`);
+          this.selectedGroupBy = '';
+          this.syncUrlWithoutReload();
+          this.loadChart(this.buildLoadOptionsFromState());
+        }
+
         this.syncSelectedMetricsWithAvailability();
+        this.rebuildRawFieldMetrics();
 
         if (this.selectedMetric && !this.availableMetrics.includes(this.selectedMetric)) {
           this.availableMetrics = [this.selectedMetric, ...this.availableMetrics];
@@ -539,7 +746,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     });
   }
 
-  loadChart(options?: ChartLoadOptions): void {
+  loadChart(
+    options?: ChartLoadOptions,
+    chartOnlyUpdate: boolean = false,
+    onSuccess?: () => void,
+    onFailure?: () => void): void {
     const requestOptions: ChartLoadOptions = options ? { ...options } : {};
 
     if (this.supportsMetricControl) {
@@ -549,22 +760,26 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       }
     }
 
-    this.loading = true;
+    const isInitialLoad = !this.chartOption;
+    this.loading = isInitialLoad;
+    this.chartRefreshing = !isInitialLoad;
     this.error = null;
     this.pendingDrilldownCategory = null;
-    this.aiSummary = null;
-    this.aiSummaryMeta = null;
-    this.aiSummaryError = null;
-    this.explainResult = null;
-    this.explainError = null;
-    this.explainPanelOpen = false;
-    this.deepInsights = null;
-    this.deepInsightsError = null;
-    this.deepInsightsShowEvidence = false;
-    this.askPlan = null;
-    this.askError = null;
-    this.askReasoningExpanded = false;
-    this.llmUseScenarioContext = false;
+    if (!chartOnlyUpdate) {
+      this.aiSummary = null;
+      this.aiSummaryMeta = null;
+      this.aiSummaryError = null;
+      this.explainResult = null;
+      this.explainError = null;
+      this.explainPanelOpen = false;
+      this.deepInsights = null;
+      this.deepInsightsError = null;
+      this.deepInsightsShowEvidence = false;
+      this.askPlan = null;
+      this.askError = null;
+      this.askReasoningExpanded = false;
+      this.llmUseScenarioContext = false;
+    }
 
     const loadVersion = ++this.chartLoadVersion;
     const startedAt = performance.now();
@@ -576,10 +791,32 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         }
 
         this.loading = false;
+        this.chartRefreshing = false;
+        this.drilldownLoading = false;
 
         if (response.success && response.data) {
           this.chartMeta = response.data.meta || null;
           this.insightSummary = response.data.insightSummary || null;
+          const viewMeta = this.chartMeta?.view;
+          if (viewMeta?.kind === 'Percentile') {
+            this.percentileView = 'percentile';
+            if (viewMeta.percentileKind) {
+              this.selectedPercentile = viewMeta.percentileKind;
+            }
+            if (viewMeta.percentileMode === 'Bucket') {
+              this.selectedPercentileMode = 'bucket';
+            } else if (viewMeta.percentileMode === 'Overall') {
+              this.selectedPercentileMode = 'overall';
+            }
+          } else {
+            this.percentileView = 'base';
+            const percentileMode = this.chartMeta?.percentiles?.mode;
+            if (percentileMode === 'Bucket') {
+              this.selectedPercentileMode = 'bucket';
+            } else if (percentileMode === 'Overall') {
+              this.selectedPercentileMode = 'overall';
+            }
+          }
           const primaryMetric = requestOptions.metricY || this.selectedMetric;
 
           this.applyChartOptionWithEnhancements(
@@ -591,8 +828,15 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           if (!this.chartOption) {
             this.error = {
               code: 'NO_CHART_DATA',
-              message: 'Nenhum dado de grafico retornado.'
+              message: 'Nenhum dado de gráfico retornado.'
             };
+            if (this.pendingDrilldownRollback) {
+              this.toast.error(this.error.message || 'Não foi possível aplicar o drilldown.');
+              onFailure?.();
+            }
+          } else {
+            this.pendingDrilldownRollback = null;
+            onSuccess?.();
           }
           this.logDevTiming('chart-load', startedAt, {
             datasetId: this.datasetId,
@@ -614,6 +858,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           };
         }
 
+        if (this.pendingDrilldownRollback) {
+          this.toast.error(this.error?.message || 'Não foi possível aplicar o drilldown.');
+          onFailure?.();
+        }
+
         this.logDevTiming('chart-load-error', startedAt, {
           datasetId: this.datasetId,
           recommendationId: this.recommendationId
@@ -625,10 +874,16 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         }
 
         this.loading = false;
+        this.chartRefreshing = false;
+        this.drilldownLoading = false;
         this.error = HttpErrorUtil.extractApiError(err) || {
           code: 'LOAD_ERROR',
           message: HttpErrorUtil.extractErrorMessage(err)
         };
+        if (this.pendingDrilldownRollback) {
+          this.toast.error(this.error.message || 'Não foi possível aplicar o drilldown.');
+          onFailure?.();
+        }
         this.logDevTiming('chart-load-error', startedAt, {
           datasetId: this.datasetId,
           recommendationId: this.recommendationId
@@ -655,6 +910,16 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.controlsOpen = !this.controlsOpen;
   }
 
+  onActiveTabChange(index: number): void {
+    this.activeTab = index;
+    if (index !== 0) {
+      this.controlsOpen = false;
+      return;
+    }
+
+    this.controlsOpen = !this.isMobile;
+  }
+
   refreshChart(): void {
     this.reloadChartWithCurrentParameters();
   }
@@ -673,7 +938,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       next: (response) => {
         this.aiSummaryLoading = false;
         if (!response.success || !response.data) {
-          this.aiSummaryError = response.errors?.[0]?.message || 'Nao foi possivel gerar o resumo AI.';
+          this.aiSummaryError = response.errors?.[0]?.message || 'Não foi possível gerar o resumo de IA.';
           return;
         }
 
@@ -768,7 +1033,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       next: (response) => {
         this.explainLoading = false;
         if (!response.success || !response.data) {
-          this.explainError = response.errors?.[0]?.message || 'Nao foi possivel explicar o grafico.';
+          this.explainError = response.errors?.[0]?.message || 'Não foi possível explicar o gráfico.';
           return;
         }
 
@@ -792,9 +1057,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
     const payload = this.buildExplanationText(this.explainResult);
     navigator.clipboard.writeText(payload).then(() => {
-      this.toast.success('Explicacao copiada.');
+      this.toast.success('Explicação copiada.');
     }).catch(() => {
-      this.toast.error('Nao foi possivel copiar a explicacao.');
+      this.toast.error('Não foi possível copiar a explicação.');
     });
   }
 
@@ -814,7 +1079,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       next: (response) => {
         this.askLoading = false;
         if (!response.success || !response.data) {
-          this.askError = response.errors?.[0]?.message || 'Nao foi possivel analisar a pergunta.';
+          this.askError = response.errors?.[0]?.message || 'Não foi possível analisar a pergunta.';
           return;
         }
 
@@ -840,7 +1105,12 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     const nextGroupBy = (dimensions.groupBy || '').trim();
-    this.selectedGroupBy = nextGroupBy;
+    if (nextGroupBy && !this.isGroupByAllowed(nextGroupBy)) {
+      this.toast.info(`Não é possível agrupar por '${nextGroupBy}'. O limite máximo é ${this.maxGroupByDistinct} grupos.`);
+      this.selectedGroupBy = '';
+    } else {
+      this.selectedGroupBy = nextGroupBy;
+    }
 
     const chartTypeRaw = (this.askPlan.suggestedChartType || '').trim().toLowerCase();
     if (['line', 'bar', 'scatter', 'histogram'].includes(chartTypeRaw)) {
@@ -855,7 +1125,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         .map(filter => ({
           column: filter.column,
           operator: filter.operator || 'Eq',
-          value: filter.values.join(',')
+          value: filter.values.join(','),
+          logicalOperator: 'And'
         }));
     }
 
@@ -929,40 +1200,55 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   resetToRecommended(): void {
-    if (this.currentRecommendation) {
-      this.selectedAggregation = this.currentRecommendation.aggregation || 'Sum';
-      this.selectedTimeBin = this.currentRecommendation.timeBin || 'Month';
-      this.selectedMetric = this.currentRecommendation.yColumn || '';
-      this.selectedMetricsY = this.selectedMetric ? [this.selectedMetric] : [];
-    }
-
+    const baseline = this.recommendedState || (this.currentRecommendation ? this.buildRecommendedState(this.currentRecommendation) : null);
+    this.applyRecommendedState(baseline);
     this.selectedGroupBy = '';
     this.selectedVisualizationType = '';
     this.zoomStart = null;
     this.zoomEnd = null;
     this.metricToAdd = '';
     this.filterRules = [];
+    this.rawDataSearch = '';
+    this.rawSortColumn = '';
+    this.rawSortDirection = 'asc';
+    this.rawPageIndex = 0;
+    this.rawFieldSearch = '';
+    this.selectedRawFieldName = '';
     this.pendingDrilldownCategory = null;
+    this.drilldownLoading = false;
+    this.clearDrilldownTrail();
+    this.percentileView = 'base';
+    this.selectedPercentile = null;
+    this.selectedPercentileMode = '';
+    this.baseChartOptionSnapshot = null;
     this.filterPreviewPending = false;
     this.llmUseScenarioContext = false;
+    this.selectedPoint = null;
+    this.selectedPointModalOpen = false;
+    this.pointDataSearch = '';
+    this.activeTab = 0;
+
+    this.simulationError = null;
+    this.simulationResult = null;
+    this.simulationChartOption = null;
+    this.simulationOperations = [];
+    this.initializeScenarioDefaults();
 
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {},
       replaceUrl: true
+    }).then(() => {
+      this.loadChart(this.buildLoadOptionsFromState());
+      this.loadRawDataRows(true);
     });
-
-    this.loadChart();
-    this.rawPageIndex = 0;
-    this.loadRawDataRows(true);
   }
 
   onChartInit(ec: ECharts): void {
     this.echartsInstance = ec;
-    this.echartsInstance.off('datazoom');
-    this.echartsInstance.off('click');
-    this.echartsInstance.on('datazoom', event => this.onDataZoom(event));
-    this.echartsInstance.on('click', event => this.onChartClick(event));
+    const zr = this.echartsInstance.getZr();
+    zr.off('click');
+    zr.on('click', event => this.onChartCanvasClick(event));
   }
 
   onSimulationChartInit(ec: ECharts): void {
@@ -1000,8 +1286,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       replaceUrl: true
     }).then(() => {
       this.recommendationId = recId;
+      this.clearDrilldownTrail();
+      this.drilldownLoading = false;
       this.currentIndex = this.recommendations.findIndex(r => r.id === recId);
       this.currentRecommendation = this.currentIndex >= 0 ? this.recommendations[this.currentIndex] : null;
+      this.recommendedState = this.currentRecommendation
+        ? this.buildRecommendedState(this.currentRecommendation)
+        : null;
 
       let chartOptions: ChartLoadOptions | undefined;
       if (!keepContext && this.currentRecommendation) {
@@ -1012,6 +1303,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         this.metricToAdd = '';
         this.selectedGroupBy = '';
         this.filterRules = [];
+        this.clearDrilldownTrail();
+        this.percentileView = 'base';
+        this.selectedPercentile = null;
+        this.selectedPercentileMode = '';
+        this.baseChartOptionSnapshot = null;
         this.zoomStart = null;
         this.zoomEnd = null;
         this.selectedVisualizationType = '';
@@ -1060,6 +1356,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   onGroupByChange(): void {
+    if (this.selectedGroupBy && !this.isGroupByAllowed(this.selectedGroupBy)) {
+      this.toast.info(`Não é possível agrupar por '${this.selectedGroupBy}'. O limite máximo é ${this.maxGroupByDistinct} grupos.`);
+      this.selectedGroupBy = '';
+      this.syncUrlWithoutReload();
+      return;
+    }
+
     this.reloadChartWithCurrentParameters();
     if (!this.simulationTargetDimension && this.selectedGroupBy) {
       this.simulationTargetDimension = this.selectedGroupBy;
@@ -1106,6 +1409,37 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.reloadChartWithCurrentParameters();
   }
 
+  applyPercentileView(kind: PercentileKind): void {
+    if (!this.canUsePercentiles) {
+      return;
+    }
+
+    this.percentileView = 'percentile';
+    this.selectedPercentile = kind;
+    this.reloadChartWithCurrentParameters(false, true);
+  }
+
+  backToBaseView(): void {
+    this.percentileView = 'base';
+
+    if (this.baseChartOptionSnapshot) {
+      this.chartOption = this.cloneOption(this.baseChartOptionSnapshot);
+      this.buildChartDataGrid(this.chartOption);
+      if (this.chartMeta) {
+        this.chartMeta = {
+          ...this.chartMeta,
+          view: {
+            kind: 'Base'
+          }
+        };
+      }
+      this.syncUrlWithoutReload();
+      return;
+    }
+
+    this.reloadChartWithCurrentParameters(false, true);
+  }
+
   applyDrilldown(categoryOverride?: string): void {
     const selectedCategory = categoryOverride ?? this.pendingDrilldownCategory;
     if (!selectedCategory) {
@@ -1114,39 +1448,139 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
     const column = this.currentRecommendation?.xColumn || this.readAxisName(this.chartOption, 'xAxis') || '';
     if (!column) {
-      this.toast.error('Nao foi possivel identificar a coluna para drilldown.');
+      this.toast.error('Não foi possível identificar a coluna para drilldown.');
       return;
     }
 
-    const existing = this.filterRules.find(rule => rule.column === column && rule.operator === 'Eq');
-    if (existing) {
-      existing.value = selectedCategory;
-    } else if (this.filterRules.length < 3) {
-      this.filterRules.push({
-        column,
-        operator: 'Eq',
-        value: selectedCategory
-      });
-    } else {
-      this.filterRules[0] = {
-        column,
-        operator: 'Eq',
-        value: selectedCategory
-      };
-      this.toast.info('Limite de filtros atingido. O filtro mais antigo foi substituido.');
+    if (this.drilldownTrail.length > 0 && !this.isDrilldownTrailInSync()) {
+      this.clearDrilldownTrail();
     }
 
+    const drilldownSnapshot = this.snapshotDrilldownState();
+    const filtersBefore = this.cloneFilterRules(this.filterRules);
+    const normalizedCategory = selectedCategory.trim();
+    const isHistogramDrilldown =
+      this.currentBaseChartType === 'Histogram' || this.currentDisplayChartType === 'Histogram';
+    const parsedRange = this.parseHistogramRangeLabel(normalizedCategory);
+    const shouldUseRange = !!parsedRange && isHistogramDrilldown;
+
+    if (isHistogramDrilldown && !shouldUseRange) {
+      this.toast.error('Não foi possível interpretar a faixa do histograma para drilldown.');
+      return;
+    }
+
+    const drilldownOperator = shouldUseRange ? 'Between' : 'Eq';
+    const drilldownValue = shouldUseRange
+      ? `${this.toInvariantNumber(parsedRange!.min)},${this.toInvariantNumber(parsedRange!.max)}`
+      : normalizedCategory;
+
+    const existingIndex = this.filterRules.findIndex(rule =>
+      rule.column === column &&
+      rule.operator === drilldownOperator &&
+      rule.value === drilldownValue);
+
+    if (existingIndex >= 0) {
+      this.filterRules.splice(existingIndex, 1);
+      this.trimDrilldownTrailToCurrentFilters();
+      this.pendingDrilldownCategory = null;
+      this.drilldownLoading = true;
+      this.pendingDrilldownRollback = drilldownSnapshot;
+      this.reloadChartWithCurrentParameters(true, true, true);
+      return;
+    }
+
+    this.filterRules = this.filterRules.filter(rule => rule.column !== column);
+    const upsertResult = this.upsertFilterRule(column, drilldownOperator, drilldownValue);
+    if (upsertResult === 'replaced') {
+      this.toast.info('Limite de filtros atingido. O filtro mais antigo foi substituído.');
+    }
+
+    this.pushDrilldownTrail(normalizedCategory, filtersBefore, {
+      column,
+      operator: drilldownOperator,
+      value: drilldownValue,
+      logicalOperator: 'And'
+    });
     this.pendingDrilldownCategory = null;
-    this.reloadChartWithCurrentParameters(true);
+    this.drilldownLoading = true;
+    this.pendingDrilldownRollback = drilldownSnapshot;
+    this.reloadChartWithCurrentParameters(true, true, true);
   }
 
   clearDrilldownSelection(): void {
     this.pendingDrilldownCategory = null;
   }
 
-  private reloadChartWithCurrentParameters(refreshRawData: boolean = false): void {
+  zoomOutDrilldown(): void {
+    if (!this.canZoomOutDrilldown) {
+      return;
+    }
+
+    this.zoomToDrilldownLevel(this.visibleDrilldownTrail.length - 2);
+  }
+
+  resetDrilldown(): void {
+    if (this.visibleDrilldownTrail.length === 0) {
+      return;
+    }
+
+    this.zoomToDrilldownLevel(-1);
+  }
+
+  zoomToDrilldownLevel(levelIndex: number): void {
+    if (!this.isDrilldownTrailInSync()) {
+      this.clearDrilldownTrail();
+      return;
+    }
+
+    const drilldownSnapshot = this.snapshotDrilldownState();
+
+    if (levelIndex < 0) {
+      this.filterRules = this.cloneFilterRules(this.drilldownBaseFilters || []);
+      this.clearDrilldownTrail();
+      this.pendingDrilldownCategory = null;
+      this.drilldownLoading = true;
+      this.pendingDrilldownRollback = drilldownSnapshot;
+      this.reloadChartWithCurrentParameters(true, true, true);
+      return;
+    }
+
+    const targetLevel = this.drilldownTrail[levelIndex];
+    if (!targetLevel) {
+      return;
+    }
+
+    this.filterRules = this.cloneFilterRules(targetLevel.filtersState);
+    this.drilldownTrail = this.drilldownTrail.slice(0, levelIndex + 1);
+    this.pendingDrilldownCategory = null;
+    this.drilldownLoading = true;
+    this.pendingDrilldownRollback = drilldownSnapshot;
+    this.reloadChartWithCurrentParameters(true, true, true);
+  }
+
+  private reloadChartWithCurrentParameters(
+    refreshRawData: boolean = false,
+    chartOnlyUpdate: boolean = false,
+    deferUrlUpdate: boolean = false): void {
     const options = this.buildLoadOptionsFromState();
     this.filterPreviewPending = false;
+
+    if (deferUrlUpdate) {
+      this.loadChart(
+        options,
+        chartOnlyUpdate,
+        () => {
+          this.syncUrlWithoutReload();
+          if (refreshRawData) {
+            this.rawPageIndex = 0;
+            this.loadRawDataRows(true);
+          }
+        },
+        () => {
+          this.restorePendingDrilldownState();
+        });
+      return;
+    }
 
     this.router.navigate([], {
       relativeTo: this.route,
@@ -1154,7 +1588,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       replaceUrl: true
     });
 
-    this.loadChart(options);
+    this.loadChart(options, chartOnlyUpdate);
     if (refreshRawData) {
       this.rawPageIndex = 0;
       this.loadRawDataRows(true);
@@ -1184,13 +1618,22 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       options.metricY = this.selectedMetric;
     }
 
-    if (this.supportsGroupByControl && this.selectedGroupBy) {
+    if (this.supportsGroupByControl && this.selectedGroupBy && this.isGroupByAllowed(this.selectedGroupBy)) {
       options.groupBy = this.selectedGroupBy;
     }
 
     const filters = this.buildFilterParams();
     if (filters.length > 0) {
       options.filters = filters;
+    }
+
+    if (this.percentileView === 'percentile' && this.selectedPercentile) {
+      options.view = 'percentile';
+      options.percentile = this.selectedPercentile;
+      options.percentileTarget = 'y';
+      if (this.selectedPercentileMode) {
+        options.mode = this.selectedPercentileMode;
+      }
     }
 
     return options;
@@ -1213,7 +1656,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       options['metricY'] = this.selectedMetric;
     }
 
-    if (this.supportsGroupByControl && this.selectedGroupBy) {
+    if (this.supportsGroupByControl && this.selectedGroupBy && this.isGroupByAllowed(this.selectedGroupBy)) {
       options['groupBy'] = this.selectedGroupBy;
     }
 
@@ -1231,6 +1674,14 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       options['zoomEnd'] = this.zoomEnd.toFixed(2);
     }
 
+    if (this.percentileView === 'percentile' && this.selectedPercentile) {
+      options['view'] = 'percentile';
+      options['percentile'] = this.selectedPercentile;
+      if (this.selectedPercentileMode) {
+        options['mode'] = this.selectedPercentileMode;
+      }
+    }
+
     return options;
   }
 
@@ -1242,7 +1693,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.filterRules.push({
       column: '',
       operator: 'Eq',
-      value: ''
+      value: '',
+      logicalOperator: 'And'
     });
   }
 
@@ -1282,17 +1734,24 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   private buildFilterParams(): string[] {
     return this.filterRules
       .filter(rule => rule.column && rule.operator && rule.value)
-      .map(rule => `${rule.column}|${rule.operator}|${rule.value}`);
+      .map((rule, index) => {
+        const logicalOperator = index === 0 ? 'And' : (rule.logicalOperator || 'And');
+        return `${rule.column}|${rule.operator}|${rule.value}|${logicalOperator}`;
+      });
   }
 
   private parseFiltersFromUrl(filters: string[]): FilterRule[] {
     return filters
       .map(raw => {
         const parts = raw.split('|');
+        const lastPart = parts.length > 3 ? parts[parts.length - 1] : '';
+        const hasLogicalOperator = lastPart === 'And' || lastPart === 'Or';
+        const valueEndIndex = hasLogicalOperator ? parts.length - 1 : parts.length;
         return {
           column: parts[0] || '',
           operator: parts[1] || 'Eq',
-          value: parts.slice(2).join('|') || ''
+          value: parts.slice(2, valueEndIndex).join('|') || '',
+          logicalOperator: hasLogicalOperator ? (lastPart as 'And' | 'Or') : 'And'
         };
       })
       .filter(rule => rule.column && rule.value);
@@ -1310,7 +1769,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       }
     }
 
-    return 'Visualizacao de Grafico';
+    return 'Visualização de Gráfico';
   }
 
   getDatasetSubtitle(): string {
@@ -1327,13 +1786,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   copyChartLink(): void {
     const url = window.location.href;
     navigator.clipboard.writeText(url).then(() => {
-      this.toast.success('Link copiado. Inclui filtros, zoom e parametros ativos.');
+      this.toast.success('Link copiado. Inclui filtros, zoom e parâmetros ativos.');
     });
   }
 
   exportChartPNG(): void {
     if (!this.echartsInstance) {
-      this.toast.error('Grafico ainda nao foi carregado');
+      this.toast.error('Gráfico ainda não foi carregado.');
       return;
     }
 
@@ -1352,10 +1811,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       link.click();
       document.body.removeChild(link);
 
-      this.toast.success('Grafico exportado com sucesso');
+      this.toast.success('Gráfico exportado com sucesso.');
     } catch (error) {
       console.error('Error exporting chart:', error);
-      this.toast.error('Erro ao exportar grafico');
+      this.toast.error('Erro ao exportar gráfico.');
     }
   }
 
@@ -1392,7 +1851,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   addSimulationOperation(): void {
     if (this.simulationOperations.length >= 3) {
-      this.toast.info('Limite de 3 operacoes por cenario.');
+      this.toast.info('Limite de 3 operações por cenário.');
       return;
     }
 
@@ -1532,21 +1991,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const existing = this.filterRules.find(rule => rule.column === column && rule.operator === 'Eq');
-    if (existing) {
-      existing.value = trimmedDimension;
-    } else if (this.filterRules.length < 3) {
-      this.filterRules.push({
-        column,
-        operator: 'Eq',
-        value: trimmedDimension
-      });
-    } else {
-      this.filterRules[0] = {
-        column,
-        operator: 'Eq',
-        value: trimmedDimension
-      };
+    const upsertResult = this.upsertFilterRule(column, 'Eq', trimmedDimension);
+    if (upsertResult === 'replaced') {
+      this.toast.info('Limite de filtros atingido. O filtro mais antigo foi substituído.');
     }
 
     this.activeTab = 0;
@@ -1566,12 +2013,12 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   private buildSimulationPayload(): ScenarioSimulationRequest | null {
     if (!this.simulationTargetMetric || !this.simulationTargetDimension) {
-      this.toast.error('Selecione metrica e dimensao para simular.');
+      this.toast.error('Selecione métrica e dimensão para simular.');
       return null;
     }
 
     if (this.simulationOperations.length === 0) {
-      this.toast.error('Adicione ao menos uma operacao.');
+      this.toast.error('Adicione ao menos uma operação.');
       return null;
     }
 
@@ -1599,14 +2046,14 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     switch (rule.type) {
       case 'MultiplyMetric':
         if (rule.factor === null || Number.isNaN(rule.factor)) {
-          this.toast.error('Multiply Metric requer um factor numerico.');
+          this.toast.error('Multiply Metric requer um fator numérico.');
           return null;
         }
         return { type: rule.type, factor: rule.factor };
 
       case 'AddConstant':
         if (rule.constant === null || Number.isNaN(rule.constant)) {
-          this.toast.error('Add Constant requer um valor numerico.');
+          this.toast.error('Add Constant requer um valor numérico.');
           return null;
         }
         return { type: rule.type, constant: rule.constant };
@@ -1617,7 +2064,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           return null;
         }
         if (rule.min !== null && rule.max !== null && rule.min > rule.max) {
-          this.toast.error('Clamp invalido: min nao pode ser maior que max.');
+          this.toast.error('Clamp inválido: min não pode ser maior que max.');
           return null;
         }
         return { type: rule.type, min: rule.min ?? undefined, max: rule.max ?? undefined };
@@ -1644,7 +2091,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       }
 
       default:
-        this.toast.error(`Operacao nao suportada: ${rule.type}`);
+        this.toast.error(`Operação não suportada: ${rule.type}`);
         return null;
     }
   }
@@ -1666,6 +2113,20 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       .split(',')
       .map(value => value.trim())
       .filter(value => value.length > 0);
+  }
+
+  private parseRangeFilterPairs(raw: string): string[] {
+    const values = this.splitCsvValues(raw);
+    const pairs: string[] = [];
+    for (let index = 0; index + 1 < values.length; index += 2) {
+      pairs.push(`${values[index]},${values[index + 1]}`);
+    }
+
+    return pairs;
+  }
+
+  private rangeListContains(raw: string, pair: string): boolean {
+    return this.parseRangeFilterPairs(raw).some(item => item === pair);
   }
 
   private estimateMetricP95(): number {
@@ -1845,7 +2306,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   openSelectedPointDataModal(): void {
     if (!this.selectedPoint) {
-      this.toast.info('Selecione um ponto no grafico para ver os dados correspondentes.');
+      this.toast.info('Selecione um ponto no gráfico para ver os dados correspondentes.');
       return;
     }
 
@@ -1880,6 +2341,140 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.loadRawDataRows();
   }
 
+
+  selectRawField(fieldName: string): void {
+    if (this.selectedRawFieldName === fieldName) {
+      return;
+    }
+
+    this.selectedRawFieldName = fieldName;
+    this.loadRawDataRows();
+  }
+
+  isRawTopValueSelected(column: string, value: string): boolean {
+    const normalizedValue = `${value ?? ''}`.trim();
+    if (!column || !normalizedValue) {
+      return false;
+    }
+
+    return this.filterRules.some(rule => {
+      if (rule.column !== column) {
+        return false;
+      }
+
+      if (rule.operator === 'Eq') {
+        return rule.value === normalizedValue;
+      }
+
+      if (rule.operator === 'In') {
+        return this.splitCsvValues(rule.value).includes(normalizedValue);
+      }
+
+      return false;
+    });
+  }
+
+  toggleRawTopValueFilter(column: string, value: string): void {
+    const normalizedValue = `${value ?? ''}`.trim();
+    if (!column || !normalizedValue) {
+      return;
+    }
+
+    const targetRule = this.filterRules.find(rule =>
+      rule.column === column &&
+      (rule.operator === 'Eq' || rule.operator === 'In'));
+
+    if (!targetRule) {
+      this.filterRules.push({
+        column,
+        operator: 'In',
+        value: normalizedValue,
+        logicalOperator: 'And'
+      });
+      this.activeTab = 1;
+      this.filterPreviewPending = false;
+      this.reloadChartWithCurrentParameters(true);
+      return;
+    }
+
+    const values = targetRule.operator === 'Eq'
+      ? [targetRule.value]
+      : this.splitCsvValues(targetRule.value);
+
+    const selected = new Set(values);
+    if (selected.has(normalizedValue)) {
+      selected.delete(normalizedValue);
+    } else {
+      selected.add(normalizedValue);
+    }
+
+    const updatedValues = Array.from(selected.values());
+    if (updatedValues.length === 0) {
+      this.filterRules = this.filterRules.filter(rule => rule !== targetRule);
+    } else if (updatedValues.length === 1) {
+      targetRule.operator = 'Eq';
+      targetRule.value = updatedValues[0];
+    } else {
+      targetRule.operator = 'In';
+      targetRule.value = updatedValues.join(',');
+    }
+
+    this.activeTab = 1;
+    this.filterPreviewPending = false;
+    this.reloadChartWithCurrentParameters(true);
+  }
+
+  isRawTopRangeSelected(column: string, range: RawRangeValueStat): boolean {
+    if (!column || !range?.from || !range?.to) {
+      return false;
+    }
+
+    const normalizedPair = `${range.from},${range.to}`;
+    return this.filterRules.some(rule =>
+      rule.column === column &&
+      rule.operator === 'Between' &&
+      this.rangeListContains(rule.value, normalizedPair));
+  }
+
+  toggleRawTopRangeFilter(column: string, range: RawRangeValueStat): void {
+    if (!column || !range?.from || !range?.to) {
+      return;
+    }
+
+    const normalizedPair = `${range.from},${range.to}`;
+    const betweenRule = this.filterRules.find(rule =>
+      rule.column === column &&
+      rule.operator === 'Between');
+
+    if (!betweenRule) {
+      this.filterRules.push({
+        column,
+        operator: 'Between',
+        value: normalizedPair,
+        logicalOperator: 'And'
+      });
+      this.activeTab = 1;
+      this.filterPreviewPending = false;
+      this.reloadChartWithCurrentParameters(true);
+      return;
+    }
+
+    const rangePairs = this.parseRangeFilterPairs(betweenRule.value);
+    const updatedPairs = rangePairs.filter(pair => pair !== normalizedPair);
+    if (updatedPairs.length === rangePairs.length) {
+      updatedPairs.push(normalizedPair);
+    }
+
+    if (updatedPairs.length === 0) {
+      this.filterRules = this.filterRules.filter(rule => rule !== betweenRule);
+    } else {
+      betweenRule.value = updatedPairs.join(',');
+    }
+
+    this.activeTab = 1;
+    this.filterPreviewPending = false;
+    this.reloadChartWithCurrentParameters(true);
+  }
   private loadDatasetName(): void {
     this.datasetApi.listDatasets().subscribe({
       next: response => {
@@ -1900,6 +2495,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     });
   }
 
+
   private loadRawDataRows(resetPage: boolean = false): void {
     if (resetPage) {
       this.rawPageIndex = 0;
@@ -1913,13 +2509,19 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       : [];
     const filters = this.buildFilterParams();
     const search = this.rawDataSearch.trim();
+    const requestedFieldStatsColumn =
+      this.selectedRawFieldName ||
+      this.rawSortColumn ||
+      this.rawDataColumns[0] ||
+      this.profileColumns[0]?.name;
 
     this.datasetApi.getRawRows(this.datasetId, {
       page: this.rawPageIndex + 1,
       pageSize: this.rawPageSize,
       sort,
       search: search.length > 0 ? search : undefined,
-      filters: filters.length > 0 ? filters : undefined
+      filters: filters.length > 0 ? filters : undefined,
+      fieldStatsColumn: requestedFieldStatsColumn
     }).subscribe({
       next: response => {
         this.rawDataLoading = false;
@@ -1936,6 +2538,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         this.rawTotalPages = payload.totalPages || 0;
         this.rawPageSize = payload.pageSize || this.rawPageSize;
         this.rawPageIndex = Math.max((payload.page || 1) - 1, 0);
+        this.rawFieldStats = payload.fieldStats || null;
 
         if (!this.rawSortColumn && this.rawDataColumns.length > 0) {
           this.rawSortColumn = this.rawDataColumns[0];
@@ -1943,6 +2546,19 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
         if (this.rawPageIndex >= this.rawTotalPages && this.rawTotalPages > 0) {
           this.rawPageIndex = this.rawTotalPages - 1;
+          this.loadRawDataRows();
+          return;
+        }
+
+        this.rebuildRawFieldMetrics();
+        if (!this.selectedRawFieldName && this.rawFieldMetrics.length > 0) {
+          this.selectedRawFieldName = this.rawFieldMetrics[0].name;
+        }
+
+        if (
+          !this.rawFieldStats &&
+          this.selectedRawFieldName &&
+          requestedFieldStatsColumn !== this.selectedRawFieldName) {
           this.loadRawDataRows();
           return;
         }
@@ -1956,6 +2572,283 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     });
   }
 
+  private rebuildRawFieldMetrics(): void {
+    if (this.rawDataColumns.length === 0) {
+      this.rawFieldMetrics = [];
+      this.selectedRawFieldName = '';
+      this.rawFieldStats = null;
+      return;
+    }
+
+    const profileLookup = new Map<string, DatasetColumnProfile>();
+    for (const profile of this.profileColumns) {
+      profileLookup.set(profile.name.toLowerCase(), profile);
+    }
+
+    const metrics = this.rawDataColumns.map(columnName => {
+      const distinctMap = new Map<string, number>();
+      let nullCount = 0;
+
+      for (const row of this.rawDataRows) {
+        const rawValue = `${row[columnName] ?? ''}`.trim();
+        if (!rawValue) {
+          nullCount++;
+          continue;
+        }
+
+        distinctMap.set(rawValue, (distinctMap.get(rawValue) || 0) + 1);
+      }
+
+      const profile = profileLookup.get(columnName.toLowerCase());
+      const totalRows = Math.max(this.rawDataRows.length, 1);
+      const topValuesProfile = (profile?.topValueStats || [])
+        .map(item => ({
+          value: item.value,
+          count: item.count
+        }));
+
+      if (topValuesProfile.length === 0) {
+        for (const value of profile?.topValues || []) {
+          topValuesProfile.push({
+            value,
+            count: 0
+          });
+        }
+      }
+
+      return {
+        name: columnName,
+        inferredType: profile?.inferredType || 'Unknown',
+        distinctCountProfile: profile?.distinctCount || 0,
+        distinctCountPage: distinctMap.size,
+        nullCountPage: nullCount,
+        nullRatePage: nullCount / totalRows,
+        topValuesProfile
+      } as RawFieldMetric;
+    });
+
+    this.rawFieldMetrics = metrics;
+    const selectedExists = this.rawFieldMetrics.some(field => field.name === this.selectedRawFieldName);
+    if (!selectedExists) {
+      this.selectedRawFieldName = this.rawFieldMetrics[0]?.name || '';
+    }
+  }
+  private getGroupByDistinctCount(columnName: string): number | null {
+    if (!columnName) {
+      return null;
+    }
+
+    const profile = this.profileColumns.find(column =>
+      column.name.toLowerCase() === columnName.toLowerCase());
+
+    if (!profile) {
+      return null;
+    }
+
+    return profile.distinctCount;
+  }
+
+  private isGroupByAllowed(columnName: string): boolean {
+    if (!columnName) {
+      return true;
+    }
+
+    if (this.profileColumns.length === 0) {
+      return true;
+    }
+
+    const distinctCount = this.getGroupByDistinctCount(columnName);
+    if (distinctCount === null) {
+      return false;
+    }
+
+    return distinctCount <= this.maxGroupByDistinct;
+  }
+
+  private buildRecommendedState(recommendation: ChartRecommendation): RecommendedChartState {
+    return {
+      aggregation: recommendation.aggregation || 'Sum',
+      timeBin: recommendation.timeBin || 'Month',
+      metric: recommendation.yColumn || ''
+    };
+  }
+
+  private applyRecommendedState(state: RecommendedChartState | null): void {
+    this.selectedAggregation = state?.aggregation || 'Sum';
+    this.selectedTimeBin = state?.timeBin || 'Month';
+    this.selectedMetric = state?.metric || '';
+    this.selectedMetricsY = this.selectedMetric ? [this.selectedMetric] : [];
+  }
+
+  private upsertFilterRule(
+    column: string,
+    operator: string,
+    value: string,
+    logicalOperator: 'And' | 'Or' = 'And'): 'updated' | 'added' | 'replaced' {
+    const existing = this.filterRules.find(rule =>
+      rule.column === column &&
+      rule.operator === operator);
+
+    if (existing) {
+      existing.value = value;
+      existing.logicalOperator = logicalOperator;
+      return 'updated';
+    }
+
+    if (this.filterRules.length < 3) {
+      this.filterRules.push({ column, operator, value, logicalOperator });
+      return 'added';
+    }
+
+    this.filterRules[0] = { column, operator, value, logicalOperator };
+    return 'replaced';
+  }
+
+  private pushDrilldownTrail(label: string, baseFilters: FilterRule[], activeFilter: FilterRule): void {
+    if (!label) {
+      return;
+    }
+
+    if (this.drilldownTrail.length === 0) {
+      this.drilldownBaseFilters = this.cloneFilterRules(baseFilters);
+    }
+
+    const currentState = this.cloneFilterRules(this.filterRules);
+    const last = this.drilldownTrail[this.drilldownTrail.length - 1];
+    if (last && this.areFilterRulesEqual(last.filtersState, currentState)) {
+      return;
+    }
+
+    this.drilldownTrail.push({
+      label,
+      filtersState: currentState,
+      activeFilter: { ...activeFilter }
+    });
+  }
+
+  private trimDrilldownTrailToCurrentFilters(): void {
+    if (this.drilldownTrail.length === 0) {
+      return;
+    }
+
+    const currentState = this.cloneFilterRules(this.filterRules);
+    let keepCount = 0;
+    for (let i = 0; i < this.drilldownTrail.length; i++) {
+      if (this.areFilterRulesEqual(this.drilldownTrail[i].filtersState, currentState)) {
+        keepCount = i + 1;
+      }
+    }
+
+    this.drilldownTrail = keepCount > 0 ? this.drilldownTrail.slice(0, keepCount) : [];
+    if (this.drilldownTrail.length === 0) {
+      this.drilldownBaseFilters = null;
+    }
+  }
+
+  private clearDrilldownTrail(): void {
+    this.drilldownTrail = [];
+    this.drilldownBaseFilters = null;
+    this.pendingDrilldownRollback = null;
+  }
+
+  private snapshotDrilldownState(): {
+    filters: FilterRule[];
+    trail: DrilldownTrailItem[];
+    baseFilters: FilterRule[] | null;
+  } {
+    return {
+      filters: this.cloneFilterRules(this.filterRules),
+      trail: this.cloneDrilldownTrail(this.drilldownTrail),
+      baseFilters: this.drilldownBaseFilters ? this.cloneFilterRules(this.drilldownBaseFilters) : null
+    };
+  }
+
+  private restorePendingDrilldownState(): void {
+    if (!this.pendingDrilldownRollback) {
+      return;
+    }
+
+    this.filterRules = this.cloneFilterRules(this.pendingDrilldownRollback.filters);
+    this.drilldownTrail = this.cloneDrilldownTrail(this.pendingDrilldownRollback.trail);
+    this.drilldownBaseFilters = this.pendingDrilldownRollback.baseFilters
+      ? this.cloneFilterRules(this.pendingDrilldownRollback.baseFilters)
+      : null;
+    this.pendingDrilldownCategory = null;
+    this.drilldownLoading = false;
+    this.pendingDrilldownRollback = null;
+  }
+
+  private isDrilldownTrailInSync(): boolean {
+    if (this.drilldownTrail.length === 0) {
+      return false;
+    }
+
+    const lastState = this.drilldownTrail[this.drilldownTrail.length - 1].filtersState;
+    return this.areFilterRulesEqual(lastState, this.filterRules);
+  }
+
+  private cloneFilterRules(source: FilterRule[]): FilterRule[] {
+    return source.map(rule => ({
+      column: rule.column,
+      operator: rule.operator,
+      value: rule.value,
+      logicalOperator: rule.logicalOperator || 'And'
+    }));
+  }
+
+  private cloneDrilldownTrail(source: DrilldownTrailItem[]): DrilldownTrailItem[] {
+    return source.map(item => ({
+      label: item.label,
+      filtersState: this.cloneFilterRules(item.filtersState),
+      activeFilter: { ...item.activeFilter }
+    }));
+  }
+
+  private areFilterRulesEqual(left: FilterRule[], right: FilterRule[]): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    for (let i = 0; i < left.length; i++) {
+      const l = left[i];
+      const r = right[i];
+      if (
+        l.column !== r.column ||
+        l.operator !== r.operator ||
+        l.value !== r.value ||
+        (l.logicalOperator || 'And') !== (r.logicalOperator || 'And')) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private formatFilterOperator(operator: string): string {
+    switch (operator) {
+      case 'Eq':
+        return '=';
+      case 'NotEq':
+        return '!=';
+      case 'Gt':
+        return '>';
+      case 'Gte':
+        return '>=';
+      case 'Lt':
+        return '<';
+      case 'Lte':
+        return '<=';
+      case 'In':
+        return 'in';
+      case 'Between':
+        return 'between';
+      case 'Contains':
+        return 'contains';
+      default:
+        return operator;
+    }
+  }
+
   private applyChartOptionWithEnhancements(
     baseOption: EChartsOption,
     primaryMetric: string,
@@ -1963,7 +2856,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     loadVersion: number): void {
     const clonedBase = this.cloneOption(baseOption);
 
-    if (this.supportsMultiMetricControl && this.selectedMetricsY.length > 1) {
+    if (this.percentileView !== 'percentile' && this.supportsMultiMetricControl && this.selectedMetricsY.length > 1) {
       const additionalMetrics = this.selectedMetricsY
         .filter(metric => metric !== primaryMetric)
         .slice(0, 3);
@@ -1977,6 +2870,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           const merged = this.mergeMetricOptions(clonedBase, primaryMetric, results);
           this.chartOption = this.applyPresentationTransforms(merged);
           this.buildChartDataGrid(this.chartOption);
+          if (this.percentileView === 'base' && this.chartOption) {
+            this.baseChartOptionSnapshot = this.cloneOption(this.chartOption);
+          }
         });
         return;
       }
@@ -1984,6 +2880,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
     this.chartOption = this.applyPresentationTransforms(clonedBase);
     this.buildChartDataGrid(this.chartOption);
+    if (this.percentileView === 'base' && this.chartOption) {
+      this.baseChartOptionSnapshot = this.cloneOption(this.chartOption);
+    }
   }
 
   private loadAdditionalMetrics(
@@ -2084,6 +2983,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     const mutable = option as Record<string, unknown>;
 
     this.applyChartTypeTransform(mutable);
+    this.normalizeTitleAndAxisLayout(mutable);
+    this.ensureHistogramInteractivity(mutable);
     this.ensureLegend(mutable);
     this.ensureToolbox(mutable);
     this.ensureZoomWindow(mutable);
@@ -2092,21 +2993,237 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     return mutable as EChartsOption;
   }
 
-  private ensureGridSpacing(option: Record<string, unknown>): void {
+  private normalizeTitleAndAxisLayout(option: Record<string, unknown>): void {
+    const titleMeta = this.normalizeChartTitle(option);
+    this.normalizeYAxisNames(option);
+    this.normalizeXAxisLabels(option);
+
+    const grid = this.asObject(option['grid']) || {};
+    const minimumTopPercent = titleMeta.hasSubtext
+      ? 20
+      : titleMeta.hasTitle
+        ? 16
+        : 12;
+
+    const currentTopPercent = this.parsePercentValue(grid['top']);
+    if (currentTopPercent === null || currentTopPercent < minimumTopPercent) {
+      grid['top'] = `${minimumTopPercent}%`;
+    }
+
+    option['grid'] = grid;
+  }
+
+  private normalizeChartTitle(option: Record<string, unknown>): { hasTitle: boolean; hasSubtext: boolean } {
+    const titleRaw = option['title'];
+    const titleItems = Array.isArray(titleRaw)
+      ? titleRaw.map(item => this.asObject(item)).filter((item): item is Record<string, unknown> => item !== null)
+      : (() => {
+          const single = this.asObject(titleRaw);
+          return single ? [single] : [];
+        })();
+
+    if (titleItems.length === 0) {
+      return { hasTitle: false, hasSubtext: false };
+    }
+
+    const first = titleItems[0];
+    const text = `${first['text'] ?? ''}`.trim();
+    const subtext = `${first['subtext'] ?? ''}`.trim();
+    const hasTitle = text.length > 0;
+    const hasSubtext = subtext.length > 0;
+
+    if (hasTitle || hasSubtext) {
+      first['left'] = first['left'] || 'left';
+      first['top'] = 6;
+
+      const textStyle = this.asObject(first['textStyle']) || {};
+      textStyle['fontSize'] = hasSubtext ? 17 : 16;
+      textStyle['fontWeight'] = 600;
+      first['textStyle'] = textStyle;
+
+      const subtextStyle = this.asObject(first['subtextStyle']) || {};
+      subtextStyle['fontSize'] = 12;
+      subtextStyle['lineHeight'] = 16;
+      subtextStyle['color'] = '#64748b';
+      first['subtextStyle'] = subtextStyle;
+    }
+
+    if (Array.isArray(titleRaw)) {
+      const result = [...titleRaw];
+      result[0] = first;
+      option['title'] = result;
+    } else {
+      option['title'] = first;
+    }
+
+    return { hasTitle, hasSubtext };
+  }
+
+  private normalizeYAxisNames(option: Record<string, unknown>): void {
     const yAxisRaw = option['yAxis'];
-    const yAxisCount = Array.isArray(yAxisRaw) ? yAxisRaw.length : (yAxisRaw ? 1 : 0);
-    if (yAxisCount <= 1) {
+    const normalizeAxis = (axis: Record<string, unknown>, axisCount: number): Record<string, unknown> => {
+      if (!axis['name']) {
+        return axis;
+      }
+
+      const normalizedName = this.normalizeAxisNameLabel(`${axis['name']}`);
+      const isSingleAxis = axisCount <= 1;
+
+      axis['name'] = isSingleAxis
+        ? this.truncateAxisName(normalizedName, 28)
+        : this.truncateAxisName(normalizedName, 22);
+
+      if (isSingleAxis) {
+        axis['nameLocation'] = 'end';
+        axis['nameRotate'] = 0;
+        axis['nameGap'] = 12;
+      } else {
+        axis['nameLocation'] = 'middle';
+        axis['nameRotate'] = 90;
+        axis['nameGap'] = 48;
+      }
+
+      const nameTextStyle = this.asObject(axis['nameTextStyle']) || {};
+      nameTextStyle['fontSize'] = 11;
+      nameTextStyle['color'] = '#475569';
+      if (isSingleAxis) {
+        nameTextStyle['align'] = 'right';
+      }
+      axis['nameTextStyle'] = nameTextStyle;
+
+      const axisLabel = this.asObject(axis['axisLabel']) || {};
+      axisLabel['hideOverlap'] = true;
+      axisLabel['fontSize'] = 11;
+      axis['axisLabel'] = axisLabel;
+
+      return axis;
+    };
+
+    if (Array.isArray(yAxisRaw)) {
+      const axisCount = yAxisRaw.length;
+      option['yAxis'] = yAxisRaw.map(item => {
+        const axis = this.asObject(item);
+        if (!axis) {
+          return item;
+        }
+
+        return normalizeAxis(axis, axisCount);
+      });
+
       return;
     }
 
-    const leftColumns = Math.ceil(yAxisCount / 2);
-    const rightColumns = Math.floor(yAxisCount / 2);
+    const yAxis = this.asObject(yAxisRaw);
+    if (!yAxis) {
+      return;
+    }
+
+    option['yAxis'] = normalizeAxis(yAxis, 1);
+  }
+
+  private ensureGridSpacing(option: Record<string, unknown>): void {
+    const yAxisRaw = option['yAxis'];
+    const yAxisCount = Array.isArray(yAxisRaw) ? yAxisRaw.length : (yAxisRaw ? 1 : 0);
+    const leftColumns = Math.ceil(Math.max(yAxisCount, 1) / 2);
+    const rightColumns = Math.floor(Math.max(yAxisCount, 1) / 2);
+    const legendItems = this.readLegendList(option);
+    const hasVerticalLegendBelow = legendItems.some(item =>
+      `${item['orient'] ?? ''}` === 'vertical' && !!item['bottom']);
+    const hasHorizontalLegendBelow = legendItems.some(item =>
+      `${item['orient'] ?? ''}` === 'horizontal' && !!item['bottom']);
 
     const grid = this.asObject(option['grid']) || {};
     grid['containLabel'] = true;
-    grid['left'] = `${Math.min(28, 8 + (leftColumns - 1) * 7)}%`;
-    grid['right'] = `${Math.min(28, 8 + (rightColumns - 1) * 7)}%`;
+    const leftBase = this.isMobile ? 17 : 14;
+    const rightBase = this.isMobile ? 13 : 12;
+    grid['left'] = `${Math.min(30, leftBase + (leftColumns - 1) * 7)}%`;
+    grid['right'] = `${Math.min(34, rightBase + (rightColumns - 1) * 7)}%`;
+    grid['top'] = grid['top'] || '12%';
+    grid['bottom'] = hasVerticalLegendBelow
+      ? '46%'
+      : hasHorizontalLegendBelow
+        ? '24%'
+        : (grid['bottom'] || '16%');
     option['grid'] = grid;
+  }
+
+  private normalizeXAxisLabels(option: Record<string, unknown>): void {
+    const xAxisRaw = option['xAxis'];
+    const normalizeAxis = (axis: Record<string, unknown>): Record<string, unknown> => {
+      const axisType = `${axis['type'] ?? ''}`.toLowerCase();
+      const axisData = Array.isArray(axis['data']) ? axis['data'] : [];
+      const denseLabels = axisData.length > (this.isMobile ? 8 : 14);
+
+      const axisLabel = this.asObject(axis['axisLabel']) || {};
+      axisLabel['fontSize'] = 11;
+      axisLabel['hideOverlap'] = true;
+      axisLabel['margin'] = Math.max(10, this.tryParseNumeric(axisLabel['margin']) ?? 0);
+      axisLabel['overflow'] = 'truncate';
+      axisLabel['ellipsis'] = '…';
+      axisLabel['width'] = this.isMobile ? 58 : 82;
+
+      // Keep labels readable when there are many categories.
+      if (axisType === 'category' || axisType === '' || axisData.length > 0) {
+        axisLabel['rotate'] = denseLabels ? 20 : 0;
+        axisLabel['showMaxLabel'] = false;
+      }
+
+      axis['axisLabel'] = axisLabel;
+
+      const axisTick = this.asObject(axis['axisTick']) || {};
+      axisTick['alignWithLabel'] = true;
+      axis['axisTick'] = axisTick;
+
+      return axis;
+    };
+
+    if (Array.isArray(xAxisRaw)) {
+      option['xAxis'] = xAxisRaw.map(item => {
+        const axis = this.asObject(item);
+        if (!axis) {
+          return item;
+        }
+
+        return normalizeAxis(axis);
+      });
+      return;
+    }
+
+    const xAxis = this.asObject(xAxisRaw);
+    if (!xAxis) {
+      return;
+    }
+
+    option['xAxis'] = normalizeAxis(xAxis);
+  }
+
+  private normalizeAxisNameLabel(rawName: string): string {
+    return rawName
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private truncateAxisName(name: string, maxLength: number): string {
+    if (name.length <= maxLength) {
+      return name;
+    }
+
+    return `${name.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+  }
+
+  private parsePercentValue(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const normalized = value.trim().replace('%', '');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 
   private applyChartTypeTransform(option: Record<string, unknown>): void {
@@ -2124,8 +3241,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         series['type'] = mappedType;
         if (mappedType === 'line') {
           series['smooth'] = true;
+          delete series['barMinHeight'];
         } else {
           delete series['smooth'];
+          // Keep tiny bars clickable for low-frequency buckets.
+          series['barMinHeight'] = 3;
         }
       }
     }
@@ -2140,6 +3260,20 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
   }
 
+  private ensureHistogramInteractivity(option: Record<string, unknown>): void {
+    if (this.currentDisplayChartType !== 'Histogram' && this.currentBaseChartType !== 'Histogram') {
+      return;
+    }
+
+    const seriesList = this.readSeriesList(option);
+    for (const series of seriesList) {
+      const currentType = `${series['type'] ?? ''}`.toLowerCase();
+      if (currentType === 'bar') {
+        series['barMinHeight'] = 3;
+      }
+    }
+  }
+
   private ensureLegend(option: Record<string, unknown>): void {
     const seriesList = this.readSeriesList(option);
     const names = seriesList
@@ -2150,10 +3284,63 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const orderedNames = this.distinctValues(names).sort((left, right) =>
+      left.localeCompare(right, undefined, { sensitivity: 'base' }));
+
+    const minVisibleGroups = 15;
+    if (orderedNames.length > minVisibleGroups) {
+      const maxColumns = 4;
+      const suggestedColumns = Math.ceil(orderedNames.length / minVisibleGroups);
+      const columns = Math.max(2, Math.min(maxColumns, suggestedColumns));
+      const chunkSize = Math.ceil(orderedNames.length / columns);
+      const totalWidthPercent = 90;
+      const leftStartPercent = 5;
+      const columnWidth = totalWidthPercent / columns;
+
+      const legends: Record<string, unknown>[] = [];
+      for (let i = 0; i < columns; i++) {
+        const chunk = orderedNames.slice(i * chunkSize, (i + 1) * chunkSize);
+        if (chunk.length === 0) {
+          continue;
+        }
+
+        legends.push({
+          show: true,
+          type: 'plain',
+          orient: 'vertical',
+          align: 'left',
+          itemWidth: 10,
+          itemHeight: 10,
+          itemGap: 6,
+          left: `${(leftStartPercent + (i * columnWidth)).toFixed(2)}%`,
+          width: `${Math.max(12, columnWidth - 1).toFixed(2)}%`,
+          top: '64%',
+          bottom: '8%',
+          textStyle: {
+            color: '#334155',
+            fontSize: 11
+          },
+          data: chunk
+        });
+      }
+
+      option['legend'] = legends;
+      return;
+    }
+
     const legend = this.asObject(option['legend']) || {};
     legend['show'] = true;
-    legend['type'] = names.length > 6 ? 'scroll' : 'plain';
-    legend['data'] = this.distinctValues(names);
+    legend['type'] = orderedNames.length > 6 ? 'scroll' : 'plain';
+    legend['data'] = orderedNames;
+    legend['orient'] = 'horizontal';
+    legend['left'] = 'center';
+    legend['bottom'] = 8;
+    legend['itemGap'] = 12;
+    legend['pageIconColor'] = '#64748b';
+    legend['pageIconInactiveColor'] = '#cbd5e1';
+    legend['pageTextStyle'] = { color: '#475569', fontSize: 11 };
+    delete legend['top'];
+    delete legend['right'];
     option['legend'] = legend;
   }
 
@@ -2196,6 +3383,20 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       );
     }
 
+    const legendItems = this.readLegendList(option);
+    const hasVerticalLegendBelow = legendItems.some(item =>
+      `${item['orient'] ?? ''}` === 'vertical' && !!item['bottom']);
+    const hasHorizontalLegendBelow = legendItems.some(item =>
+      `${item['orient'] ?? ''}` === 'horizontal' && !!item['bottom']);
+
+    if (hasVerticalLegendBelow || hasHorizontalLegendBelow) {
+      for (const zoomItem of dataZoomItems) {
+        if (`${zoomItem['type'] ?? ''}`.toLowerCase() === 'slider') {
+          zoomItem['bottom'] = hasVerticalLegendBelow ? '38%' : '16%';
+        }
+      }
+    }
+
     if (this.zoomStart !== null && this.zoomEnd !== null) {
       for (const zoomItem of dataZoomItems) {
         zoomItem['start'] = this.zoomStart;
@@ -2208,7 +3409,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
   }
 
-  private onDataZoom(event: unknown): void {
+  onDataZoom(event: unknown): void {
     const payload = event as Record<string, unknown>;
 
     let start: number | null = this.tryParseNumeric(payload['start']);
@@ -2236,10 +3437,20 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }, 250);
   }
 
-  private onChartClick(event: unknown): void {
+  onChartClick(event: unknown): void {
     const payload = event as Record<string, unknown>;
     const componentType = `${payload['componentType'] ?? ''}`;
-    if (componentType !== 'series') {
+    if (componentType !== 'series' && componentType !== 'xAxis') {
+      return;
+    }
+
+    if (componentType === 'xAxis' && this.supportsDrilldown) {
+      const category = `${payload['value'] ?? payload['name'] ?? ''}`.trim();
+      if (category) {
+        this.lastSeriesDrilldownAt = Date.now();
+        this.pendingDrilldownCategory = category;
+        this.applyDrilldown(category);
+      }
       return;
     }
 
@@ -2255,6 +3466,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     if (this.supportsDrilldown) {
       const category = `${selectedPoint['x'] ?? ''}`.trim();
       if (category) {
+        this.lastSeriesDrilldownAt = Date.now();
         this.pendingDrilldownCategory = category;
         this.applyDrilldown(category);
         return;
@@ -2262,6 +3474,76 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     this.toast.info('Ponto selecionado. Use "Dados do ponto" para inspecionar os registros.');
+  }
+
+  private onChartCanvasClick(event: unknown): void {
+    if (!this.supportsDrilldown || !this.echartsInstance || !this.chartOption || this.drilldownLoading) {
+      return;
+    }
+
+    // Skip if this click was already handled by the series click handler.
+    if (Date.now() - this.lastSeriesDrilldownAt < 180) {
+      return;
+    }
+
+    const payload = event as Record<string, unknown>;
+    const offsetX = this.tryParseNumeric(payload['offsetX']) ??
+      this.tryParseNumeric((payload['event'] as Record<string, unknown> | undefined)?.['offsetX']);
+    const offsetY = this.tryParseNumeric(payload['offsetY']) ??
+      this.tryParseNumeric((payload['event'] as Record<string, unknown> | undefined)?.['offsetY']);
+
+    if (offsetX === null || offsetY === null) {
+      return;
+    }
+
+    const instance = this.echartsInstance as unknown as {
+      containPixel?: (finder: Record<string, unknown>, value: [number, number]) => boolean;
+      convertFromPixel?: (finder: Record<string, unknown>, value: [number, number]) => unknown;
+    };
+
+    if (instance.containPixel && !instance.containPixel({ gridIndex: 0 }, [offsetX, offsetY])) {
+      return;
+    }
+
+    let axisValue: unknown = null;
+    try {
+      axisValue = instance.convertFromPixel
+        ? instance.convertFromPixel({ xAxisIndex: 0 }, [offsetX, offsetY])
+        : null;
+    } catch {
+      axisValue = null;
+    }
+
+    const categories = this.readAxisData(this.chartOption as Record<string, unknown>, 'xAxis');
+    if (categories.length === 0) {
+      return;
+    }
+
+    const axisCandidate = Array.isArray(axisValue) ? axisValue[0] : axisValue;
+
+    let category = '';
+    if (typeof axisCandidate === 'string') {
+      category = axisCandidate.trim();
+    } else {
+      const rawIndex = this.tryParseNumeric(axisCandidate);
+      if (rawIndex === null) {
+        return;
+      }
+
+      const index = Math.round(rawIndex);
+      if (index < 0 || index >= categories.length) {
+        return;
+      }
+
+      category = `${this.toScalar(categories[index]) ?? ''}`.trim();
+    }
+
+    if (!category) {
+      return;
+    }
+
+    this.pendingDrilldownCategory = category;
+    this.applyDrilldown(category);
   }
 
   private extractPointFromChartEvent(payload: Record<string, unknown>): ChartTableRow | null {
@@ -2479,6 +3761,21 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     return [];
   }
 
+  private readLegendList(option: Record<string, unknown>): Record<string, unknown>[] {
+    const raw = option['legend'];
+    if (Array.isArray(raw)) {
+      return raw
+        .filter(item => item && typeof item === 'object')
+        .map(item => ({ ...(item as Record<string, unknown>) }));
+    }
+
+    if (raw && typeof raw === 'object') {
+      return [{ ...(raw as Record<string, unknown>) }];
+    }
+
+    return [];
+  }
+
   private asObject(value: unknown): Record<string, unknown> | null {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       return { ...(value as Record<string, unknown>) };
@@ -2515,6 +3812,81 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     return null;
+  }
+
+  private parseHistogramRangeLabel(label: string): { min: number; max: number } | null {
+    if (!label) {
+      return null;
+    }
+
+    const normalized = label
+      .replace('[', '')
+      .replace(']', '')
+      .replace('(', '')
+      .replace(')', '')
+      .trim();
+
+    if (!normalized) {
+      return null;
+    }
+
+    // Histogram labels come as "[start, end)".
+    // We split by comma+space to avoid collisions with decimal/group separators.
+    let parts = normalized.split(', ');
+    if (parts.length !== 2) {
+      parts = normalized.split(' - ');
+    }
+    if (parts.length !== 2) {
+      return null;
+    }
+
+    const first = this.parseFlexibleNumber(parts[0]);
+    const second = this.parseFlexibleNumber(parts[1]);
+
+    if (first === null || second === null) {
+      return null;
+    }
+
+    const min = Math.min(first, second);
+    const max = Math.max(first, second);
+    return { min, max };
+  }
+
+  private parseFlexibleNumber(raw: string): number | null {
+    const compact = raw.trim().replace(/\s+/g, '');
+    if (!compact) {
+      return null;
+    }
+
+    let normalized = compact;
+    const hasComma = compact.includes(',');
+    const hasDot = compact.includes('.');
+
+    if (hasComma && hasDot) {
+      const lastComma = compact.lastIndexOf(',');
+      const lastDot = compact.lastIndexOf('.');
+
+      // 1.234,56 -> decimal comma
+      if (lastComma > lastDot) {
+        normalized = compact.replace(/\./g, '').replace(',', '.');
+      } else {
+        // 1,234.56 -> decimal dot
+        normalized = compact.replace(/,/g, '');
+      }
+    } else if (hasComma) {
+      // 123,45 -> decimal comma
+      normalized = compact.replace(',', '.');
+    } else {
+      // 1234.56 -> decimal dot
+      normalized = compact;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private toInvariantNumber(value: number): string {
+    return Number(value.toFixed(8)).toString();
   }
 
   private normalizeVisualizationType(raw: string): VisualizationType {

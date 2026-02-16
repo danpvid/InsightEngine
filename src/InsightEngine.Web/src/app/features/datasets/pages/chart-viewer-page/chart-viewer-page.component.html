@@ -331,14 +331,16 @@
           </div>
 
           <div class="ask-row deep-insights-controls">
-            <mat-form-field appearance="outline">
-              <mat-label>{{ 'chartViewer.projectionHorizon' | translate }}</mat-label>
-              <mat-select [(ngModel)]="deepInsightsHorizon">
-                <mat-option [value]="14">14</mat-option>
-                <mat-option [value]="30">30</mat-option>
-                <mat-option [value]="60">60</mat-option>
-              </mat-select>
-            </mat-form-field>
+            <div class="compact-control">
+              <span class="compact-control-label">{{ 'chartViewer.projectionHorizon' | translate }}</span>
+              <mat-form-field appearance="outline" class="compact-control-field">
+                <mat-select [(ngModel)]="deepInsightsHorizon">
+                  <mat-option [value]="14">14</mat-option>
+                  <mat-option [value]="30">30</mat-option>
+                  <mat-option [value]="60">60</mat-option>
+                </mat-select>
+              </mat-form-field>
+            </div>
 
             <mat-slide-toggle [(ngModel)]="deepInsightsSensitiveMode" color="primary">
               {{ 'chartViewer.sensitiveMode' | translate }}
@@ -475,6 +477,15 @@
           </div>
 
           <div class="filter-rule" *ngFor="let rule of filterRules; let i = index">
+            <mat-form-field appearance="outline" *ngIf="i > 0" class="filter-logic-field">
+              <mat-label>{{ 'chartViewer.logic' | translate }}</mat-label>
+              <mat-select [(ngModel)]="rule.logicalOperator" (selectionChange)="onFilterRuleChange()">
+                <mat-option *ngFor="let logic of filterLogicalOperators" [value]="logic.value">
+                  {{ logic.label }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+
             <mat-form-field appearance="outline">
               <mat-label>{{ 'chartViewer.column' | translate }}</mat-label>
               <mat-select [(ngModel)]="rule.column" (selectionChange)="onFilterRuleChange()">
@@ -508,7 +519,7 @@
           </p>
         </mat-card>
 
-        <mat-tab-group [(selectedIndex)]="activeTab" class="viewer-tabs">
+        <mat-tab-group [(selectedIndex)]="activeTab" (selectedIndexChange)="onActiveTabChange($event)" class="viewer-tabs">
           <mat-tab [label]="'chartViewer.tabChart' | translate">
             <mat-card class="chart-card">
               <mat-card-header>
@@ -538,6 +549,35 @@
               </mat-card-header>
 
               <mat-card-content>
+                <div class="percentile-toolbar">
+                  <div class="percentile-actions" *ngIf="canUsePercentiles">
+                    <span class="percentile-label">{{ 'chartViewer.percentiles' | translate }}</span>
+                    <button
+                      mat-stroked-button
+                      *ngFor="let kind of percentileKinds"
+                      [color]="activePercentile === kind ? 'primary' : undefined"
+                      [disabled]="loading || chartRefreshing || drilldownLoading"
+                      (click)="applyPercentileView(kind)">
+                      {{ kind }}
+                    </button>
+                    <button
+                      mat-button
+                      color="primary"
+                      *ngIf="isPercentileView"
+                      (click)="backToBaseView()">
+                      {{ 'chartViewer.backToBase' | translate }}
+                    </button>
+                  </div>
+                  <div class="percentile-status" *ngIf="isPercentileView && activePercentile">
+                    <mat-chip color="accent" selected>
+                      {{ 'chartViewer.percentileActive' | translate }}: {{ activePercentile }}
+                    </mat-chip>
+                  </div>
+                  <div class="percentile-unavailable" *ngIf="percentilesMeta && !canUsePercentiles && percentilesMeta.reason">
+                    {{ percentilesMeta.reason }}
+                  </div>
+                </div>
+
                 <div class="chart-skeleton" *ngIf="loading && !chartOption">
                   <div class="skeleton-axis-y"></div>
                   <div class="skeleton-bars">
@@ -552,12 +592,55 @@
                     echarts
                     [options]="chartOption"
                     (chartInit)="onChartInit($event)"
+                    (chartClick)="onChartClick($event)"
+                    (chartDataZoom)="onDataZoom($event)"
                     class="chart">
                   </div>
 
-                  <div class="chart-loading-overlay" *ngIf="loading">
-                    {{ 'chartViewer.updatingChart' | translate }}
+                  <div class="chart-loading-overlay" *ngIf="loading || chartRefreshing">
+                    <mat-progress-spinner
+                      mode="indeterminate"
+                      [diameter]="14"
+                      [strokeWidth]="2">
+                    </mat-progress-spinner>
+                    <span>
+                      {{ (drilldownLoading ? 'chartViewer.applyingDrilldown' : 'chartViewer.updatingChart') | translate }}
+                    </span>
                   </div>
+                </div>
+
+                <div class="drilldown-breadcrumb" *ngIf="visibleDrilldownTrail.length > 0">
+                  <span class="breadcrumb-label">{{ 'chartViewer.drilldownPath' | translate }}:</span>
+                  <button mat-button class="breadcrumb-step" (click)="zoomToDrilldownLevel(-1)" [disabled]="drilldownLoading">
+                    {{ 'chartViewer.root' | translate }}
+                  </button>
+                  <mat-icon>chevron_right</mat-icon>
+                  <ng-container *ngFor="let step of visibleDrilldownTrail; let i = index; let last = last">
+                    <button mat-button class="breadcrumb-step" (click)="zoomToDrilldownLevel(i)" [disabled]="drilldownLoading">
+                      {{ step.label }}
+                    </button>
+                    <mat-icon *ngIf="!last">chevron_right</mat-icon>
+                  </ng-container>
+
+                  <span class="breadcrumb-spacer"></span>
+                  <button mat-stroked-button color="primary" (click)="zoomOutDrilldown()" [disabled]="!canZoomOutDrilldown || drilldownLoading">
+                    {{ 'chartViewer.drilldownBack' | translate }}
+                  </button>
+                  <button mat-button color="primary" (click)="resetDrilldown()" [disabled]="drilldownLoading">
+                    {{ 'chartViewer.resetDrilldown' | translate }}
+                  </button>
+                  <mat-progress-spinner
+                    *ngIf="drilldownLoading"
+                    mode="indeterminate"
+                    [diameter]="16"
+                    [strokeWidth]="2">
+                  </mat-progress-spinner>
+                </div>
+
+                <div class="drilldown-active-filter" *ngIf="activeDrilldownFilterLabel as drillFilter">
+                  <mat-chip color="primary" selected>
+                    {{ 'chartViewer.activeDrilldownFilter' | translate }}: {{ drillFilter }}
+                  </mat-chip>
                 </div>
 
                 <div class="drilldown-panel" *ngIf="pendingDrilldownCategory && supportsDrilldown">
@@ -565,10 +648,10 @@
                     {{ 'chartViewer.selectedDrilldown' | translate }}: <strong>{{ pendingDrilldownCategory }}</strong>
                   </div>
                   <div class="drilldown-actions">
-                    <button mat-stroked-button color="primary" (click)="applyDrilldown()">
+                    <button mat-stroked-button color="primary" (click)="applyDrilldown()" [disabled]="drilldownLoading">
                       {{ 'chartViewer.applyFilter' | translate }}
                     </button>
-                    <button mat-button (click)="clearDrilldownSelection()">
+                    <button mat-button (click)="clearDrilldownSelection()" [disabled]="drilldownLoading">
                       {{ 'chartViewer.cancel' | translate }}
                     </button>
                   </div>
@@ -601,35 +684,111 @@
                 <app-loading-bar [loading]="rawDataLoading"></app-loading-bar>
                 <div class="simulation-error" *ngIf="rawDataError">{{ rawDataError }}</div>
 
-                <div class="data-grid-table-wrapper" *ngIf="rawDataColumns.length > 0; else noDataGrid">
-                  <table
-                    mat-table
-                    [dataSource]="rawDataRows"
-                    class="data-grid-table"
-                    matSort
-                    matSortDisableClear
-                    [matSortActive]="rawSortColumn"
-                    [matSortDirection]="rawSortDirection"
-                    (matSortChange)="onRawSortChange($event)">
-                    <ng-container *ngFor="let column of rawDataColumns" [matColumnDef]="column">
-                      <th mat-header-cell *matHeaderCellDef [mat-sort-header]="column">{{ column }}</th>
-                      <td mat-cell *matCellDef="let row">{{ formatGridCell(row, column) }}</td>
-                    </ng-container>
+                <div class="raw-data-layout" *ngIf="rawDataColumns.length > 0; else noDataGrid">
+                  <aside class="raw-fields-panel">
+                    <div class="raw-fields-header">
+                      <h4>{{ 'chartViewer.fieldsTitle' | translate }}</h4>
+                      <span>{{ rawFieldMetrics.length }}</span>
+                    </div>
 
-                    <tr mat-header-row *matHeaderRowDef="rawDataColumns"></tr>
-                    <tr mat-row *matRowDef="let row; columns: rawDataColumns;"></tr>
-                  </table>
+                    <mat-form-field appearance="outline" class="raw-fields-search">
+                      <mat-label>{{ 'chartViewer.searchField' | translate }}</mat-label>
+                      <input
+                        matInput
+                        [(ngModel)]="rawFieldSearch"
+                        [placeholder]="'chartViewer.searchFieldPlaceholder' | translate" />
+                      <mat-icon matSuffix>search</mat-icon>
+                    </mat-form-field>
+
+                    <div class="raw-fields-list">
+                      <button
+                        mat-stroked-button
+                        *ngFor="let field of filteredRawFieldMetrics"
+                        [class.active]="selectedRawFieldMetric?.name === field.name"
+                        (click)="selectRawField(field.name)">
+                        <span>{{ field.name }}</span>
+                        <small>{{ field.inferredType }} - {{ field.distinctCountProfile || field.distinctCountPage }}</small>
+                      </button>
+                    </div>
+                  </aside>
+
+                  <section class="raw-main-panel">
+                    <div class="raw-field-summary" *ngIf="selectedRawFieldMetric as field">
+                      <div class="raw-field-summary-header">
+                        <strong>{{ field.name }}</strong>
+                        <span>{{ rawFieldStats?.column === field.name ? rawFieldStats?.inferredType : field.inferredType }}</span>
+                      </div>
+
+                      <div class="raw-field-kpis">
+                        <div>
+                          <span>{{ 'chartViewer.distinctValues' | translate }}</span>
+                          <strong>{{ rawFieldStats?.column === field.name ? rawFieldStats?.distinctCount : (field.distinctCountProfile || field.distinctCountPage) }}</strong>
+                        </div>
+                        <div>
+                          <span>{{ 'chartViewer.pageDistinctValues' | translate }}</span>
+                          <strong>{{ field.distinctCountPage }}</strong>
+                        </div>
+                        <div>
+                          <span>{{ 'chartViewer.pageNullRate' | translate }}</span>
+                          <strong>{{ field.nullRatePage | percent:'1.0-1' }}</strong>
+                        </div>
+                      </div>
+
+                      <div class="raw-value-tags" *ngIf="selectedRawTopValues.length > 0">
+                        <span class="tag-label">{{ 'chartViewer.topValues' | translate }}</span>
+                        <button
+                          mat-stroked-button
+                          color="primary"
+                          *ngFor="let top of selectedRawTopValues"
+                          [class.active-filter]="isRawTopValueSelected(field.name, top.value)"
+                          (click)="toggleRawTopValueFilter(field.name, top.value)">
+                          {{ top.value }}<ng-container *ngIf="top.count > 0"> ({{ top.count }})</ng-container>
+                        </button>
+                      </div>
+
+                      <div class="raw-value-tags" *ngIf="selectedRawTopRanges.length > 0">
+                        <span class="tag-label">{{ 'chartViewer.topRanges' | translate }}</span>
+                        <button
+                          mat-stroked-button
+                          color="primary"
+                          *ngFor="let range of selectedRawTopRanges"
+                          [class.active-filter]="isRawTopRangeSelected(field.name, range)"
+                          (click)="toggleRawTopRangeFilter(field.name, range)">
+                          {{ range.label }} ({{ range.count }})
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="data-grid-table-wrapper">
+                      <table
+                        mat-table
+                        [dataSource]="rawDataRows"
+                        class="data-grid-table"
+                        matSort
+                        matSortDisableClear
+                        [matSortActive]="rawSortColumn"
+                        [matSortDirection]="rawSortDirection"
+                        (matSortChange)="onRawSortChange($event)">
+                        <ng-container *ngFor="let column of rawDataColumns" [matColumnDef]="column">
+                          <th mat-header-cell *matHeaderCellDef [mat-sort-header]="column">{{ column }}</th>
+                          <td mat-cell *matCellDef="let row">{{ formatGridCell(row, column) }}</td>
+                        </ng-container>
+
+                        <tr mat-header-row *matHeaderRowDef="rawDataColumns"></tr>
+                        <tr mat-row *matRowDef="let row; columns: rawDataColumns;"></tr>
+                      </table>
+                    </div>
+
+                    <mat-paginator
+                      [length]="rawTotalRows"
+                      [pageSize]="rawPageSize"
+                      [pageSizeOptions]="rawPageSizeOptions"
+                      [pageIndex]="rawPageIndex"
+                      (page)="onRawPageChange($event)"
+                      showFirstLastButtons>
+                    </mat-paginator>
+                  </section>
                 </div>
-
-                <mat-paginator
-                  *ngIf="rawDataColumns.length > 0"
-                  [length]="rawTotalRows"
-                  [pageSize]="rawPageSize"
-                  [pageSizeOptions]="rawPageSizeOptions"
-                  [pageIndex]="rawPageIndex"
-                  (page)="onRawPageChange($event)"
-                  showFirstLastButtons>
-                </mat-paginator>
 
                 <ng-template #noDataGrid>
                   <p class="data-grid-empty">{{ 'chartViewer.rawDataUnavailable' | translate }}</p>
@@ -812,7 +971,7 @@
       </div>
     </mat-drawer-content>
 
-    <mat-drawer class="controls-drawer" position="end" [mode]="isMobile ? 'over' : 'side'" [(opened)]="controlsOpen">
+    <mat-drawer *ngIf="activeTab === 0" class="controls-drawer" position="end" [mode]="isMobile ? 'over' : 'side'" [(opened)]="controlsOpen">
       <mat-card class="controls-card">
         <mat-card-header>
           <mat-card-title>

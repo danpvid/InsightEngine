@@ -7,4 +7,7 @@ export interface RuntimeConfig {
   queryResultMaxRows: number;
   cacheTtlSeconds: number;
   defaultTimeoutSeconds: number;
+  rawTopValuesLimit: number;
+  rawTopRangesLimit: number;
+  rawRangeBinCount: number;
 }

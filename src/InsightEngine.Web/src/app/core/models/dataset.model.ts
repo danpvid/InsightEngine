@@ -28,6 +28,12 @@ export interface DatasetColumnProfile {
   nullRate: number;
   distinctCount: number;
   topValues: string[];
+  topValueStats?: DatasetColumnTopValueStat[];
+}
+
+export interface DatasetColumnTopValueStat {
+  value: string;
+  count: number;
 }
 
 export interface RawDatasetRowsResponse {
@@ -39,9 +45,31 @@ export interface RawDatasetRowsResponse {
   pageSize: number;
   totalPages: number;
   truncated: boolean;
+  fieldStats?: RawFieldStats | null;
   rows: RawDatasetRow[];
 }
 
 export interface RawDatasetRow {
   [key: string]: string | null;
+}
+
+export interface RawDistinctValueStat {
+  value: string;
+  count: number;
+}
+
+export interface RawRangeValueStat {
+  label: string;
+  from: string;
+  to: string;
+  count: number;
+}
+
+export interface RawFieldStats {
+  column: string;
+  inferredType: string;
+  distinctCount: number;
+  nullCount: number;
+  topValues: RawDistinctValueStat[];
+  topRanges: RawRangeValueStat[];
 }

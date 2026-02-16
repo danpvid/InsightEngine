@@ -113,6 +113,7 @@ export class DatasetApiService {
       sort?: string[];
       search?: string;
       filters?: string[];
+      fieldStatsColumn?: string;
     }): Observable<ApiResponse<RawDatasetRowsResponse>> {
     const page = Math.max(1, options?.page ?? 1);
     const pageSize = Math.max(1, Math.min(1000, options?.pageSize ?? 100));
@@ -130,6 +131,10 @@ export class DatasetApiService {
 
     if (options?.filters && options.filters.length > 0) {
       options.filters.forEach(filter => params.append('filters', filter));
+    }
+
+    if (options?.fieldStatsColumn) {
+      params.append('fieldStatsColumn', options.fieldStatsColumn);
     }
 
     return this.http.get<ApiResponse<RawDatasetRowsResponse>>(
@@ -150,6 +155,10 @@ export class DatasetApiService {
       yColumn?: string;
       groupBy?: string;
       filters?: string[];
+      view?: 'base' | 'percentile';
+      percentile?: 'P5' | 'P10' | 'P90' | 'P95';
+      mode?: 'bucket' | 'overall';
+      percentileTarget?: 'y';
     }
   ): Observable<ApiResponse<ChartResponse>> {
     let url = `${this.baseUrl}/api/v1/datasets/${datasetId}/charts/${recommendationId}`;
@@ -166,6 +175,10 @@ export class DatasetApiService {
       if (options.filters && options.filters.length > 0) {
         options.filters.forEach(filter => params.append('filters', filter));
       }
+      if (options.view) params.append('view', options.view);
+      if (options.percentile) params.append('percentile', options.percentile);
+      if (options.mode) params.append('mode', options.mode);
+      if (options.percentileTarget) params.append('percentileTarget', options.percentileTarget);
       
       const queryString = params.toString();
       if (queryString) {

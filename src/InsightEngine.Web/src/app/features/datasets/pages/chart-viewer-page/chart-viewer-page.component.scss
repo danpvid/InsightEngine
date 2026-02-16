@@ -2,8 +2,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
-  padding: 12px 16px;
+  margin-bottom: 10px;
+  padding: 10px 14px;
   background-color: #f5f5f5;
   border-radius: 8px;
 
@@ -13,6 +13,7 @@
     gap: 8px;
     color: #3f51b5;
     text-decoration: none;
+    min-height: 34px;
 
     &:hover {
       background-color: #e3f2fd;
@@ -35,14 +36,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  margin-bottom: 24px;
-  padding: 12px;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
   background-color: #f5f5f5;
   border-radius: 8px;
 
   .nav-btn {
     min-width: 120px;
+    height: 38px;
     
     mat-icon {
       margin: 0;
@@ -65,15 +67,84 @@
   .keep-context-toggle {
     white-space: nowrap;
   }
+
+  ::ng-deep .mat-mdc-form-field {
+    margin-bottom: 0;
+  }
+
+  ::ng-deep .mat-mdc-form-field-subscript-wrapper {
+    display: none;
+  }
 }
 
 .chart-layout {
   width: 100%;
-  margin-bottom: 24px;
+  margin-bottom: 14px;
 }
 
 .controls-drawer {
-  width: 320px;
+  width: 300px;
+}
+
+.controls-drawer .controls-card {
+  position: sticky;
+  top: 10px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+}
+
+:host {
+  --mat-form-field-container-height: 38px;
+  --mat-form-field-container-vertical-padding: 8px;
+}
+
+:host ::ng-deep .mat-mdc-form-field {
+  font-size: 12px;
+}
+
+:host ::ng-deep .mat-mdc-text-field-wrapper {
+  height: 38px;
+}
+
+:host ::ng-deep .mat-mdc-form-field-flex {
+  height: 38px;
+  align-items: center;
+}
+
+:host ::ng-deep .mat-mdc-form-field-infix {
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+:host ::ng-deep .mat-mdc-input-element,
+:host ::ng-deep .mat-mdc-select-value-text,
+:host ::ng-deep .mat-mdc-select-placeholder {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+:host ::ng-deep .mat-mdc-input-element::placeholder {
+  line-height: 1.25;
+  position: static;
+  top: auto;
+}
+
+:host ::ng-deep .mat-mdc-select-trigger {
+  height: 100%;
+  align-items: center;
+}
+
+:host ::ng-deep .mat-mdc-form-field .mat-mdc-floating-label {
+  font-size: 12px;
+}
+
+:host ::ng-deep .mat-mdc-card-header {
+  padding-bottom: 8px;
+}
+
+:host ::ng-deep .mat-mdc-card-title {
+  font-size: 15px;
 }
 
 @media (max-width: 1200px) {
@@ -85,7 +156,19 @@
 .chart-column {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
+}
+
+.chart-column > .viewer-tabs {
+  order: 0;
+}
+
+.chart-column > .shared-filters-card {
+  order: 1;
+}
+
+.chart-column > .insight-card {
+  order: 2;
 }
 
 .viewer-tabs {
@@ -95,7 +178,7 @@
 }
 
 .shared-filters-card {
-  padding: 12px 16px 8px;
+  padding: 10px 12px 6px;
   border: 1px solid #cbd5e1;
   background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
 }
@@ -124,13 +207,17 @@
 
 .filter-rule {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  gap: 8px;
+  grid-template-columns: minmax(88px, 0.7fr) repeat(3, minmax(0, 1fr)) auto;
+  gap: 6px;
   align-items: start;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 
   mat-form-field {
     width: 100%;
+  }
+
+  .filter-logic-field {
+    min-width: 88px;
   }
 }
 
@@ -141,7 +228,7 @@
 }
 
 .insight-card {
-  padding: 16px 18px;
+  padding: 12px 14px;
   background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
   border: 1px solid #e2e8f0;
 
@@ -178,8 +265,8 @@
   }
 
   .insight-headline {
-    margin: 6px 0 0;
-    font-size: 18px;
+    margin: 4px 0 0;
+    font-size: 15px;
     font-weight: 600;
     color: #0f172a;
   }
@@ -254,9 +341,9 @@
 .ask-card {
   .ask-row {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     align-items: flex-start;
-    margin-top: 10px;
+    margin-top: 8px;
   }
 
   .ask-input {
@@ -269,6 +356,45 @@
     gap: 8px;
     margin: 8px 0;
     color: #334155;
+  }
+}
+
+.deep-insights-card {
+  .deep-insights-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+
+    ::ng-deep .mat-mdc-form-field-subscript-wrapper {
+      display: none;
+    }
+
+    ::ng-deep .mat-mdc-slide-toggle {
+      margin-right: 2px;
+    }
+
+    ::ng-deep .mdc-form-field {
+      align-items: center;
+    }
+  }
+
+  .compact-control {
+    display: grid;
+    gap: 2px;
+    min-width: 116px;
+  }
+
+  .compact-control-label {
+    font-size: 11px;
+    color: #475569;
+    line-height: 1.1;
+  }
+
+  .compact-control-field {
+    width: 112px;
+    margin-bottom: 0;
   }
 }
 
@@ -310,6 +436,36 @@
     gap: 8px;
   }
 
+  .percentile-toolbar {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .percentile-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .percentile-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    margin-right: 2px;
+  }
+
+  .percentile-status {
+    display: flex;
+    align-items: center;
+  }
+
+  .percentile-unavailable {
+    font-size: 12px;
+    color: #64748b;
+  }
+
   .drilldown-panel {
     margin: 8px 0 4px;
     padding: 10px 12px;
@@ -332,25 +488,244 @@
     display: flex;
     gap: 8px;
   }
+
+  .drilldown-breadcrumb {
+    margin: 8px 0 4px;
+    padding: 8px 10px;
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    background: #f8fbff;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+
+    .breadcrumb-label {
+      font-size: 12px;
+      color: #475569;
+      margin-right: 4px;
+    }
+
+    .breadcrumb-step {
+      min-width: 0;
+      padding: 0 6px;
+      line-height: 24px;
+      font-size: 12px;
+    }
+
+    mat-icon {
+      width: 14px;
+      height: 14px;
+      font-size: 14px;
+      color: #94a3b8;
+    }
+
+    .breadcrumb-spacer {
+      flex: 1 1 auto;
+      min-width: 8px;
+    }
+
+    mat-progress-spinner {
+      margin-left: 6px;
+    }
+  }
+
+  .drilldown-active-filter {
+    margin: 4px 0 8px;
+
+    mat-chip {
+      font-size: 12px;
+      line-height: 1.2;
+    }
+  }
 }
 
 .data-grid-card {
   .data-grid-toolbar {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     flex-wrap: wrap;
 
     mat-form-field {
       flex: 1;
       min-width: 240px;
+      margin-bottom: 0;
+    }
+
+    ::ng-deep .mat-mdc-form-field-subscript-wrapper {
+      display: none;
+    }
+
+    .data-grid-count {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      line-height: 1.2;
+    }
+  }
+
+  .raw-data-layout {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+
+  .raw-fields-panel {
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 8px;
+    position: sticky;
+    top: 8px;
+    max-height: 70vh;
+    overflow: auto;
+  }
+
+  .raw-fields-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+
+    h4 {
+      margin: 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #334155;
+    }
+
+    span {
+      font-size: 12px;
+      color: #475569;
+    }
+  }
+
+  .raw-fields-search {
+    width: 100%;
+  }
+
+  .raw-fields-list {
+    display: grid;
+    gap: 6px;
+
+    button {
+      justify-content: space-between;
+      text-align: left;
+      white-space: normal;
+      line-height: 1.2;
+
+      span,
+      small {
+        display: block;
+        width: 100%;
+      }
+
+      small {
+        opacity: 0.75;
+        font-size: 11px;
+      }
+
+      &.active {
+        border-color: #2563eb;
+        background: #eff6ff;
+      }
+    }
+  }
+
+  .raw-main-panel {
+    min-width: 0;
+  }
+
+  .raw-field-summary {
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    background: #f8fbff;
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+
+  .raw-field-summary-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: baseline;
+    margin-bottom: 8px;
+
+    strong {
+      font-size: 13px;
+      color: #0f172a;
+    }
+
+    span {
+      font-size: 11px;
+      color: #475569;
+    }
+  }
+
+  .raw-field-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+
+    div {
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      display: grid;
+      gap: 2px;
+    }
+
+    span {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #1d4ed8;
+    }
+
+    strong {
+      font-size: 13px;
+      color: #0f172a;
+    }
+  }
+
+  .raw-value-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+
+    .tag-label {
+      font-size: 11px;
+      color: #334155;
+      min-width: 108px;
+    }
+
+    button.active-filter {
+      border-color: #2563eb;
+      background: #dbeafe;
+    }
+  }
+
+  .raw-value-actions {
+    display: flex;
+    justify-content: flex-end;
+
+    button.active-filter {
+      border-color: #b91c1c;
+      background: #fee2e2;
     }
   }
 
   .data-grid-table-wrapper {
     overflow: auto;
-    max-height: 440px;
+    max-height: 460px;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
   }
@@ -365,13 +740,13 @@
 }
 
 .simulation-card {
-  margin-top: 4px;
+  margin-top: 2px;
 
   .simulation-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
   }
 
   .simulation-ops-header {
@@ -477,14 +852,14 @@
 
 .chart-wrapper {
   width: 100%;
-  min-height: 520px;
-  padding: 16px 0;
+  min-height: 440px;
+  padding: 8px 0;
   position: relative;
 }
 
 .chart {
   width: 100%;
-  height: 520px;
+  height: 440px;
 }
 
 .chart-loading-overlay {
@@ -496,11 +871,16 @@
   background: rgba(15, 23, 42, 0.74);
   color: #fff;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 8;
+  pointer-events: none;
 }
 
 .chart-skeleton {
   width: 100%;
-  height: 520px;
+  height: 440px;
   background: linear-gradient(90deg, #f8fafc 25%, #eef2f7 50%, #f8fafc 75%);
   background-size: 200% 100%;
   border-radius: 8px;
@@ -531,11 +911,11 @@
   }
 
   .controls-section {
-    padding: 16px;
+    padding: 10px 12px;
 
     h3 {
       margin: 0 0 12px 0;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 600;
       color: #666;
       text-transform: uppercase;
@@ -557,6 +937,14 @@
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 8px;
       align-items: center;
+
+      ::ng-deep .mat-mdc-form-field-subscript-wrapper {
+        display: none;
+      }
+
+      button {
+        height: 38px;
+      }
     }
 
     .selected-metrics {
@@ -567,7 +955,7 @@
   }
 
   .controls-actions {
-    padding: 16px;
+    padding: 10px 12px;
     display: flex;
     justify-content: flex-end;
   }
@@ -577,7 +965,7 @@
   }
 
   .controls-info {
-    padding: 16px;
+    padding: 10px 12px;
     background-color: #e3f2fd;
     display: flex;
     gap: 12px;
@@ -593,7 +981,7 @@
 
     p {
       margin: 0;
-      font-size: 13px;
+      font-size: 12px;
       color: #1565c0;
       line-height: 1.5;
     }
@@ -650,15 +1038,15 @@
 .meta-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 16px;
-  margin-top: 16px;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .meta-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 10px 12px;
   background-color: #f5f5f5;
   border-radius: 8px;
   transition: background-color 0.2s;
@@ -689,7 +1077,7 @@
 }
 
 .meta-value {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
   color: #333;
 
@@ -751,11 +1139,11 @@
   }
 
   .chart-wrapper {
-    min-height: 400px;
+    min-height: 360px;
   }
 
   .chart {
-    height: 400px;
+    height: 360px;
   }
 
   .meta-grid {
@@ -786,6 +1174,17 @@
 
   .filter-rule {
     grid-template-columns: 1fr;
+  }
+
+  .data-grid-card {
+    .raw-data-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .raw-fields-panel {
+      position: static;
+      max-height: none;
+    }
   }
 
   .ask-card {
