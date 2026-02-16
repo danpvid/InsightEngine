@@ -121,6 +121,7 @@ public class LLMFeatureServiceTests
 
         var service = new AIInsightService(
             contextBuilder,
+            new StubEvidencePackService(),
             llmClient,
             new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
             NullLogger<AIInsightService>.Instance);
@@ -155,6 +156,7 @@ public class LLMFeatureServiceTests
         var llmClient = new StubLLMClient(Result.Failure<LLMResponse>("LLM provider is disabled."));
         var service = new AIInsightService(
             contextBuilder,
+            new StubEvidencePackService(),
             llmClient,
             new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
             NullLogger<AIInsightService>.Instance);
@@ -211,6 +213,30 @@ public class LLMFeatureServiceTests
         public Task<Result<LLMResponse>> GenerateJsonAsync(LLMRequest request, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class StubEvidencePackService : IEvidencePackService
+    {
+        public Task<Result<EvidencePackResult>> BuildEvidencePackAsync(
+            DeepInsightsRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result.Success(new EvidencePackResult
+            {
+                EvidencePack = new EvidencePack
+                {
+                    DatasetId = request.DatasetId,
+                    RecommendationId = request.RecommendationId,
+                    QueryHash = "stub",
+                    EvidenceVersion = "v1",
+                    Facts =
+                    [
+                        new EvidenceFact { EvidenceId = "TEST_1", ShortClaim = "stub", Value = "1" }
+                    ]
+                },
+                CacheHit = false
+            }));
         }
     }
 
