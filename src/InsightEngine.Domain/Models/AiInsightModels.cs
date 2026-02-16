@@ -26,3 +26,19 @@ public class AiInsightSummaryResult
     public AiInsightSummary InsightSummary { get; set; } = new();
     public AiGenerationMeta Meta { get; set; } = new();
 }
+
+public class ChartExplanation
+{
+    public List<string> Explanation { get; set; } = new();
+    public List<string> KeyTakeaways { get; set; } = new();
+    public List<string> PotentialCauses { get; set; } = new();
+    public List<string> Caveats { get; set; } = new();
+    public List<string> SuggestedNextSteps { get; set; } = new();
+    public List<string> QuestionsToAsk { get; set; } = new();
+}
+
+public class ChartExplanationResult
+{
+    public ChartExplanation Explanation { get; set; } = new();
+    public AiGenerationMeta Meta { get; set; } = new();
+}

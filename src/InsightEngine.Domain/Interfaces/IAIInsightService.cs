@@ -8,4 +8,8 @@ public interface IAIInsightService
     Task<Result<AiInsightSummaryResult>> GenerateAiSummaryAsync(
         LLMChartContextRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<Result<ChartExplanationResult>> ExplainChartAsync(
+        LLMChartContextRequest request,
+        CancellationToken cancellationToken = default);
 }

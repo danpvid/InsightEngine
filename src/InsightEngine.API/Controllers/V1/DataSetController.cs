@@ -654,6 +654,56 @@ OFFSET {offset};
         }));
     }
 
+    [HttpPost("{id:guid}/charts/{recommendationId}/explain")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> ExplainChart(
+        Guid id,
+        string recommendationId,
+        [FromBody] AiChartRequest? request)
+    {
+        request ??= new AiChartRequest();
+
+        var filterErrors = new List<string>();
+        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
+        if (filterErrors.Count > 0)
+        {
+            return ResponseResult(Result.Failure<object>(filterErrors));
+        }
+
+        var result = await _aiInsightService.ExplainChartAsync(
+            new LLMChartContextRequest
+            {
+                DatasetId = id,
+                RecommendationId = recommendationId,
+                Aggregation = request.Aggregation,
+                TimeBin = request.TimeBin,
+                MetricY = request.MetricY,
+                GroupBy = request.GroupBy,
+                Filters = parsedFilters,
+                ScenarioMeta = request.ScenarioMeta
+            },
+            HttpContext.RequestAborted);
+
+        if (!result.IsSuccess)
+        {
+            return ResponseResult(Result.Failure<object>(result.Errors));
+        }
+
+        return ResponseResult(Result.Success(new
+        {
+            explanation = result.Data!.Explanation.Explanation,
+            keyTakeaways = result.Data.Explanation.KeyTakeaways,
+            potentialCauses = result.Data.Explanation.PotentialCauses,
+            caveats = result.Data.Explanation.Caveats,
+            suggestedNextSteps = result.Data.Explanation.SuggestedNextSteps,
+            questionsToAsk = result.Data.Explanation.QuestionsToAsk,
+            meta = result.Data.Meta
+        }));
+    }
+
     [HttpPost("{id:guid}/simulate")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
