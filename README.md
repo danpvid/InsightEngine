@@ -1,59 +1,116 @@
 ﻿# InsightEngine
 
-InsightEngine is a local-first analytics MVP that turns raw CSV datasets into chart recommendations, executable ECharts payloads, and simulation outputs without requiring manual SQL authoring.
+> Auto-BI inteligente que transforma datasets CSV em insights acionaveis, sem SQL manual.
 
-## Architecture
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
+[![Angular](https://img.shields.io/badge/Angular-17-DD0031?logo=angular)](https://angular.dev/)
+[![Architecture](https://img.shields.io/badge/architecture-DDD%20%2B%20CQRS-green.svg)](docs/)
 
-The solution is split into a .NET backend and an Angular frontend:
+InsightEngine is a local-first analytics platform that ingests CSV datasets, profiles data automatically, generates chart recommendations, executes analytical queries with DuckDB, and now supports opt-in AI features through a pluggable LLM provider layer.
 
-- `src/InsightEngine.API`: REST API, middleware, health endpoints, hosted jobs
-- `src/InsightEngine.Application`: orchestration layer (commands/queries)
-- `src/InsightEngine.Domain`: core models, rules, validators, result pattern
-- `src/InsightEngine.Infra.Data`: DuckDB execution, CSV profiling, file storage, metadata persistence
-- `src/InsightEngine.Web`: Angular chart viewer and dataset workflow UI
+## Visao do Produto
 
-For a deeper breakdown, see `ARCHITECTURE.md`.
+### Capacidades atuais
+- Upload inteligente de CSV com validacao de limites e perfilamento automatico.
+- Recomendacoes de visualizacao (line, bar, histogram, scatter) com score e criterios.
+- Exploracao self-service (aggregation, time bin, metric, group by, filters).
+- Insight Summary heuristico com sinais (trend, volatility, outliers, seasonality).
+- Simulacao what-if (baseline vs simulated) com operacoes controladas.
+- AI opt-in (Local LLM first): AI Summary, Explain Chart, Ask (analysis plan).
+
+### Principios de arquitetura do produto
+- Core flow nao depende de LLM e nao bloqueia renderizacao do grafico.
+- Sem envio de CSV bruto para modelo: apenas schema/profile/meta/amostra agregada.
+- Enums serializados como string (backend e frontend).
+- API com envelope de erro padronizado + traceId.
+
+## Status do Projeto
+
+### Entregue (MVP RC)
+- Backend .NET + frontend Angular 17 em fluxo completo (upload -> recommendations -> chart viewer).
+- Painel de exploracao com estado em URL e reset para baseline.
+- Navegacao inteligente entre insights e ordenacao por score/impacto/tipo.
+- Simulacao com CTE/View no DuckDB, sem reescrita do CSV.
+- Cache por queryHash e cache hit em metadados.
+- Observabilidade (logs estruturados, correlacao, health endpoints).
+- Persistencia minima de metadata + politica de retencao.
+- LLM layer pluggable com provider local HTTP + fallback deterministico.
+
+## Arquitetura
+
+Camadas principais:
+- `src/InsightEngine.API`: REST controllers, middleware, health, runtime config.
+- `src/InsightEngine.Application`: orquestracao de casos de uso e servicos.
+- `src/InsightEngine.Domain`: modelos, regras, enums, contratos e heuristicas.
+- `src/InsightEngine.Infra.Data`: DuckDB, profiler CSV, armazenamento de arquivos, metadata.
+- `src/InsightEngine.Web`: Angular app (upload, recommendations, chart viewer).
+- `tests/InsightEngine.IntegrationTests`: testes de integracao e smoke.
+
+Documento detalhado: `ARCHITECTURE.md`.
+
+## Tecnologias
+
+### Backend
+- .NET SDK 10
+- ASP.NET Core Web API
+- DuckDB.NET
+- FluentValidation
+- MediatR
+- SQLite (metadata local opcional)
+
+### Frontend
+- Angular 17 (standalone)
+- Angular Material
+- ECharts + ngx-echarts
 
 ## Quickstart
 
-### Prerequisites
-
-- .NET SDK 10
+### Pre-requisitos
+- .NET SDK `10.0.103` (ver `global.json`)
 - Node.js 18+
 - npm 9+
 
-### Backend
+### Opcao 1 (scripts Windows)
+```bash
+setup.bat
+start-demo.bat
+```
 
+### Opcao 2 (manual)
+
+1) Backend
 ```bash
 cd src/InsightEngine.API
 dotnet run
 ```
 
-Default URLs:
-
-- API: `http://localhost:5000` / `https://localhost:5001`
-- Swagger: `https://localhost:5001/swagger`
-- Health: `http://localhost:5000/health`
-
-### Frontend
-
+2) Frontend
 ```bash
 cd src/InsightEngine.Web
 npm install
 npm start
 ```
 
-Frontend URL:
+URLs padrao:
+- API: `http://localhost:5000` / `https://localhost:5001`
+- Swagger: `https://localhost:5001/swagger`
+- Health: `http://localhost:5000/health`
+- Frontend: `http://localhost:4200`
 
-- `http://localhost:4200`
-- Optional local LLM server (for AI features): `http://localhost:11434`
+## Fluxo de Uso (UI)
 
-## Configuration
+1. Upload: `/datasets/new`
+2. Recommendations: `/datasets/{datasetId}/recommendations`
+3. Chart Viewer: `/datasets/{datasetId}/charts/{recId}`
+4. Exploracao: ajustar controles no painel lateral e compartilhar URL.
+5. Simulacao: aba de simulacao com comparativo baseline vs simulated.
+6. AI opt-in: Generate AI Summary, Explain chart, Ask question.
 
-Main runtime settings are in `src/InsightEngine.API/appsettings.json`.
+## Configuracao
 
-### InsightEngineSettings
+Arquivo principal: `src/InsightEngine.API/appsettings.json`.
 
+### InsightEngineSettings (limites/runtime)
 ```json
 {
   "InsightEngineSettings": {
@@ -70,8 +127,7 @@ Main runtime settings are in `src/InsightEngine.API/appsettings.json`.
 }
 ```
 
-### Metadata persistence
-
+### MetadataPersistence
 ```json
 {
   "MetadataPersistence": {
@@ -81,14 +137,7 @@ Main runtime settings are in `src/InsightEngine.API/appsettings.json`.
 }
 ```
 
-Notes:
-
-- Dataset metadata is persisted in SQLite (local file).
-- Raw CSV files remain in `FileStorage:BasePath`.
-- Retention cleanup runs in background and can also be triggered manually.
-
-### LLM (local-first, pluggable providers)
-
+### LLM (local-first, pluggable)
 ```json
 {
   "LLM": {
@@ -112,55 +161,34 @@ Notes:
 ```
 
 Provider options:
+- `None`: endpoints de AI ativos com fallback heuristico/deterministico.
+- `LocalHttp`: provedor local (Ollama/llama.cpp HTTP compativel).
+- `OpenAI`: placeholder para integracao futura.
 
-- `None`: AI endpoints stay available but return deterministic fallback content.
-- `LocalHttp`: uses a local HTTP LLM provider (Ollama-compatible).
-- `OpenAI`: placeholder for future provider integration.
-
-Enable local AI with Ollama (example):
-
+Exemplo local com Ollama:
 ```bash
 ollama serve
 ollama pull llama3
 ```
 
-Then set in `appsettings.json`:
+## API Overview
 
-```json
-{
-  "LLM": {
-    "Provider": "LocalHttp",
-    "LocalHttp": {
-      "BaseUrl": "http://localhost:11434",
-      "Model": "llama3"
-    }
-  }
-}
-```
-
-Data safety defaults:
-
-- LLM context is built from schema, profile stats, chart/query metadata, and reduced aggregates.
-- Raw CSV rows are not sent to the model.
-- Redaction masks/removes sensitive columns by configured name patterns.
-
-## API overview
-
-Key endpoints:
-
+Principais endpoints:
 - `POST /api/v1/datasets` - upload CSV
-- `GET /api/v1/datasets/runtime-config` - frontend runtime limits
-- `GET /api/v1/datasets/{id}/recommendations` - chart recommendations
-- `GET /api/v1/datasets/{id}/charts/{recommendationId}` - executable chart (supports exploration query params)
-- `POST /api/v1/datasets/{id}/charts/{recommendationId}/ai-summary` - on-demand AI summary
-- `POST /api/v1/datasets/{id}/charts/{recommendationId}/explain` - on-demand chart explanation
-- `POST /api/v1/datasets/{id}/ask` - natural language question -> analysis plan (no SQL execution)
-- `POST /api/v1/datasets/{id}/simulate` - scenario simulation
-- `POST /api/v1/datasets/cleanup` - manual cleanup trigger (dev/admin)
-- `GET /health` and `GET /health/ready` - liveness/readiness
+- `GET /api/v1/datasets/runtime-config` - limites runtime para frontend
+- `GET /api/v1/datasets/{id}/recommendations` - recomendacoes
+- `GET /api/v1/datasets/{id}/charts/{recommendationId}` - chart + insightSummary + meta
+- `POST /api/v1/datasets/{id}/charts/{recommendationId}/ai-summary` - resumo AI on-demand
+- `POST /api/v1/datasets/{id}/charts/{recommendationId}/explain` - explicacao estruturada
+- `POST /api/v1/datasets/{id}/ask` - pergunta NL -> analysis plan (sem SQL execution)
+- `POST /api/v1/datasets/{id}/simulate` - simulacao
+- `POST /api/v1/datasets/cleanup` - cleanup manual (dev/admin)
+- `GET /health` e `GET /health/ready`
+- `POST /api/v1/auth/login` - login demo JWT
 
-### Example: chart execution response (short)
+## Exemplos de resposta
 
+### Chart execution (resumido)
 ```json
 {
   "success": true,
@@ -189,42 +217,7 @@ Key endpoints:
 }
 ```
 
-### Error envelope
-
-All API errors follow this shape:
-
-```json
-{
-  "success": false,
-  "errors": [
-    {
-      "code": "validation_error",
-      "message": "Invalid request",
-      "target": "filters"
-    }
-  ],
-  "traceId": "00-...",
-  "status": 400
-}
-```
-
-### Example: AI summary request/response (short)
-
-Request:
-
-```http
-POST /api/v1/datasets/{id}/charts/{recommendationId}/ai-summary
-Content-Type: application/json
-
-{
-  "aggregation": "sum",
-  "metricY": "revenue",
-  "timeBin": "month"
-}
-```
-
-Response:
-
+### AI summary (resumido)
 ```json
 {
   "success": true,
@@ -246,35 +239,69 @@ Response:
 }
 ```
 
-## Smoke tests
+### Error envelope padrao
+```json
+{
+  "success": false,
+  "errors": [
+    {
+      "code": "validation_error",
+      "message": "Invalid request",
+      "target": "filters"
+    }
+  ],
+  "traceId": "00-...",
+  "status": 400
+}
+```
 
-Run full backend integration tests:
+## Qualidade, Testes e Smoke
 
+Backend:
 ```bash
 dotnet test InsightEngine.slnx
 ```
 
-Run smoke-only flow tests:
-
+Smoke flow:
 ```bash
 dotnet test InsightEngine.slnx --filter "Category=Smoke"
 ```
 
-Build frontend:
-
+Frontend build:
 ```bash
 cd src/InsightEngine.Web
 npm run build
 ```
 
-Manual UI verification for AI features:
-
+AI UI manual checks:
 - `docs/AI-UI-MANUAL-TESTS.md`
 
-## Operational notes
+## Seguranca e Governanca de Dados
 
-- Enums are serialized as strings (backend and frontend models aligned).
-- Chart responses include `meta.cacheHit` for cache visibility.
-- Request correlation uses trace identifiers in logs and error responses.
-- Retention cleanup removes expired metadata and corresponding local artifacts.
-- AI features are opt-in/on-demand and do not block chart rendering.
+- Enums serializados como string em toda a stack.
+- Logs com correlacao/traceId.
+- `meta.cacheHit` em respostas cacheadas.
+- LLM context builder aplica redaction e limite de bytes.
+- CSV bruto nao e enviado ao modelo.
+
+## Documentacao complementar
+
+- `ARCHITECTURE.md`
+- `docs/API_CONTRACTS.md`
+- `docs/MELHORIAS-UX.md`
+- `QUICK-START-DEMO.md`
+- `START-HERE.md`
+- `LEIA-PRIMEIRO.md`
+- `PACKAGES.md`
+
+## Contribuicao
+
+1. Fork do repositorio.
+2. Crie branch de feature (`git checkout -b feature/minha-feature`).
+3. Commit seguindo conventional commits.
+4. Abra PR com descricao objetiva e passos de validacao.
+
+## Licenca
+
+MIT. See `LICENSE`.
+
