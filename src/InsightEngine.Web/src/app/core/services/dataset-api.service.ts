@@ -10,6 +10,7 @@ import {
   AiSummaryRequest,
   AiSummaryResponse,
   ChartResponse,
+  ExplainChartResponse,
   ScenarioSimulationRequest,
   ScenarioSimulationResponse
 } from '../models/chart.model';
@@ -190,6 +191,17 @@ export class DatasetApiService {
   ): Observable<ApiResponse<AiSummaryResponse>> {
     return this.http.post<ApiResponse<AiSummaryResponse>>(
       `${this.baseUrl}/api/v1/datasets/${datasetId}/charts/${recommendationId}/ai-summary`,
+      payload
+    );
+  }
+
+  explainChart(
+    datasetId: string,
+    recommendationId: string,
+    payload: AiSummaryRequest
+  ): Observable<ApiResponse<ExplainChartResponse>> {
+    return this.http.post<ApiResponse<ExplainChartResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/charts/${recommendationId}/explain`,
       payload
     );
   }

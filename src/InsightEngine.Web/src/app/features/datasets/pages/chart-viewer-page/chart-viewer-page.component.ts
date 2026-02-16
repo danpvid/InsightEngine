@@ -18,6 +18,7 @@ import {
   AiGenerationMeta,
   AiInsightSummary,
   ChartMeta,
+  ExplainChartResponse,
   InsightSummary,
   ScenarioFilterRequest,
   ScenarioOperationRequest,
@@ -93,6 +94,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   aiSummaryMeta: AiGenerationMeta | null = null;
   aiSummaryLoading: boolean = false;
   aiSummaryError: string | null = null;
+  explainResult: ExplainChartResponse | null = null;
+  explainLoading: boolean = false;
+  explainError: string | null = null;
+  explainPanelOpen: boolean = false;
   loading: boolean = false;
   error: ApiError | null = null;
 
@@ -497,6 +502,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.aiSummary = null;
     this.aiSummaryMeta = null;
     this.aiSummaryError = null;
+    this.explainResult = null;
+    this.explainError = null;
+    this.explainPanelOpen = false;
 
     const loadVersion = ++this.chartLoadVersion;
     const startedAt = performance.now();
@@ -619,6 +627,50 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     });
   }
 
+  openExplainChart(): void {
+    this.explainPanelOpen = true;
+    if (this.explainLoading) {
+      return;
+    }
+
+    this.explainLoading = true;
+    this.explainError = null;
+    const payload = this.buildAiSummaryPayload();
+
+    this.datasetApi.explainChart(this.datasetId, this.recommendationId, payload).subscribe({
+      next: (response) => {
+        this.explainLoading = false;
+        if (!response.success || !response.data) {
+          this.explainError = response.errors?.[0]?.message || 'Nao foi possivel explicar o grafico.';
+          return;
+        }
+
+        this.explainResult = response.data;
+      },
+      error: (err) => {
+        this.explainLoading = false;
+        this.explainError = HttpErrorUtil.extractErrorMessage(err);
+      }
+    });
+  }
+
+  closeExplainPanel(): void {
+    this.explainPanelOpen = false;
+  }
+
+  copyExplanationToClipboard(): void {
+    if (!this.explainResult) {
+      return;
+    }
+
+    const payload = this.buildExplanationText(this.explainResult);
+    navigator.clipboard.writeText(payload).then(() => {
+      this.toast.success('Explicacao copiada.');
+    }).catch(() => {
+      this.toast.error('Nao foi possivel copiar a explicacao.');
+    });
+  }
+
   private buildAiSummaryPayload(): {
     aggregation?: string;
     timeBin?: string;
@@ -634,6 +686,28 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       groupBy: options.groupBy,
       filters: options.filters
     };
+  }
+
+  private buildExplanationText(explanation: ExplainChartResponse): string {
+    return [
+      'Explanation',
+      ...explanation.explanation,
+      '',
+      'Key Takeaways',
+      ...explanation.keyTakeaways,
+      '',
+      'Potential Causes',
+      ...explanation.potentialCauses,
+      '',
+      'Caveats',
+      ...explanation.caveats,
+      '',
+      'Suggested Next Steps',
+      ...explanation.suggestedNextSteps,
+      '',
+      'Questions To Ask',
+      ...explanation.questionsToAsk
+    ].join('\n');
   }
 
   resetToRecommended(): void {

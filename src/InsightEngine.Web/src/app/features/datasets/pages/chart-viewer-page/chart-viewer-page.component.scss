@@ -225,6 +225,12 @@
       font-weight: 600;
       color: #1f2937;
     }
+
+    p {
+      margin: 0 0 8px;
+      color: #334155;
+      line-height: 1.5;
+    }
   }
 }
 
@@ -235,6 +241,19 @@
 
   .insight-headline {
     font-size: 15px;
+  }
+}
+
+.ai-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.explain-card {
+  .insight-header {
+    align-items: flex-start;
   }
 }
 

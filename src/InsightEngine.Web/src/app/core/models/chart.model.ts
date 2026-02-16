@@ -123,6 +123,16 @@ export interface AiGenerationMeta {
   fallbackReason?: string;
 }
 
+export interface ExplainChartResponse {
+  explanation: string[];
+  keyTakeaways: string[];
+  potentialCauses: string[];
+  caveats: string[];
+  suggestedNextSteps: string[];
+  questionsToAsk: string[];
+  meta: AiGenerationMeta;
+}
+
 export type TrendSignal = 'Up' | 'Down' | 'Flat';
 export type VolatilitySignal = 'Low' | 'Medium' | 'High';
 export type OutlierSignal = 'None' | 'Few' | 'Many';

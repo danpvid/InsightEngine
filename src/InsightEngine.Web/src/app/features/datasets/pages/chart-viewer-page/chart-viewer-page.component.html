@@ -92,9 +92,14 @@
                 <p class="insight-headline" *ngIf="!aiSummary">Generate an AI summary for the current chart view.</p>
               </div>
             </div>
-            <button mat-flat-button color="primary" (click)="generateAiSummary()" [disabled]="aiSummaryLoading">
-              {{ aiSummaryLoading ? 'Generating...' : 'Generate AI Summary' }}
-            </button>
+            <div class="ai-actions">
+              <button mat-flat-button color="primary" (click)="generateAiSummary()" [disabled]="aiSummaryLoading">
+                {{ aiSummaryLoading ? 'Generating...' : 'Generate AI Summary' }}
+              </button>
+              <button mat-stroked-button color="primary" (click)="openExplainChart()" [disabled]="explainLoading">
+                Explain chart
+              </button>
+            </div>
           </div>
 
           <div class="chart-skeleton" *ngIf="aiSummaryLoading">
@@ -136,6 +141,74 @@
               <h4>Next Questions</h4>
               <ul class="insight-bullets">
                 <li *ngFor="let question of aiSummary.nextQuestions">{{ question }}</li>
+              </ul>
+            </div>
+          </ng-container>
+        </mat-card>
+
+        <mat-card class="insight-card explain-card" *ngIf="explainPanelOpen">
+          <div class="insight-header">
+            <div class="insight-title">
+              <mat-icon>forum</mat-icon>
+              <div class="insight-text">
+                <h3>Chart Explanation</h3>
+                <p class="insight-headline">Business-focused explanation for the active chart.</p>
+              </div>
+            </div>
+            <div class="ai-actions">
+              <button mat-button color="primary" (click)="copyExplanationToClipboard()" [disabled]="!explainResult">
+                Copy
+              </button>
+              <button mat-icon-button (click)="closeExplainPanel()">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+          </div>
+
+          <div class="chart-skeleton" *ngIf="explainLoading">
+            <div class="skeleton-axis-x"></div>
+            <div class="skeleton-axis-x"></div>
+            <div class="skeleton-axis-x"></div>
+          </div>
+
+          <div class="simulation-error" *ngIf="explainError">{{ explainError }}</div>
+
+          <ng-container *ngIf="explainResult">
+            <div class="insight-chips">
+              <mat-chip color="primary" selected *ngIf="explainResult.meta.provider">
+                Provider: {{ explainResult.meta.provider }}
+              </mat-chip>
+              <mat-chip color="primary" selected *ngIf="explainResult.meta.model">
+                Model: {{ explainResult.meta.model }}
+              </mat-chip>
+              <mat-chip color="accent" selected *ngIf="explainResult.meta.cacheHit">
+                Cached ⚡
+              </mat-chip>
+            </div>
+
+            <div class="insight-subsection">
+              <h4>Explanation</h4>
+              <p *ngFor="let paragraph of explainResult.explanation">{{ paragraph }}</p>
+            </div>
+
+            <div class="insight-subsection">
+              <h4>Key Takeaways</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let item of explainResult.keyTakeaways">{{ item }}</li>
+              </ul>
+            </div>
+
+            <div class="insight-subsection" *ngIf="explainResult.caveats?.length">
+              <h4>Caveats</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let item of explainResult.caveats">{{ item }}</li>
+              </ul>
+            </div>
+
+            <div class="insight-subsection" *ngIf="explainResult.suggestedNextSteps?.length">
+              <h4>Next Steps</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let item of explainResult.suggestedNextSteps">{{ item }}</li>
               </ul>
             </div>
           </ng-container>
