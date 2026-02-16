@@ -93,6 +93,36 @@ export interface InsightSignals {
   seasonality: SeasonalitySignal;
 }
 
+export interface AiSummaryRequest {
+  aggregation?: string;
+  timeBin?: string;
+  metricY?: string;
+  groupBy?: string;
+  filters?: string[];
+}
+
+export interface AiSummaryResponse {
+  insightSummary: AiInsightSummary;
+  meta: AiGenerationMeta;
+}
+
+export interface AiInsightSummary {
+  headline: string;
+  bulletPoints: string[];
+  cautions: string[];
+  nextQuestions: string[];
+  confidence: number;
+}
+
+export interface AiGenerationMeta {
+  provider: string;
+  model: string;
+  durationMs: number;
+  cacheHit: boolean;
+  fallbackUsed: boolean;
+  fallbackReason?: string;
+}
+
 export type TrendSignal = 'Up' | 'Down' | 'Flat';
 export type VolatilitySignal = 'Low' | 'Medium' | 'High';
 export type OutlierSignal = 'None' | 'Few' | 'Many';

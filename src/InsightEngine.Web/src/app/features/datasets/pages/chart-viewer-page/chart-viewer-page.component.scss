@@ -215,6 +215,27 @@
       line-height: 1.5;
     }
   }
+
+  .insight-subsection {
+    margin-top: 12px;
+
+    h4 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+  }
+}
+
+.ai-insight-card {
+  .insight-header {
+    align-items: center;
+  }
+
+  .insight-headline {
+    font-size: 15px;
+  }
 }
 
 .chart-card {

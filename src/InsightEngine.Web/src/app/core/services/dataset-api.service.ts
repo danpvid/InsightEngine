@@ -6,7 +6,13 @@ import { environment } from '../../../environments/environment.development';
 import { ApiResponse } from '../models/api-response.model';
 import { UploadDatasetResponse, DataSetSummary, DatasetProfile, RawDatasetRowsResponse } from '../models/dataset.model';
 import { RecommendationsResponse } from '../models/recommendation.model';
-import { ChartResponse, ScenarioSimulationRequest, ScenarioSimulationResponse } from '../models/chart.model';
+import {
+  AiSummaryRequest,
+  AiSummaryResponse,
+  ChartResponse,
+  ScenarioSimulationRequest,
+  ScenarioSimulationResponse
+} from '../models/chart.model';
 import { RuntimeConfig } from '../models/runtime-config.model';
 
 export interface UploadProgress {
@@ -173,6 +179,17 @@ export class DatasetApiService {
   ): Observable<ApiResponse<ScenarioSimulationResponse>> {
     return this.http.post<ApiResponse<ScenarioSimulationResponse>>(
       `${this.baseUrl}/api/v1/datasets/${datasetId}/simulate`,
+      payload
+    );
+  }
+
+  generateAiSummary(
+    datasetId: string,
+    recommendationId: string,
+    payload: AiSummaryRequest
+  ): Observable<ApiResponse<AiSummaryResponse>> {
+    return this.http.post<ApiResponse<AiSummaryResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/charts/${recommendationId}/ai-summary`,
       payload
     );
   }

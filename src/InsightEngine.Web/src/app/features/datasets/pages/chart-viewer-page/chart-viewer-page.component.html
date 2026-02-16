@@ -82,6 +82,65 @@
           </ul>
         </mat-card>
 
+        <mat-card class="insight-card ai-insight-card">
+          <div class="insight-header">
+            <div class="insight-title">
+              <mat-icon>smart_toy</mat-icon>
+              <div class="insight-text">
+                <h3>AI Summary</h3>
+                <p class="insight-headline" *ngIf="aiSummary">{{ aiSummary.headline }}</p>
+                <p class="insight-headline" *ngIf="!aiSummary">Generate an AI summary for the current chart view.</p>
+              </div>
+            </div>
+            <button mat-flat-button color="primary" (click)="generateAiSummary()" [disabled]="aiSummaryLoading">
+              {{ aiSummaryLoading ? 'Generating...' : 'Generate AI Summary' }}
+            </button>
+          </div>
+
+          <div class="chart-skeleton" *ngIf="aiSummaryLoading">
+            <div class="skeleton-axis-x"></div>
+            <div class="skeleton-axis-x"></div>
+            <div class="skeleton-axis-x"></div>
+          </div>
+
+          <div *ngIf="aiSummaryError" class="simulation-error">{{ aiSummaryError }}</div>
+
+          <ng-container *ngIf="aiSummary">
+            <div class="insight-chips">
+              <mat-chip color="primary" selected *ngIf="aiSummaryMeta?.provider">
+                Provider: {{ aiSummaryMeta?.provider }}
+              </mat-chip>
+              <mat-chip color="primary" selected *ngIf="aiSummaryMeta?.model">
+                Model: {{ aiSummaryMeta?.model }}
+              </mat-chip>
+              <mat-chip color="accent" selected *ngIf="aiSummaryMeta?.cacheHit">
+                Cached ⚡
+              </mat-chip>
+              <mat-chip color="warn" selected *ngIf="aiSummaryMeta?.fallbackUsed">
+                Fallback
+              </mat-chip>
+            </div>
+
+            <ul class="insight-bullets">
+              <li *ngFor="let bullet of aiSummary.bulletPoints">{{ bullet }}</li>
+            </ul>
+
+            <div class="insight-subsection" *ngIf="aiSummary.cautions?.length">
+              <h4>Cautions</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let caution of aiSummary.cautions">{{ caution }}</li>
+              </ul>
+            </div>
+
+            <div class="insight-subsection" *ngIf="aiSummary.nextQuestions?.length">
+              <h4>Next Questions</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let question of aiSummary.nextQuestions">{{ question }}</li>
+              </ul>
+            </div>
+          </ng-container>
+        </mat-card>
+
         <mat-card class="shared-filters-card">
           <div class="inline-filters-header">
             <h3>Filtros globais</h3>

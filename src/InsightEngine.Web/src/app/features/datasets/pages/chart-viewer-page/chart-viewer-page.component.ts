@@ -15,6 +15,8 @@ import { LoadingBarComponent } from '../../../../shared/components/loading-bar/l
 import { ErrorPanelComponent } from '../../../../shared/components/error-panel/error-panel.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import {
+  AiGenerationMeta,
+  AiInsightSummary,
   ChartMeta,
   InsightSummary,
   ScenarioFilterRequest,
@@ -87,6 +89,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   chartOption: EChartsOption | null = null;
   chartMeta: ChartMeta | null = null;
   insightSummary: InsightSummary | null = null;
+  aiSummary: AiInsightSummary | null = null;
+  aiSummaryMeta: AiGenerationMeta | null = null;
+  aiSummaryLoading: boolean = false;
+  aiSummaryError: string | null = null;
   loading: boolean = false;
   error: ApiError | null = null;
 
@@ -488,6 +494,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.error = null;
     this.pendingDrilldownCategory = null;
+    this.aiSummary = null;
+    this.aiSummaryMeta = null;
+    this.aiSummaryError = null;
 
     const loadVersion = ++this.chartLoadVersion;
     const startedAt = performance.now();
@@ -580,6 +589,51 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   refreshChart(): void {
     this.reloadChartWithCurrentParameters();
+  }
+
+  generateAiSummary(): void {
+    if (this.aiSummaryLoading) {
+      return;
+    }
+
+    this.aiSummaryLoading = true;
+    this.aiSummaryError = null;
+
+    const payload = this.buildAiSummaryPayload();
+
+    this.datasetApi.generateAiSummary(this.datasetId, this.recommendationId, payload).subscribe({
+      next: (response) => {
+        this.aiSummaryLoading = false;
+        if (!response.success || !response.data) {
+          this.aiSummaryError = response.errors?.[0]?.message || 'Nao foi possivel gerar o resumo AI.';
+          return;
+        }
+
+        this.aiSummary = response.data.insightSummary;
+        this.aiSummaryMeta = response.data.meta;
+      },
+      error: (err) => {
+        this.aiSummaryLoading = false;
+        this.aiSummaryError = HttpErrorUtil.extractErrorMessage(err);
+      }
+    });
+  }
+
+  private buildAiSummaryPayload(): {
+    aggregation?: string;
+    timeBin?: string;
+    metricY?: string;
+    groupBy?: string;
+    filters?: string[];
+  } {
+    const options = this.buildLoadOptionsFromState();
+    return {
+      aggregation: options.aggregation,
+      timeBin: options.timeBin,
+      metricY: options.metricY,
+      groupBy: options.groupBy,
+      filters: options.filters
+    };
   }
 
   resetToRecommended(): void {
