@@ -80,6 +80,7 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<IScenarioSimulationService, ScenarioSimulationService>();
         services.AddScoped<IDataSetCleanupService, DataSetCleanupService>();
         services.AddScoped<InsightEngine.Domain.Services.RecommendationEngine>();
+        services.AddScoped<ILLMContextBuilder, LLMContextBuilder>();
         services.AddHttpClient<LocalHttpLLMClient>();
         services.AddScoped<NullLLMClient>();
         services.AddScoped<OpenAiLLMClient>();
