@@ -245,6 +245,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   rawSortDirection: 'asc' | 'desc' = 'asc';
   rawFieldMetrics: RawFieldMetric[] = [];
   rawFieldStats: RawFieldStats | null = null;
+  rawTopValueStats: RawFieldStats | null = null;
+  rawTopValueStatsTotalRows: number = 0;
+  rawFacetDistinctCounts: Record<string, number> = {};
+  rawFacetDistinctCountsKey: string = '';
   rawFieldSearch: string = '';
   selectedRawFieldName: string = '';
 
@@ -459,11 +463,19 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     const column = selectedField.name;
-    const baseTopValues =
-      this.rawFieldStats && this.rawFieldStats.column === column
-        ? (this.rawFieldStats.topValues || [])
-        : (selectedField.topValuesProfile || []);
-    const topValues = this.withRawTopValueComplements(baseTopValues, column);
+    const scopedStats =
+      this.rawTopValueStats && this.rawTopValueStats.column === column
+        ? this.rawTopValueStats
+        : (this.rawFieldStats && this.rawFieldStats.column === column ? this.rawFieldStats : null);
+    const scopedTotalRows =
+      this.rawTopValueStats && this.rawTopValueStats.column === column
+        ? this.rawTopValueStatsTotalRows
+        : this.rawTotalRows;
+
+    const profileTopValues = selectedField.topValuesProfile || [];
+    const statsTopValues = scopedStats?.topValues || [];
+    const baseTopValues = statsTopValues.length > 0 ? statsTopValues : profileTopValues;
+    const topValues = this.withRawTopValueComplements(baseTopValues, scopedTotalRows);
     const activeRules = this.getRawTopValueRules(column);
     if (activeRules.length === 0) {
       return topValues;
@@ -1770,13 +1782,16 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
   }
 
-  private buildFilterParams(): string[] {
-    return this.filterRules
+  private buildFilterParams(excludeColumn?: string): string[] {
+    const normalizedExclude = (excludeColumn || '').trim().toLowerCase();
+    const validRules = this.filterRules
       .filter(rule => rule.column && rule.operator && rule.value)
-      .map((rule, index) => {
-        const logicalOperator = index === 0 ? 'And' : (rule.logicalOperator || 'And');
-        return `${rule.column}|${rule.operator}|${rule.value}|${logicalOperator}`;
-      });
+      .filter(rule => !normalizedExclude || rule.column.trim().toLowerCase() !== normalizedExclude);
+
+    return validRules.map((rule, index) => {
+      const logicalOperator = index === 0 ? 'And' : (rule.logicalOperator || 'And');
+      return `${rule.column}|${rule.operator}|${rule.value}|${logicalOperator}`;
+    });
   }
 
   private parseFiltersFromUrl(filters: string[]): FilterRule[] {
@@ -2453,7 +2468,25 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       (rule.operator === 'Eq' || rule.operator === 'In'));
   }
 
+  isFieldFiltered(fieldName: string): boolean {
+    const normalizedField = `${fieldName ?? ''}`.trim().toLowerCase();
+    if (!normalizedField) {
+      return false;
+    }
+
+    return this.filterRules.some(rule =>
+      !!rule.column &&
+      !!rule.operator &&
+      !!rule.value &&
+      rule.column.trim().toLowerCase() === normalizedField);
+  }
+
   getFieldDistinctDisplayCount(field: RawFieldMetric): number {
+    const facetDistinct = this.rawFacetDistinctCounts[field.name.trim().toLowerCase()];
+    if (typeof facetDistinct === 'number') {
+      return facetDistinct;
+    }
+
     if (this.rawFieldStats && this.rawFieldStats.column === field.name) {
       return this.rawFieldStats.distinctCount;
     }
@@ -2476,12 +2509,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   private withRawTopValueComplements(
     values: RawDistinctValueStat[],
-    column: string): RawDistinctValueStat[] {
-    if (!this.rawFieldStats || this.rawFieldStats.column !== column) {
-      return values;
-    }
-
-    const totalRows = Math.max(this.rawTotalRows || 0, 0);
+    totalRowsInput: number): RawDistinctValueStat[] {
+    const totalRows = Math.max(totalRowsInput || 0, 0);
     if (totalRows === 0) {
       return values;
     }
@@ -2499,6 +2528,118 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         count: remainingRows
       }
     ];
+  }
+
+  private refreshRawTopValueStats(
+    column: string | undefined,
+    search: string,
+    requestVersion: number,
+    payload: RawDatasetRowsResponse): void {
+    if (!column) {
+      return;
+    }
+
+    const normalizedColumn = column.trim().toLowerCase();
+    const hasFilterOnSameColumn = this.filterRules.some(rule =>
+      rule.column.trim().toLowerCase() === normalizedColumn &&
+      !!rule.operator &&
+      !!rule.value);
+
+    if (!hasFilterOnSameColumn) {
+      this.rawTopValueStats = payload.fieldStats || null;
+      this.rawTopValueStatsTotalRows = payload.rowCountTotal || 0;
+      return;
+    }
+
+    const filtersWithoutCurrentColumn = this.buildFilterParams(column);
+    this.datasetApi.getRawRows(this.datasetId, {
+      page: 1,
+      pageSize: 1,
+      search: search.length > 0 ? search : undefined,
+      filters: filtersWithoutCurrentColumn.length > 0 ? filtersWithoutCurrentColumn : undefined,
+      fieldStatsColumn: column
+    }).subscribe({
+      next: response => {
+        if (requestVersion !== this.rawDataLoadVersion) {
+          return;
+        }
+
+        if (!response.success || !response.data) {
+          return;
+        }
+
+        const scoped = response.data as RawDatasetRowsResponse;
+        this.rawTopValueStats = scoped.fieldStats || null;
+        this.rawTopValueStatsTotalRows = scoped.rowCountTotal || 0;
+      },
+      error: err => {
+        if (requestVersion !== this.rawDataLoadVersion) {
+          return;
+        }
+
+        if (HttpErrorUtil.isRequestAbort(err)) {
+          return;
+        }
+      }
+    });
+  }
+
+  private refreshRawFacetDistinctCounts(
+    filters: string[],
+    requestVersion: number,
+    payload: RawDatasetRowsResponse): void {
+    const columns = payload.columns || [];
+    if (columns.length === 0) {
+      this.rawFacetDistinctCounts = {};
+      this.rawFacetDistinctCountsKey = '';
+      return;
+    }
+
+    const cacheKey = this.buildRawFacetDistinctCountsKey(filters);
+    if (this.rawFacetDistinctCountsKey === cacheKey && Object.keys(this.rawFacetDistinctCounts).length > 0) {
+      return;
+    }
+
+    this.rawFacetDistinctCountsKey = cacheKey;
+
+    const facetRequests = columns.map(column => {
+      const facetFilters = this.buildFilterParams(column);
+      return this.datasetApi.getRawRows(this.datasetId, {
+        page: 1,
+        pageSize: 1,
+        search: undefined,
+        filters: facetFilters.length > 0 ? facetFilters : undefined,
+        fieldStatsColumn: column
+      }).pipe(
+        map(response => ({
+          column,
+          distinctCount: response.success && response.data?.fieldStats
+            ? response.data.fieldStats.distinctCount
+            : null
+        })),
+        catchError(() => of({ column, distinctCount: null }))
+      );
+    });
+
+    forkJoin(facetRequests).subscribe(results => {
+      if (requestVersion !== this.rawDataLoadVersion) {
+        return;
+      }
+
+      const nextCounts: Record<string, number> = {};
+      for (const item of results) {
+        if (typeof item.distinctCount === 'number') {
+          nextCounts[item.column.trim().toLowerCase()] = item.distinctCount;
+        }
+      }
+
+      this.rawFacetDistinctCounts = nextCounts;
+    });
+  }
+
+  private buildRawFacetDistinctCountsKey(filters: string[]): string {
+    const normalizedFilters = [...filters].sort();
+    return `${this.datasetId}|${normalizedFilters.join('||')}`;
   }
 
   isRawTopRangeSelected(column: string, range: RawRangeValueStat): boolean {
@@ -2645,6 +2786,16 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           return;
         }
 
+        this.refreshRawTopValueStats(
+          requestedFieldStatsColumn,
+          search,
+          requestVersion,
+          payload);
+        this.refreshRawFacetDistinctCounts(
+          filters,
+          requestVersion,
+          payload);
+
         this.refreshPointDataFromRawRows();
       },
       error: err => {
@@ -2667,6 +2818,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       this.rawFieldMetrics = [];
       this.selectedRawFieldName = '';
       this.rawFieldStats = null;
+      this.rawTopValueStats = null;
+      this.rawTopValueStatsTotalRows = 0;
+      this.rawFacetDistinctCounts = {};
+      this.rawFacetDistinctCountsKey = '';
       return;
     }
 
