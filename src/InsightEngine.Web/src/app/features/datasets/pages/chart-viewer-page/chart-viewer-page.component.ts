@@ -517,11 +517,54 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   get selectedRawTopRanges(): RawRangeValueStat[] {
-    if (this.rawFieldStats && this.rawFieldStats.column === this.selectedRawFieldName) {
-      return this.rawFieldStats.topRanges || [];
+    const selectedField = this.selectedRawFieldMetric;
+    if (!selectedField) {
+      return [];
     }
 
-    return [];
+    const column = selectedField.name;
+    const scopedStats =
+      this.rawTopValueStats && this.rawTopValueStats.column === column
+        ? this.rawTopValueStats
+        : (this.rawFieldStats && this.rawFieldStats.column === column ? this.rawFieldStats : null);
+
+    const topRanges = scopedStats?.topRanges || [];
+    const activeRangeRules = this.filterRules.filter(rule =>
+      rule.column === column &&
+      rule.operator === 'Between' &&
+      !!rule.value);
+
+    if (activeRangeRules.length === 0) {
+      return topRanges;
+    }
+
+    const selectedPairs = new Set(
+      activeRangeRules.flatMap(rule => this.parseRangeFilterPairs(rule.value)));
+
+    if (selectedPairs.size === 0) {
+      return topRanges;
+    }
+
+    const knownPairs = new Set(topRanges.map(range => `${range.from},${range.to}`));
+    const missingSelected = Array.from(selectedPairs.values())
+      .filter(pair => !knownPairs.has(pair))
+      .map(pair => {
+        const [from, to] = pair.split(',', 2);
+        const safeFrom = `${from ?? ''}`.trim();
+        const safeTo = `${to ?? ''}`.trim();
+        return {
+          label: `${safeFrom} - ${safeTo}`,
+          from: safeFrom,
+          to: safeTo,
+          count: 0
+        } as RawRangeValueStat;
+      });
+
+    if (missingSelected.length === 0) {
+      return topRanges;
+    }
+
+    return [...missingSelected, ...topRanges];
   }
 
   get topSimulationDeltas(): ScenarioDeltaPoint[] {

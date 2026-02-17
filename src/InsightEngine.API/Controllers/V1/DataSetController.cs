@@ -1613,6 +1613,14 @@ LIMIT {RawTopRangesLimit};
             return $"{numericExpr} IN ({numericList})";
         }
 
+        if (TryParseDateValues(values, out var dateValues))
+        {
+            var parsedDateExpr = BuildParsedDateExpression(columnExpr);
+            var timestampList = string.Join(", ", dateValues.Select(value =>
+                $"TIMESTAMP {ToSqlLiteral(value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))}"));
+            return $"{parsedDateExpr} IN ({timestampList})";
+        }
+
         var literalList = string.Join(", ", values.Select(ToSqlLiteral));
         return $"{columnExpr} IN ({literalList})";
     }
@@ -1686,11 +1694,12 @@ LIMIT {RawTopRangesLimit};
     private static bool TryParseDateValues(IReadOnlyList<string> values, out List<DateTime> parsedDates)
     {
         parsedDates = new List<DateTime>();
+        const DateTimeStyles styles = DateTimeStyles.AllowWhiteSpaces;
 
         foreach (var value in values)
         {
-            if (!DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed) &&
-                !DateTime.TryParse(value, CultureInfo.CurrentCulture, DateTimeStyles.AssumeUniversal, out parsed))
+            if (!DateTime.TryParse(value, CultureInfo.InvariantCulture, styles, out var parsed) &&
+                !DateTime.TryParse(value, CultureInfo.CurrentCulture, styles, out parsed))
             {
                 parsedDates.Clear();
                 return false;
