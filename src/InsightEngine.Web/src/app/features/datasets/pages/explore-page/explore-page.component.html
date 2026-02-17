@@ -1,6 +1,6 @@
 <div class="container-wide" style="max-width:none;width:100%;">
   <nav class="breadcrumb">
-    <a [routerLink]="['../recommendations']" class="breadcrumb-item">
+    <a [routerLink]="recommendationsLink" class="breadcrumb-item">
       <mat-icon>auto_awesome</mat-icon>
       <span>{{ 'recommendations.breadcrumb' | translate }}</span>
     </a>
@@ -13,15 +13,144 @@
 
   <app-page-header
     [title]="'explore.title' | translate"
-    [subtitle]="('explore.subtitle' | translate) + ': ' + datasetId"
+    [subtitle]="datasetName ? datasetName + ' (' + datasetId + ')' : datasetId"
     icon="travel_explore">
   </app-page-header>
 
-  <mat-card>
-    <mat-card-content>
-      <p class="placeholder-text">
-        {{ 'explore.placeholder' | translate }}
-      </p>
-    </mat-card-content>
-  </mat-card>
+  <section class="explore-toolbar">
+    <div class="status-chip" [ngClass]="statusClass">
+      <mat-icon>dns</mat-icon>
+      <span>{{ statusLabelKey | translate }}</span>
+    </div>
+
+    <div class="toolbar-actions">
+      <button mat-stroked-button color="primary" (click)="rebuildIndex()" [disabled]="rebuilding">
+        <mat-icon>{{ rebuilding ? 'hourglass_top' : 'refresh' }}</mat-icon>
+        {{ rebuilding ? ('explore.rebuilding' | translate) : ('explore.rebuild' | translate) }}
+      </button>
+      <button mat-flat-button color="primary" (click)="exportIndexJson()" [disabled]="!hasIndexData">
+        <mat-icon>download</mat-icon>
+        {{ 'explore.exportIndex' | translate }}
+      </button>
+    </div>
+  </section>
+
+  <section class="explore-layout" *ngIf="!loadingIndex; else loadingState">
+    <aside class="fields-sidebar">
+      <mat-card>
+        <mat-card-content>
+          <div class="sidebar-header">
+            <h3>{{ 'explore.fields' | translate }}</h3>
+            <span>{{ displayedFields.length }}</span>
+          </div>
+
+          <mat-form-field appearance="outline" class="sidebar-search">
+            <mat-label>{{ 'explore.searchFields' | translate }}</mat-label>
+            <input matInput [(ngModel)]="fieldSearch" />
+            <mat-icon matSuffix>search</mat-icon>
+          </mat-form-field>
+
+          <div class="type-filters">
+            <button
+              mat-stroked-button
+              *ngFor="let type of availableTypeFilters"
+              (click)="onToggleTypeFilter(type)"
+              [class.active]="selectedTypeFilters.includes(type)">
+              {{ type }}
+            </button>
+          </div>
+
+          <div class="field-list">
+            <button
+              class="field-row"
+              *ngFor="let column of displayedFields"
+              [class.selected]="column.name === selectedFieldName"
+              (click)="onSelectField(column)">
+              <div class="field-main">
+                <mat-icon>{{ getInferredTypeIcon(column.inferredType) }}</mat-icon>
+                <div class="field-labels">
+                  <div class="field-name">{{ column.name }}</div>
+                  <div class="field-meta">
+                    <span>{{ column.inferredType }}</span>
+                    <span>•</span>
+                    <span>{{ column.distinctCount }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="null-rate">
+                <div class="null-rate-bar" [style.width]="getNullRateWidth(column)"></div>
+              </div>
+              <div class="tags" *ngIf="column.semanticTags.length > 0">
+                <mat-chip-set>
+                  <mat-chip *ngFor="let tag of column.semanticTags | slice:0:2">{{ tag }}</mat-chip>
+                </mat-chip-set>
+              </div>
+            </button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </aside>
+
+    <section class="main-panels">
+      <mat-card>
+        <mat-card-content>
+          <mat-tab-group [(selectedIndex)]="selectedTabIndex">
+            <mat-tab [label]="'explore.tabOverview' | translate">
+              <div class="tab-placeholder">{{ 'explore.overviewPlaceholder' | translate }}</div>
+            </mat-tab>
+            <mat-tab [label]="'explore.tabField' | translate">
+              <div class="tab-placeholder">{{ 'explore.fieldPlaceholder' | translate }}</div>
+            </mat-tab>
+            <mat-tab [label]="'explore.tabCorrelations' | translate">
+              <div class="tab-placeholder">{{ 'explore.correlationsPlaceholder' | translate }}</div>
+            </mat-tab>
+            <mat-tab [label]="'explore.tabDistributions' | translate">
+              <div class="tab-placeholder">{{ 'explore.distributionsPlaceholder' | translate }}</div>
+            </mat-tab>
+            <mat-tab [label]="'explore.tabGrid' | translate">
+              <div class="tab-placeholder">{{ 'explore.gridPlaceholder' | translate }}</div>
+            </mat-tab>
+          </mat-tab-group>
+        </mat-card-content>
+      </mat-card>
+    </section>
+
+    <aside class="details-panel">
+      <mat-card>
+        <mat-card-content>
+          <h3>{{ 'explore.details' | translate }}</h3>
+          <ng-container *ngIf="selectedField; else noFieldSelected">
+            <div class="details-row">
+              <span class="label">{{ 'explore.fieldName' | translate }}</span>
+              <strong>{{ selectedField.name }}</strong>
+            </div>
+            <div class="details-row">
+              <span class="label">{{ 'explore.fieldType' | translate }}</span>
+              <strong>{{ selectedField.inferredType }}</strong>
+            </div>
+            <div class="details-row">
+              <span class="label">{{ 'explore.distinctCount' | translate }}</span>
+              <strong>{{ selectedField.distinctCount }}</strong>
+            </div>
+            <div class="details-row">
+              <span class="label">{{ 'explore.nullRate' | translate }}</span>
+              <strong>{{ (selectedField.nullRate * 100).toFixed(2) }}%</strong>
+            </div>
+          </ng-container>
+          <ng-template #noFieldSelected>
+            <p class="muted">{{ 'explore.selectFieldHint' | translate }}</p>
+          </ng-template>
+        </mat-card-content>
+      </mat-card>
+    </aside>
+  </section>
+
+  <ng-template #loadingState>
+    <mat-card>
+      <mat-card-content class="loading-card">
+        <mat-spinner diameter="36"></mat-spinner>
+        <span>{{ 'explore.loadingIndex' | translate }}</span>
+      </mat-card-content>
+    </mat-card>
+  </ng-template>
 </div>
