@@ -436,6 +436,148 @@ public class DataSetController : BaseController
         }
     }
 
+    [HttpGet("{id:guid}/facets")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetFacets(
+        Guid id,
+        [FromQuery] string field,
+        [FromQuery] int? top = null,
+        [FromQuery(Name = "filter")] string[]? filter = null,
+        [FromQuery] string[]? filters = null)
+    {
+        var csvPath = _fileStorageService.GetFullPath($"{id}.csv");
+        if (!System.IO.File.Exists(csvPath))
+        {
+            return ErrorResponse(StatusCodes.Status404NotFound, "not_found", $"Dataset not found: {id}");
+        }
+
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            return ErrorResponse(StatusCodes.Status400BadRequest, "validation_error", "Query parameter 'field' is required.");
+        }
+
+        var effectiveTop = Math.Clamp(top ?? 20, 1, 100);
+        var allFilters = (filter ?? Array.Empty<string>())
+            .Concat(filters ?? Array.Empty<string>())
+            .ToArray();
+
+        try
+        {
+            var columns = await ReadCsvHeadersAsync(csvPath);
+            var columnLookup = columns.ToDictionary(c => c, c => c, StringComparer.OrdinalIgnoreCase);
+
+            if (!columnLookup.TryGetValue(field, out var resolvedField))
+            {
+                return ErrorResponse(
+                    StatusCodes.Status400BadRequest,
+                    "validation_error",
+                    $"Invalid facets field '{field}'.");
+            }
+
+            var errors = new List<string>();
+            var rawFilters = ParseFilters(allFilters, errors);
+            var parsedFilters = new List<ChartFilter>();
+            foreach (var facetFilter in rawFilters)
+            {
+                if (!columnLookup.ContainsKey(facetFilter.Column))
+                {
+                    errors.Add($"Invalid filter column '{facetFilter.Column}'.");
+                    continue;
+                }
+
+                parsedFilters.Add(new ChartFilter
+                {
+                    Column = columnLookup[facetFilter.Column],
+                    Operator = facetFilter.Operator,
+                    Values = facetFilter.Values,
+                    LogicalOperator = facetFilter.LogicalOperator
+                });
+            }
+
+            if (errors.Count > 0)
+            {
+                return ErrorResponse(StatusCodes.Status400BadRequest, errors, "validation_error");
+            }
+
+            var escapedPath = csvPath.Replace("'", "''");
+            var whereClause = BuildRawRowsWhereClause(parsedFilters, null, columns);
+            var escapedField = EscapeIdentifier(resolvedField);
+            var fieldExpr = $"CAST({escapedField} AS VARCHAR)";
+
+            var facetsSql = $@"
+SELECT
+    CASE
+        WHEN COALESCE(TRIM({fieldExpr}), '') = '' THEN '(null)'
+        ELSE {fieldExpr}
+    END AS facet_value,
+    COUNT(*) AS frequency
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause}
+GROUP BY 1
+ORDER BY frequency DESC, facet_value ASC
+LIMIT {effectiveTop};
+";
+
+            var countSql = $@"
+SELECT COUNT(*)
+FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause};
+";
+
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            connection.Open();
+
+            long filteredRowCount;
+            using (var countCommand = connection.CreateCommand())
+            {
+                countCommand.CommandText = countSql;
+                countCommand.CommandTimeout = Math.Max(1, _runtimeSettings.DefaultTimeoutSeconds);
+                var countResult = countCommand.ExecuteScalar();
+                filteredRowCount = Convert.ToInt64(countResult ?? 0);
+            }
+
+            var values = new List<RawFacetStat>();
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = facetsSql;
+                command.CommandTimeout = Math.Max(1, _runtimeSettings.DefaultTimeoutSeconds);
+                using var reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    var value = reader.IsDBNull(0) ? "(null)" : reader.GetValue(0)?.ToString() ?? "(null)";
+                    var count = reader.IsDBNull(1) ? 0 : Convert.ToInt64(reader.GetValue(1) ?? 0);
+                    values.Add(new RawFacetStat(value, count));
+                }
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    datasetId = id,
+                    field = resolvedField,
+                    top = effectiveTop,
+                    filteredRowCount,
+                    values = values.Select(item => new
+                    {
+                        value = item.Value,
+                        count = item.Count
+                    })
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading facets for dataset {DatasetId} and field {Field}", id, field);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao carregar facetas do dataset.");
+        }
+    }
+
     [HttpGet("{id:guid}/rows")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -1927,5 +2069,6 @@ LIMIT {RawTopRangesLimit};
 
     private readonly record struct RawSortRule(string Column, bool Descending);
     private readonly record struct RawDistinctStat(string Value, long Count);
+    private readonly record struct RawFacetStat(string Value, long Count);
     private readonly record struct RawRangeStat(string Label, string From, string To, long Count);
 }

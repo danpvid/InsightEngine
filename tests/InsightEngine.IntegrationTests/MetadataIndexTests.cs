@@ -289,9 +289,60 @@ public class MetadataIndexSmokeFlowTests : IAsyncLifetime
         indexEnvelope.Data.Limits.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task FacetsEndpoint_ShouldReturnTopValueCountsAndRespectFilters()
+    {
+        var csv = """
+            date,sales,region
+            20240101,10,North
+            20240101,20,South
+            20240102,15,South
+            20240103,8,East
+            20240104,7,South
+            """;
+
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client, csv, "facets.csv");
+
+        var allResponse = await _client.GetAsync($"/api/v1/datasets/{datasetId}/facets?field=region&top=2");
+        allResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var allEnvelope = await allResponse.Content.ReadFromJsonAsync<ApiEnvelope<FacetResponse>>(TestHelpers.JsonOptions);
+        allEnvelope.Should().NotBeNull();
+        allEnvelope!.Success.Should().BeTrue();
+        allEnvelope.Data.Field.Should().Be("region");
+        allEnvelope.Data.Values.Should().HaveCount(2);
+        allEnvelope.Data.Values[0].Value.Should().Be("South");
+        allEnvelope.Data.Values[0].Count.Should().Be(3);
+
+        var filteredResponse = await _client.GetAsync(
+            $"/api/v1/datasets/{datasetId}/facets?field=region&filter=date|eq|20240101");
+        filteredResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var filteredEnvelope = await filteredResponse.Content.ReadFromJsonAsync<ApiEnvelope<FacetResponse>>(TestHelpers.JsonOptions);
+        filteredEnvelope.Should().NotBeNull();
+        filteredEnvelope!.Success.Should().BeTrue();
+        filteredEnvelope.Data.FilteredRowCount.Should().Be(2);
+        filteredEnvelope.Data.Values.Should().HaveCount(2);
+        filteredEnvelope.Data.Values.Select(item => item.Value).Should().Contain(new[] { "North", "South" });
+        filteredEnvelope.Data.Values.All(item => item.Count == 1).Should().BeTrue();
+    }
+
     private sealed class ApiEnvelope<T>
     {
         public bool Success { get; set; }
         public T Data { get; set; } = default!;
+    }
+
+    private sealed class FacetResponse
+    {
+        public string Field { get; set; } = string.Empty;
+        public long FilteredRowCount { get; set; }
+        public List<FacetItem> Values { get; set; } = [];
+    }
+
+    private sealed class FacetItem
+    {
+        public string Value { get; set; } = string.Empty;
+        public long Count { get; set; }
     }
 }
