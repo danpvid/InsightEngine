@@ -24,3 +24,14 @@ public class GetIndexResponse : OutputModel
     public Guid DatasetId { get; set; }
     public DatasetIndex? Index { get; set; }
 }
+
+public class FormulaDiscoveryRequest : InputModel
+{
+    public string? Target { get; set; }
+    public int MaxCandidates { get; set; } = 3;
+    public int SampleCap { get; set; } = 50000;
+    public int TopKFeatures { get; set; } = 10;
+    public bool EnableInteractions { get; set; } = true;
+    public bool EnableRatios { get; set; } = false;
+    public bool Force { get; set; } = false;
+}

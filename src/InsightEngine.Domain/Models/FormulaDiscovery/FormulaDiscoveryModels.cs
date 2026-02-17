@@ -51,4 +51,5 @@ public class FormulaDiscoveryResult
     public List<FormulaCandidate> Candidates { get; set; } = new();
     public List<string> ConsideredColumns { get; set; } = new();
     public List<string> ExcludedColumns { get; set; } = new();
+    public List<string> Notes { get; set; } = new();
 }

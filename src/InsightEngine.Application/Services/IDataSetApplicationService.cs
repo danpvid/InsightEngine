@@ -2,6 +2,7 @@ using InsightEngine.Domain.Commands.DataSet;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.FormulaDiscovery;
 using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
@@ -79,5 +80,10 @@ public interface IDataSetApplicationService
 
     Task<Result<DatasetIndexStatus>> GetIndexStatusAsync(
         Guid datasetId,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<FormulaDiscoveryResult>> GetFormulaDiscoveryAsync(
+        Guid datasetId,
+        FormulaDiscoveryRequest request,
         CancellationToken cancellationToken = default);
 }

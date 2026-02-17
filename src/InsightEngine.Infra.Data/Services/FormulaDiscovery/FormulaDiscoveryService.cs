@@ -120,7 +120,12 @@ public sealed class FormulaDiscoveryService : IFormulaDiscoveryService
                 GeneratedAt = DateTimeOffset.UtcNow,
                 Candidates = new List<FormulaCandidate>(),
                 ConsideredColumns = featureSelection.CandidateFeatures.ToList(),
-                ExcludedColumns = featureSelection.ExcludedFeatures.ToList()
+                ExcludedColumns = featureSelection.ExcludedFeatures.ToList(),
+                Notes = new List<string>
+                {
+                    "No eligible numeric drivers were found for formula inference.",
+                    "This is a best-fit analysis and does not guarantee the true business formula."
+                }
             };
 
             await PersistResultAsync(datasetId, rowCount, columns, cacheKey, emptyResult, cancellationToken);
@@ -147,7 +152,12 @@ public sealed class FormulaDiscoveryService : IFormulaDiscoveryService
             GeneratedAt = DateTimeOffset.UtcNow,
             Candidates = candidates.ToList(),
             ConsideredColumns = featureSelection.SelectedFeatures.ToList(),
-            ExcludedColumns = featureSelection.ExcludedFeatures.ToList()
+            ExcludedColumns = featureSelection.ExcludedFeatures.ToList(),
+            Notes = new List<string>
+            {
+                "This is a best-fit equation analysis and may not represent the true business logic.",
+                "High explainability does not imply causality."
+            }
         };
 
         await PersistResultAsync(datasetId, rowCount, columns, cacheKey, result, cancellationToken);

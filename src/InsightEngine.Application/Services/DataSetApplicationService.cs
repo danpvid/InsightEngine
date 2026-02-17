@@ -3,6 +3,7 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.FormulaDiscovery;
 using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
@@ -266,6 +267,26 @@ public class DataSetApplicationService : IDataSetApplicationService
         CancellationToken cancellationToken = default)
     {
         var query = new GetDataSetIndexStatusQuery(datasetId);
+        return await _mediator.Send(query, cancellationToken);
+    }
+
+    public async Task<Result<FormulaDiscoveryResult>> GetFormulaDiscoveryAsync(
+        Guid datasetId,
+        FormulaDiscoveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetDataSetFormulaDiscoveryQuery
+        {
+            DatasetId = datasetId,
+            Target = request.Target,
+            MaxCandidates = request.MaxCandidates,
+            SampleCap = request.SampleCap,
+            TopKFeatures = request.TopKFeatures,
+            EnableInteractions = request.EnableInteractions,
+            EnableRatios = request.EnableRatios,
+            ForceRecompute = request.Force
+        };
+
         return await _mediator.Send(query, cancellationToken);
     }
 }

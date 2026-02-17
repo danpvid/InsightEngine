@@ -436,6 +436,66 @@ public class DataSetController : BaseController
         }
     }
 
+    /// <summary>
+    /// Discovers best-fit formulas for a numeric target column.
+    /// </summary>
+    /// <remarks>
+    /// This endpoint returns ranked best-fit equations and quality metrics.
+    /// It does not guarantee the true business logic and should be used as an analytical signal.
+    /// </remarks>
+    [HttpGet("{id:guid}/formulas")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetFormulaDiscovery(
+        Guid id,
+        [FromQuery] string? target = null,
+        [FromQuery] int topK = 10,
+        [FromQuery] bool interactions = true,
+        [FromQuery] bool ratios = false,
+        [FromQuery] bool force = false,
+        [FromQuery] int maxCandidates = 3,
+        [FromQuery] int sampleCap = 50000)
+    {
+        try
+        {
+            var request = new FormulaDiscoveryRequest
+            {
+                Target = target,
+                TopKFeatures = topK,
+                EnableInteractions = interactions,
+                EnableRatios = ratios,
+                Force = force,
+                MaxCandidates = maxCandidates,
+                SampleCap = sampleCap
+            };
+
+            var result = await _dataSetApplicationService.GetFormulaDiscoveryAsync(id, request);
+            if (!result.IsSuccess)
+            {
+                var errors = result.Errors ?? new List<string>();
+                var hasNotFound = errors.Any(error => error.Contains("not found", StringComparison.OrdinalIgnoreCase));
+                var statusCode = hasNotFound ? StatusCodes.Status404NotFound : StatusCodes.Status400BadRequest;
+                return ErrorResponse(statusCode, errors, hasNotFound ? "not_found" : "validation_error");
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error discovering formulas for dataset {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Failed to discover formulas for this dataset.");
+        }
+    }
+
     [HttpGet("{id:guid}/facets")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
