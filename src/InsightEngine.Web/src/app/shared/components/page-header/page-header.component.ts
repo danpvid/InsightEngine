@@ -27,24 +27,24 @@ import { MatIconModule } from '@angular/material/icon';
     }
 
     .header-content mat-icon {
-      font-size: 32px;
-      width: 32px;
-      height: 32px;
-      color: #3f51b5;
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+      color: var(--primary);
     }
 
     h1 {
       margin: 0;
-      font-size: 28px;
-      font-weight: 400;
-      color: #333;
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--text);
     }
 
     .subtitle {
       margin: 8px 0 0 0;
-      color: #666;
-      font-size: 14px;
-      margin-left: 44px;
+      color: var(--text-2);
+      font-size: 13px;
+      margin-left: 28px;
     }
   `]
 })

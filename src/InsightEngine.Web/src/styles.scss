@@ -13,21 +13,25 @@ html, body {
 
 body {
   font-family: Roboto, "Helvetica Neue", sans-serif;
-  background-color: #f5f5f5;
+  background-color: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing:antialiased;
 }
 
 /* Container utilities */
 .container {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 24px;
+  padding: var(--space-5);
 }
 
 .container-wide {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 24px;
-}
+  padding: var(--space-5);
+} 
 
 /* Spacing utilities */
 .mt-1 { margin-top: 8px; }
@@ -54,7 +58,7 @@ mat-card {
 
 /* Text utilities */
 .text-center { text-align: center; }
-.text-muted { color: rgba(0, 0, 0, 0.6); }
+.text-muted { color: var(--text-2); }
 
 /* Loading and error states */
 .loading-container {

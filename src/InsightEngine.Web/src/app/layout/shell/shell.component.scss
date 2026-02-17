@@ -2,8 +2,10 @@
   position: sticky;
   top: 0;
   z-index: 1000;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: none;
+} 
 
 .toolbar-content {
   max-width: 1400px;
@@ -54,9 +56,9 @@
 
 .language-caption {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-2);
   white-space: nowrap;
-}
+} 
 
 .language-select {
   width: 92px;
@@ -91,13 +93,13 @@
   ::ng-deep .mdc-notched-outline__leading,
   ::ng-deep .mdc-notched-outline__trailing,
   ::ng-deep .mdc-notched-outline__notch {
-    border-color: rgba(255, 255, 255, 0.4) !important;
+    border-color: var(--border) !important;
   }
 
   ::ng-deep .mat-mdc-select-value,
   ::ng-deep .mat-mdc-floating-label,
   ::ng-deep .mat-mdc-select-arrow {
-    color: #fff !important;
+    color: var(--text-2) !important;
   }
 }
 
@@ -121,15 +123,15 @@
 }
 
 .footer {
-  background-color: #f5f5f5;
-  border-top: 1px solid #e0e0e0;
+  background-color: var(--surface);
+  border-top: 1px solid var(--border);
   padding: 16px 0;
   margin-top: 48px;
 }
 
 .footer p {
   text-align: center;
-  color: #666;
+  color: var(--text-2);
   font-size: 12px;
   margin: 0;
 }
