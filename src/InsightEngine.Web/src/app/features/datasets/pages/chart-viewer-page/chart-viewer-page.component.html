@@ -466,6 +466,138 @@
           </ng-container>
         </mat-card>
 
+        <mat-card class="insight-card formula-card">
+          <div class="insight-header">
+            <div class="insight-title">
+              <mat-icon>functions</mat-icon>
+              <div class="insight-text">
+                <h3>{{ 'chartViewer.formulasTitle' | translate }}</h3>
+                <p class="insight-headline">{{ 'chartViewer.formulasHint' | translate }}</p>
+              </div>
+            </div>
+            <div class="ai-actions">
+              <button mat-stroked-button color="primary" (click)="toggleFormulaPanel()">
+                {{ formulaPanelCollapsed ? ('chartViewer.formulasExpand' | translate) : ('chartViewer.formulasCollapse' | translate) }}
+              </button>
+            </div>
+          </div>
+
+          <div class="formula-panel" *ngIf="!formulaPanelCollapsed">
+            <div class="formula-controls">
+              <mat-form-field appearance="outline">
+                <mat-label>{{ 'chartViewer.formulasTarget' | translate }}</mat-label>
+                <mat-select [(ngModel)]="formulaTargetColumn">
+                  <mat-option *ngFor="let metric of formulaTargets" [value]="metric">
+                    {{ metric }}
+                  </mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" class="formula-topk">
+                <mat-label>{{ 'chartViewer.formulasTopK' | translate }}</mat-label>
+                <input matInput type="number" [(ngModel)]="formulaTopKFeatures" min="3" max="20" />
+              </mat-form-field>
+
+              <mat-slide-toggle [(ngModel)]="formulaEnableInteractions" color="primary">
+                {{ 'chartViewer.formulasInteractions' | translate }}
+              </mat-slide-toggle>
+
+              <mat-slide-toggle [(ngModel)]="formulaEnableRatios" color="primary">
+                {{ 'chartViewer.formulasRatios' | translate }}
+              </mat-slide-toggle>
+
+              <button mat-flat-button color="primary" (click)="discoverFormulas(false)" [disabled]="formulaLoading || !formulaTargetColumn">
+                {{ formulaLoading ? ('chartViewer.generating' | translate) : ('chartViewer.formulasDiscover' | translate) }}
+              </button>
+              <button mat-button color="primary" (click)="discoverFormulas(true)" [disabled]="formulaLoading || !formulaTargetColumn">
+                {{ 'chartViewer.formulasRecompute' | translate }}
+              </button>
+            </div>
+
+            <p class="filters-hint formula-disclaimer">{{ 'chartViewer.formulasDisclaimer' | translate }}</p>
+
+            <div class="simulation-error" *ngIf="formulaError">{{ formulaError }}</div>
+
+            <div class="formula-candidates" *ngIf="formulaResult as result">
+              <mat-chip-set class="formula-meta-chips">
+                <mat-chip color="primary" selected>
+                  {{ 'chartViewer.formulasGeneratedAt' | translate }}: {{ result.generatedAt | date:'short' }}
+                </mat-chip>
+                <mat-chip color="accent" selected>
+                  {{ 'chartViewer.formulasCandidates' | translate }}: {{ result.candidates.length }}
+                </mat-chip>
+              </mat-chip-set>
+
+              <div class="formula-list" *ngIf="result.candidates.length > 0; else formulaEmptyState">
+                <mat-card class="formula-candidate-card"
+                          *ngFor="let candidate of result.candidates; let i = index"
+                          [class.selected]="i === formulaSelectedCandidateIndex">
+                  <div class="formula-candidate-header">
+                    <button mat-button color="primary" (click)="selectFormulaCandidate(i)">
+                      {{ 'chartViewer.formulasCandidate' | translate }} {{ i + 1 }}
+                    </button>
+                    <mat-chip [ngClass]="confidenceClass(candidate.confidence)">
+                      {{ candidate.confidence }}
+                    </mat-chip>
+                  </div>
+
+                  <p class="formula-equation">{{ candidate.prettyFormula }}</p>
+
+                  <div class="formula-metrics">
+                    <span><strong>R²:</strong> {{ candidate.metrics.r2 | number:'1.3-3' }}</span>
+                    <span><strong>MAE:</strong> {{ candidate.metrics.mae | number:'1.3-3' }}</span>
+                    <span><strong>RMSE:</strong> {{ candidate.metrics.rmse | number:'1.3-3' }}</span>
+                    <span><strong>n:</strong> {{ candidate.metrics.sampleSize }}</span>
+                  </div>
+
+                  <div class="formula-actions">
+                    <button mat-stroked-button color="primary" (click)="buildFormulaValidationChart()">
+                      {{ 'chartViewer.formulasValidate' | translate }}
+                    </button>
+                    <button mat-button color="primary" (click)="explainFormula(candidate)" [disabled]="formulaExplainLoading">
+                      {{ 'chartViewer.formulasExplain' | translate }}
+                    </button>
+                  </div>
+
+                  <details>
+                    <summary>{{ 'chartViewer.formulasTerms' | translate }}</summary>
+                    <ul class="insight-bullets">
+                      <li *ngFor="let term of candidate.terms">
+                        {{ term.coefficient | number:'1.4-4' }} * {{ term.featureName }}
+                      </li>
+                    </ul>
+                  </details>
+                </mat-card>
+              </div>
+
+              <ng-template #formulaEmptyState>
+                <p class="filters-hint">{{ 'chartViewer.formulasEmpty' | translate }}</p>
+              </ng-template>
+
+              <div class="chart-skeleton" *ngIf="formulaValidationLoading">
+                <div class="skeleton-axis-x"></div>
+                <div class="skeleton-axis-x"></div>
+              </div>
+              <div class="simulation-error" *ngIf="formulaValidationError">{{ formulaValidationError }}</div>
+              <div class="formula-validation-chart" *ngIf="formulaValidationChartOption">
+                <h4>{{ 'chartViewer.formulasValidationTitle' | translate }}</h4>
+                <div echarts [options]="formulaValidationChartOption" class="chart"></div>
+              </div>
+
+              <div class="chart-skeleton" *ngIf="formulaExplainLoading">
+                <div class="skeleton-axis-x"></div>
+              </div>
+              <div class="simulation-error" *ngIf="formulaExplainError">{{ formulaExplainError }}</div>
+              <div class="insight-subsection" *ngIf="formulaExplainLines.length > 0">
+                <h4>{{ 'chartViewer.formulasExplainTitle' | translate }}</h4>
+                <ul class="insight-bullets">
+                  <li *ngFor="let line of formulaExplainLines">{{ line }}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </mat-card>
+
         <mat-card class="shared-filters-card">
           <div class="inline-filters-header">
             <h3>{{ 'chartViewer.globalFilters' | translate }}</h3>

@@ -41,6 +41,9 @@ import { ApiError } from '../../../../core/models/api-response.model';
 import {
   DataSetSummary,
   DatasetColumnProfile,
+  FormulaConfidenceLevel,
+  FormulaDiscoveryCandidate,
+  FormulaDiscoveryResult,
   RawDatasetRow,
   RawDatasetRowsResponse,
   RawDistinctValueStat,
@@ -112,6 +115,11 @@ interface RawFieldMetric {
   nullCountPage: number;
   nullRatePage: number;
   topValuesProfile: RawDistinctValueStat[];
+}
+
+interface FormulaPredictionPoint {
+  actual: number;
+  predicted: number;
 }
 
 @Component({
@@ -258,6 +266,22 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   filterPreviewPending: boolean = false;
 
+  formulaPanelCollapsed: boolean = true;
+  formulaLoading: boolean = false;
+  formulaError: string | null = null;
+  formulaResult: FormulaDiscoveryResult | null = null;
+  formulaTargetColumn: string = '';
+  formulaTopKFeatures: number = 10;
+  formulaEnableInteractions: boolean = true;
+  formulaEnableRatios: boolean = false;
+  formulaSelectedCandidateIndex: number = 0;
+  formulaValidationLoading: boolean = false;
+  formulaValidationError: string | null = null;
+  formulaValidationChartOption: EChartsOption | null = null;
+  formulaExplainLoading: boolean = false;
+  formulaExplainError: string | null = null;
+  formulaExplainLines: string[] = [];
+
   controlsOpen: boolean = true;
   isMobile: boolean = false;
   showRawQuickFiltersAside: boolean = false;
@@ -344,6 +368,26 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       !!this.simulationTargetDimension &&
       this.simulationOperations.length > 0 &&
       !this.simulationLoading;
+  }
+
+  get formulaTargets(): string[] {
+    return this.availableMetrics;
+  }
+
+  get hasFormulaCandidates(): boolean {
+    return (this.formulaResult?.candidates?.length || 0) > 0;
+  }
+
+  get selectedFormulaCandidate(): FormulaDiscoveryCandidate | null {
+    if (!this.formulaResult?.candidates?.length) {
+      return null;
+    }
+
+    if (this.formulaSelectedCandidateIndex < 0 || this.formulaSelectedCandidateIndex >= this.formulaResult.candidates.length) {
+      return this.formulaResult.candidates[0];
+    }
+
+    return this.formulaResult.candidates[this.formulaSelectedCandidateIndex];
   }
 
   get currentBaseChartType(): VisualizationType {
@@ -835,6 +879,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           this.selectedXAxis = xColumnFromUrl || this.currentRecommendation.xColumn || '';
           this.selectedGroupBy = groupByFromUrl || '';
           this.selectedVisualizationType = this.ensureAllowedVisualization(this.selectedVisualizationType);
+          this.syncFormulaTargetWithContext();
         }
 
         this.initializeScenarioDefaults();
@@ -873,6 +918,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
         this.syncSelectedMetricsWithAvailability();
         this.syncSelectedXAxisWithAvailability();
+        this.syncFormulaTargetWithContext();
         this.rebuildRawFieldMetrics();
 
         if (this.selectedMetric && !this.availableMetrics.includes(this.selectedMetric)) {
@@ -1471,6 +1517,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
       this.selectedVisualizationType = this.ensureAllowedVisualization(this.selectedVisualizationType);
       this.initializeScenarioDefaults();
+      this.syncFormulaTargetWithContext();
       this.loadChart(chartOptions);
     });
   }
@@ -1503,6 +1550,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       ].slice(0, 4);
     }
 
+    this.syncFormulaTargetWithContext();
     this.reloadChartWithCurrentParameters();
     if (!this.simulationTargetMetric) {
       this.simulationTargetMetric = this.selectedMetric;
@@ -4204,6 +4252,331 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     return [];
+  }
+
+  toggleFormulaPanel(): void {
+    this.formulaPanelCollapsed = !this.formulaPanelCollapsed;
+  }
+
+  discoverFormulas(force: boolean = false): void {
+    this.syncFormulaTargetWithContext();
+    if (!this.datasetId || !this.formulaTargetColumn) {
+      this.formulaError = 'Select a numeric target column to discover formulas.';
+      return;
+    }
+
+    this.formulaLoading = true;
+    this.formulaError = null;
+    this.formulaResult = null;
+    this.formulaSelectedCandidateIndex = 0;
+    this.formulaValidationChartOption = null;
+    this.formulaValidationError = null;
+    this.formulaExplainLines = [];
+    this.formulaExplainError = null;
+
+    this.datasetApi.getFormulaDiscovery(this.datasetId, {
+      target: this.formulaTargetColumn,
+      topK: this.formulaTopKFeatures,
+      interactions: this.formulaEnableInteractions,
+      ratios: this.formulaEnableRatios,
+      force,
+      maxCandidates: 3,
+      sampleCap: 50000
+    }).subscribe({
+      next: (response) => {
+        this.formulaLoading = false;
+        if (!response.success || !response.data) {
+          this.formulaError = 'Could not discover formulas for the selected target.';
+          return;
+        }
+
+        this.formulaResult = response.data;
+        this.formulaSelectedCandidateIndex = 0;
+
+        if (!this.formulaResult.candidates || this.formulaResult.candidates.length === 0) {
+          this.formulaError = 'No strong best-fit formulas were detected for this target.';
+          return;
+        }
+
+        this.buildFormulaValidationChart();
+      },
+      error: (err) => {
+        this.formulaLoading = false;
+        this.formulaError = HttpErrorUtil.extractErrorMessage(err);
+      }
+    });
+  }
+
+  selectFormulaCandidate(index: number): void {
+    this.formulaSelectedCandidateIndex = index;
+    this.formulaValidationChartOption = null;
+    this.formulaValidationError = null;
+    this.formulaExplainLines = [];
+    this.formulaExplainError = null;
+  }
+
+  buildFormulaValidationChart(): void {
+    const candidate = this.selectedFormulaCandidate;
+    if (!candidate || !this.formulaResult?.targetColumn) {
+      this.formulaValidationError = 'Select a candidate before validating the equation.';
+      return;
+    }
+
+    this.formulaValidationLoading = true;
+    this.formulaValidationError = null;
+    this.formulaValidationChartOption = null;
+
+    this.datasetApi.getRawRows(this.datasetId, {
+      page: 1,
+      pageSize: 1000
+    }).subscribe({
+      next: (response) => {
+        this.formulaValidationLoading = false;
+        if (!response.success || !response.data?.rows?.length) {
+          this.formulaValidationError = 'No sample rows available to validate this equation.';
+          return;
+        }
+
+        const points = this.buildPredictedVsActualPoints(response.data.rows, this.formulaResult!.targetColumn, candidate);
+        if (points.length === 0) {
+          this.formulaValidationError = 'Could not compute predicted values from sampled rows.';
+          return;
+        }
+
+        this.formulaValidationChartOption = this.buildPredictedVsActualOption(points, this.formulaResult!.targetColumn);
+      },
+      error: (err) => {
+        this.formulaValidationLoading = false;
+        this.formulaValidationError = HttpErrorUtil.extractErrorMessage(err);
+      }
+    });
+  }
+
+  explainFormula(candidate: FormulaDiscoveryCandidate): void {
+    if (!candidate || !this.formulaResult?.targetColumn) {
+      return;
+    }
+
+    this.formulaExplainLoading = true;
+    this.formulaExplainError = null;
+    this.formulaExplainLines = [];
+
+    const topTerms = candidate.terms
+      .slice()
+      .sort((left, right) => Math.abs(right.coefficient) - Math.abs(left.coefficient))
+      .slice(0, 3)
+      .map(term => `${term.featureName} (${term.coefficient.toFixed(4)})`)
+      .join(', ');
+
+    const question = `Explain this best-fit equation in plain language for business users. ` +
+      `Target: ${this.formulaResult.targetColumn}. Equation: ${candidate.prettyFormula}. ` +
+      `Top terms: ${topTerms}. Include caveats that fit does not imply causality.`;
+
+    this.datasetApi.askDataset(this.datasetId, question, {
+      targetColumn: this.formulaResult.targetColumn,
+      modelType: candidate.modelType,
+      confidence: candidate.confidence
+    }).subscribe({
+      next: (response) => {
+        this.formulaExplainLoading = false;
+        if (!response.success || !response.data) {
+          this.formulaExplainError = 'Could not generate formula explanation.';
+          return;
+        }
+
+        const lines = [
+          ...(response.data.reasoning || []),
+          ...(response.data.suggestedFilters || []).map(filter => `${filter.column} ${filter.operator} ${filter.values.join(', ')}`)
+        ].filter(line => !!line);
+
+        this.formulaExplainLines = lines.length > 0
+          ? lines
+          : ['This is a best-fit equation summary. Validate with domain rules before using in production decisions.'];
+      },
+      error: (err) => {
+        this.formulaExplainLoading = false;
+        this.formulaExplainError = HttpErrorUtil.extractErrorMessage(err);
+      }
+    });
+  }
+
+  confidenceClass(confidence: FormulaConfidenceLevel): string {
+    switch (confidence) {
+      case 'DeterministicLike':
+        return 'formula-confidence-deterministic';
+      case 'High':
+        return 'formula-confidence-high';
+      case 'Medium':
+        return 'formula-confidence-medium';
+      default:
+        return 'formula-confidence-low';
+    }
+  }
+
+  private syncFormulaTargetWithContext(): void {
+    if (this.selectedMetric && this.formulaTargets.includes(this.selectedMetric)) {
+      this.formulaTargetColumn = this.selectedMetric;
+      return;
+    }
+
+    if (this.formulaTargetColumn && this.formulaTargets.includes(this.formulaTargetColumn)) {
+      return;
+    }
+
+    this.formulaTargetColumn = this.formulaTargets[0] || '';
+  }
+
+  private buildPredictedVsActualPoints(
+    rows: RawDatasetRow[],
+    targetColumn: string,
+    candidate: FormulaDiscoveryCandidate): FormulaPredictionPoint[] {
+    const points: FormulaPredictionPoint[] = [];
+
+    for (const row of rows) {
+      const actual = this.parseRowNumericValue(row[targetColumn]);
+      if (actual === null) {
+        continue;
+      }
+
+      const predicted = this.predictCandidateValue(row, candidate);
+      if (predicted === null) {
+        continue;
+      }
+
+      points.push({ actual, predicted });
+    }
+
+    return points.slice(0, 1000);
+  }
+
+  private predictCandidateValue(row: RawDatasetRow, candidate: FormulaDiscoveryCandidate): number | null {
+    let predicted = candidate.intercept;
+    for (const term of candidate.terms) {
+      const featureValue = this.resolveTermValue(row, term.featureName);
+      if (featureValue === null) {
+        return null;
+      }
+
+      predicted += term.coefficient * featureValue;
+    }
+
+    return Number.isFinite(predicted) ? predicted : null;
+  }
+
+  private resolveTermValue(row: RawDatasetRow, featureName: string): number | null {
+    const ratioMatch = /^(.+)\/\((.+)\+eps\)$/.exec(featureName);
+    if (ratioMatch) {
+      const numerator = this.parseRowNumericValue(row[ratioMatch[1]]);
+      const denominator = this.parseRowNumericValue(row[ratioMatch[2]]);
+      if (numerator === null || denominator === null) {
+        return null;
+      }
+
+      const safeDenominator = denominator + 1e-9;
+      if (!Number.isFinite(safeDenominator) || Math.abs(safeDenominator) <= 1e-12) {
+        return 0;
+      }
+
+      const ratio = numerator / safeDenominator;
+      return Number.isFinite(ratio) ? ratio : null;
+    }
+
+    if (featureName.includes('*')) {
+      const factors = featureName.split('*').map(value => value.trim()).filter(Boolean);
+      if (factors.length === 0) {
+        return null;
+      }
+
+      let product = 1;
+      for (const factor of factors) {
+        const value = this.parseRowNumericValue(row[factor]);
+        if (value === null) {
+          return null;
+        }
+
+        product *= value;
+      }
+
+      return Number.isFinite(product) ? product : null;
+    }
+
+    return this.parseRowNumericValue(row[featureName]);
+  }
+
+  private parseRowNumericValue(raw: string | null | undefined): number | null {
+    if (raw === null || raw === undefined) {
+      return null;
+    }
+
+    if (typeof raw === 'number') {
+      return Number.isFinite(raw) ? raw : null;
+    }
+
+    const asNumber = Number(raw);
+    if (Number.isFinite(asNumber)) {
+      return asNumber;
+    }
+
+    return this.parseFlexibleNumber(raw);
+  }
+
+  private buildPredictedVsActualOption(points: FormulaPredictionPoint[], targetColumn: string): EChartsOption {
+    const scatterSeriesData = points.map(point => [point.actual, point.predicted]);
+    const allValues = points.flatMap(point => [point.actual, point.predicted]);
+    const minValue = Math.min(...allValues);
+    const maxValue = Math.max(...allValues);
+
+    return {
+      animation: false,
+      tooltip: {
+        trigger: 'item',
+        formatter: (params: any) => {
+          const values = Array.isArray(params?.value) ? params.value : [];
+          const actual = Number(values[0]);
+          const predicted = Number(values[1]);
+          if (Number.isFinite(actual) && Number.isFinite(predicted)) {
+            return `Actual: ${actual.toFixed(3)}<br/>Predicted: ${predicted.toFixed(3)}`;
+          }
+
+          return '';
+        }
+      },
+      grid: {
+        left: 70,
+        right: 24,
+        top: 24,
+        bottom: 60
+      },
+      xAxis: {
+        type: 'value',
+        name: `Actual (${targetColumn})`,
+        nameLocation: 'middle',
+        nameGap: 34
+      },
+      yAxis: {
+        type: 'value',
+        name: `Predicted (${targetColumn})`,
+        nameGap: 44
+      },
+      series: [
+        {
+          type: 'scatter',
+          symbolSize: 8,
+          itemStyle: { color: '#4f46e5', opacity: 0.72 },
+          data: scatterSeriesData
+        },
+        {
+          type: 'line',
+          name: 'Ideal fit',
+          symbol: 'none',
+          lineStyle: { color: '#16a34a', width: 1.5, type: 'dashed' },
+          data: [
+            [minValue, minValue],
+            [maxValue, maxValue]
+          ]
+        }
+      ]
+    };
   }
 
   private asObject(value: unknown): Record<string, unknown> | null {

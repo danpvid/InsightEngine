@@ -82,3 +82,41 @@ export interface RawFieldStats {
   topValues: RawDistinctValueStat[];
   topRanges: RawRangeValueStat[];
 }
+
+export type FormulaModelType = 'Linear' | 'LinearWithInteractions' | 'LinearWithRatios';
+export type FormulaConfidenceLevel = 'Low' | 'Medium' | 'High' | 'DeterministicLike';
+
+export interface FormulaDiscoveryMetrics {
+  sampleSize: number;
+  r2: number;
+  mae: number;
+  rmse: number;
+  residualP95Abs: number;
+  residualMeanAbs: number;
+}
+
+export interface FormulaDiscoveryTerm {
+  featureName: string;
+  coefficient: number;
+}
+
+export interface FormulaDiscoveryCandidate {
+  targetColumn: string;
+  terms: FormulaDiscoveryTerm[];
+  intercept: number;
+  metrics: FormulaDiscoveryMetrics;
+  modelType: FormulaModelType;
+  confidence: FormulaConfidenceLevel;
+  prettyFormula: string;
+  notes: string[];
+}
+
+export interface FormulaDiscoveryResult {
+  datasetId: string;
+  targetColumn: string;
+  generatedAt: string;
+  candidates: FormulaDiscoveryCandidate[];
+  consideredColumns: string[];
+  excludedColumns: string[];
+  notes: string[];
+}

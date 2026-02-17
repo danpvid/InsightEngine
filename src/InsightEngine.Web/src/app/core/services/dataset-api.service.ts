@@ -9,7 +9,8 @@ import {
   DataSetSummary,
   DatasetProfile,
   RawDatasetRowsResponse,
-  DataSetDeletionResponse
+  DataSetDeletionResponse,
+  FormulaDiscoveryResult
 } from '../models/dataset.model';
 import { RecommendationsResponse } from '../models/recommendation.model';
 import {
@@ -152,6 +153,35 @@ export class DatasetApiService {
     return this.http.get<ApiResponse<RawDatasetRowsResponse>>(
       `${this.baseUrl}/api/v1/datasets/${datasetId}/rows?${params.toString()}`
     );
+  }
+
+  getFormulaDiscovery(
+    datasetId: string,
+    options?: {
+      target?: string;
+      topK?: number;
+      interactions?: boolean;
+      ratios?: boolean;
+      force?: boolean;
+      maxCandidates?: number;
+      sampleCap?: number;
+    }
+  ): Observable<ApiResponse<FormulaDiscoveryResult>> {
+    const params = new URLSearchParams();
+    if (options?.target) params.append('target', options.target);
+    if (typeof options?.topK === 'number') params.append('topK', String(options.topK));
+    if (typeof options?.interactions === 'boolean') params.append('interactions', String(options.interactions));
+    if (typeof options?.ratios === 'boolean') params.append('ratios', String(options.ratios));
+    if (typeof options?.force === 'boolean') params.append('force', String(options.force));
+    if (typeof options?.maxCandidates === 'number') params.append('maxCandidates', String(options.maxCandidates));
+    if (typeof options?.sampleCap === 'number') params.append('sampleCap', String(options.sampleCap));
+
+    const query = params.toString();
+    const url = query
+      ? `${this.baseUrl}/api/v1/datasets/${datasetId}/formulas?${query}`
+      : `${this.baseUrl}/api/v1/datasets/${datasetId}/formulas`;
+
+    return this.http.get<ApiResponse<FormulaDiscoveryResult>>(url);
   }
 
   /**
