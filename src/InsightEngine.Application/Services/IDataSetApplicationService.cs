@@ -2,9 +2,11 @@ using InsightEngine.Domain.Commands.DataSet;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
 using Microsoft.AspNetCore.Http;
+using InsightEngine.Application.Models.DataSet;
 
 namespace InsightEngine.Application.Services;
 
@@ -64,5 +66,18 @@ public interface IDataSetApplicationService
     Task<Result<ScenarioSimulationResponse>> SimulateAsync(
         Guid datasetId,
         ScenarioRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<BuildDataSetIndexResponse>> BuildIndexAsync(
+        Guid datasetId,
+        BuildIndexRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<DatasetIndex>> GetIndexAsync(
+        Guid datasetId,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<DatasetIndexStatus>> GetIndexStatusAsync(
+        Guid datasetId,
         CancellationToken cancellationToken = default);
 }

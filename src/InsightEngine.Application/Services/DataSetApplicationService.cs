@@ -3,8 +3,10 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
+using InsightEngine.Application.Models.DataSet;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -232,5 +234,38 @@ public class DataSetApplicationService : IDataSetApplicationService
             simulationResult.Data.DuckDbMs);
 
         return simulationResult;
+    }
+
+    public async Task<Result<BuildDataSetIndexResponse>> BuildIndexAsync(
+        Guid datasetId,
+        BuildIndexRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var command = new BuildDataSetIndexCommand(datasetId)
+        {
+            MaxColumnsForCorrelation = request.MaxColumnsForCorrelation,
+            TopKEdgesPerColumn = request.TopKEdgesPerColumn,
+            SampleRows = request.SampleRows,
+            IncludeStringPatterns = request.IncludeStringPatterns,
+            IncludeDistributions = request.IncludeDistributions
+        };
+
+        return await _mediator.Send(command, cancellationToken);
+    }
+
+    public async Task<Result<DatasetIndex>> GetIndexAsync(
+        Guid datasetId,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetDataSetIndexQuery(datasetId);
+        return await _mediator.Send(query, cancellationToken);
+    }
+
+    public async Task<Result<DatasetIndexStatus>> GetIndexStatusAsync(
+        Guid datasetId,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetDataSetIndexStatusQuery(datasetId);
+        return await _mediator.Send(query, cancellationToken);
     }
 }

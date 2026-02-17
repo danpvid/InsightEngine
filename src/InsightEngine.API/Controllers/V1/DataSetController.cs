@@ -1,4 +1,5 @@
 using InsightEngine.API.Models;
+using InsightEngine.Application.Models.DataSet;
 using InsightEngine.Application.Services;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Core.Notifications;
@@ -330,6 +331,108 @@ public class DataSetController : BaseController
                 StatusCodes.Status500InternalServerError,
                 "internal_error",
                 "Erro ao gerar profile do dataset.");
+        }
+    }
+
+    [HttpPost("{id:guid}/index:build")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> BuildIndex(Guid id, [FromBody] BuildIndexRequest? request)
+    {
+        try
+        {
+            var effectiveRequest = request ?? new BuildIndexRequest();
+            var result = await _dataSetApplicationService.BuildIndexAsync(id, effectiveRequest);
+
+            if (!result.IsSuccess)
+            {
+                var statusCode = result.Errors.Any(error => error.Contains("not found", StringComparison.OrdinalIgnoreCase))
+                    ? StatusCodes.Status404NotFound
+                    : StatusCodes.Status400BadRequest;
+
+                return ErrorResponse(statusCode, result.Errors, statusCode == StatusCodes.Status404NotFound ? "not_found" : "validation_error");
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    datasetId = result.Data!.DatasetId,
+                    status = result.Data.Status,
+                    builtAt = result.Data.BuiltAtUtc,
+                    limitsUsed = result.Data.LimitsUsed
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error building dataset index for {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao construir índice de metadados.");
+        }
+    }
+
+    [HttpGet("{id:guid}/index")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetIndex(Guid id)
+    {
+        try
+        {
+            var result = await _dataSetApplicationService.GetIndexAsync(id);
+            if (!result.IsSuccess)
+            {
+                return ErrorResponse(StatusCodes.Status404NotFound, result.Errors, "not_found");
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving dataset index for {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao carregar índice de metadados.");
+        }
+    }
+
+    [HttpGet("{id:guid}/index/status")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetIndexStatus(Guid id)
+    {
+        try
+        {
+            var result = await _dataSetApplicationService.GetIndexStatusAsync(id);
+            if (!result.IsSuccess)
+            {
+                return ErrorResponse(StatusCodes.Status500InternalServerError, result.Errors, "internal_error");
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = result.Data
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving dataset index status for {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao carregar status do índice de metadados.");
         }
     }
 
