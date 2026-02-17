@@ -2,6 +2,12 @@
   display: block;
 }
 
+/* Tighten the page container for Explore — remove large top whitespace */
+.container-wide {
+  padding-top: 8px;
+  padding-bottom: var(--space-5);
+}
+
 .container-wide {
   max-width: none;
   width: 100%;
@@ -51,11 +57,27 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
-  padding: 8px 10px;
+  margin-bottom: 10px;
+  padding: 6px 10px; /* compact toolbar */
   background-color: var(--surface-2);
   border-radius: 8px;
   border: 1px solid var(--border);
+}
+
+/* make the saved-view selector match the height of the buttons and be more compact */
+.explore-toolbar .saved-view-select {
+  width: 160px;
+  min-width: 140px;
+}
+.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-form-field-infix {
+  height: 38px;
+  padding-top: 0;
+  padding-bottom: 0;
+  display: flex;
+  align-items: center;
+}
+.explore-toolbar .toolbar-actions button {
+  height: 38px;
 }
 
 .status-chip {
@@ -180,17 +202,33 @@
 
 .field-row {
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px;
+  border-radius: 6px; /* slightly tighter */
+  padding: 6px; /* compact */
   background: var(--surface);
   text-align: left;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: background-color 0.15s, box-shadow 0.15s;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
 
   &.selected {
     border-color: var(--primary);
-    background: var(--hover-bg);
+    background: var(--surface-2);
+    box-shadow: 0 6px 18px rgba(2,6,23,0.06);
   }
-} 
+}
+
+.field-main { gap: 8px; }
+.field-name { font-size: 13px; font-weight: 700; color: var(--text); }
+.field-meta { color: var(--text-2); font-size: 11px; }
+.tags mat-chip { font-size: 11px; padding: 2px 6px; }
 
 .field-main {
   display: flex;
@@ -264,6 +302,19 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+/* Make individual field summary cards more compact and higher-contrast */
+.field-summary-grid mat-card {
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+/* Reduce vertical space for page cards inside main area */
+.main-panels mat-card {
+  margin-bottom: 12px;
 }
 
 .field-chart {

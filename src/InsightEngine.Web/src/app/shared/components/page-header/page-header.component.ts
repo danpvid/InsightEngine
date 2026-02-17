@@ -8,16 +8,27 @@ import { MatIconModule } from '@angular/material/icon';
   imports: [CommonModule, MatIconModule],
   template: `
     <div class="page-header">
-      <div class="header-content">
-        <mat-icon *ngIf="icon">{{ icon }}</mat-icon>
-        <h1>{{ title }}</h1>
+      <div class="header-row">
+        <div class="header-content">
+          <mat-icon *ngIf="icon">{{ icon }}</mat-icon>
+          <h1>{{ title }}</h1>
+        </div>
+        <div class="header-actions" *ngIf="subtitle">
+          <span class="subtitle-badge">{{ subtitle }}</span>
+        </div>
       </div>
-      <p *ngIf="subtitle" class="subtitle">{{ subtitle }}</p>
     </div>
   `,
   styles: [`
     .page-header {
-      margin-bottom: 24px;
+      margin-bottom: 12px; /* compact the header to remove unnecessary vertical space */
+    }
+
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
 
     .header-content {
@@ -40,11 +51,19 @@ import { MatIconModule } from '@angular/material/icon';
       color: var(--text);
     }
 
-    .subtitle {
-      margin: 8px 0 0 0;
+    /* subtitle rendered as a compact badge on the right — more emphasis and aligns with toolbar */
+    .subtitle-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
       color: var(--text-2);
       font-size: 13px;
-      margin-left: 28px;
+      font-weight: 600;
+      white-space: nowrap;
     }
   `]
 })
