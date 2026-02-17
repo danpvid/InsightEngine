@@ -316,6 +316,10 @@ public class LLMFeatureServiceTests
             string? yColumn = null,
             string? groupBy = null,
             List<ChartFilter>? filters = null,
+            ChartViewKind view = ChartViewKind.Base,
+            PercentileMode percentileMode = PercentileMode.None,
+            PercentileKind? percentileKind = null,
+            string? percentileTarget = null,
             CancellationToken cancellationToken = default)
         {
             var points = Enumerable.Range(0, 300)

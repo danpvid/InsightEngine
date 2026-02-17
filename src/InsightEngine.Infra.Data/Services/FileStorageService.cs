@@ -74,7 +74,7 @@ public class FileStorageService : IFileStorageService
                     }
                 }
 
-                await fileOutputStream.FlushAsync(cancellationToken);
+                    await fileOutputStream.FlushAsync(cancellationToken);
             }
 
             _logger.LogInformation("File saved successfully: {FileName}, Size: {Size} bytes", 

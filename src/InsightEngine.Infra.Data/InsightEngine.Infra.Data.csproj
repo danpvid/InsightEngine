@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\InsightEngine.Domain\InsightEngine.Domain.csproj" />
+    <ProjectReference Include="..\InsightEngine.Infra.ExternalService\InsightEngine.Infra.ExternalService.csproj" />
   </ItemGroup>
 
 </Project>

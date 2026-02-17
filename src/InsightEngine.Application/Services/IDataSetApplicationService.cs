@@ -1,5 +1,6 @@
 using InsightEngine.Domain.Commands.DataSet;
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
@@ -52,6 +53,10 @@ public interface IDataSetApplicationService
         string? yColumn = null,
         string? groupBy = null,
         List<ChartFilter>? filters = null,
+        ChartViewKind view = ChartViewKind.Base,
+        PercentileMode percentileMode = PercentileMode.None,
+        PercentileKind? percentileKind = null,
+        string? percentileTarget = null,
         CancellationToken cancellationToken = default);
 
     Task<Result<ScenarioSimulationResponse>> SimulateAsync(

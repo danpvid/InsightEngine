@@ -1,32 +1,33 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Flurl;
+using Flurl.Http;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Settings;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace InsightEngine.Infra.Data.Services;
+namespace InsightEngine.Infra.ExternalService.Services;
 
 public class LocalHttpLLMClient : ILLMClient
 {
-    private readonly HttpClient _httpClient;
-    private readonly IMemoryCache _cache;
+    private readonly IFlurlClient _flurlClient;
     private readonly IOptionsMonitor<LLMSettings> _settingsMonitor;
     private readonly ILogger<LocalHttpLLMClient> _logger;
+    private readonly object _modelsLock = new();
+    private IReadOnlyList<string> _cachedModels = Array.Empty<string>();
+    private DateTimeOffset _cachedModelsAt = DateTimeOffset.MinValue;
 
     public LocalHttpLLMClient(
-        HttpClient httpClient,
-        IMemoryCache cache,
+        IFlurlClient flurlClient,
         IOptionsMonitor<LLMSettings> settingsMonitor,
         ILogger<LocalHttpLLMClient> logger)
     {
-        _httpClient = httpClient;
-        _cache = cache;
+        _flurlClient = flurlClient;
         _settingsMonitor = settingsMonitor;
         _logger = logger;
     }
@@ -48,15 +49,15 @@ public class LocalHttpLLMClient : ILLMClient
     {
         var settings = _settingsMonitor.CurrentValue;
         var sw = Stopwatch.StartNew();
+        var timeout = TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds));
 
         try
         {
-            var timeout = TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds));
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(timeout);
 
             var baseUrl = NormalizeBaseUrl(settings.LocalHttp.BaseUrl);
-            var endpoint = BuildEndpoint(baseUrl);
+            var endpoint = baseUrl.AppendPathSegment("api/generate");
             var resolvedModel = await ResolveModelAsync(baseUrl, settings.LocalHttp, timeoutCts.Token);
             var payload = BuildPayload(request, settings, responseFormat, resolvedModel);
 
@@ -69,27 +70,11 @@ public class LocalHttpLLMClient : ILLMClient
                 request.UserPrompt.Length,
                 request.ContextObjects.Count);
 
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint)
-            {
-                Content = new StringContent(payload, Encoding.UTF8, "application/json")
-            };
-
-            using var httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
-            var responseContent = await httpResponse.Content.ReadAsStringAsync(timeoutCts.Token);
-
-            if (!httpResponse.IsSuccessStatusCode)
-            {
-                var serverMessage = TryReadServerErrorMessage(responseContent);
-                _logger.LogWarning(
-                    "Local LLM request failed with status={StatusCode}, model={Model}, serverMessage={ServerMessage}, bodyLength={BodyLength}",
-                    (int)httpResponse.StatusCode,
-                    resolvedModel,
-                    serverMessage,
-                    responseContent.Length);
-
-                return Result.Failure<LLMResponse>(
-                    BuildFailureMessage((int)httpResponse.StatusCode, baseUrl, resolvedModel, serverMessage));
-            }
+            var responseContent = await _flurlClient
+                .Request(endpoint)
+                .WithTimeout(timeout)
+                .PostJsonAsync(payload, cancellationToken: timeoutCts.Token)
+                .ReceiveString();
 
             var parsed = ParseResponse(responseContent);
             if (!parsed.IsSuccess)
@@ -115,19 +100,41 @@ public class LocalHttpLLMClient : ILLMClient
 
             return Result.Success(llmResponse);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (FlurlHttpTimeoutException)
         {
             sw.Stop();
             _logger.LogWarning("Local LLM request timed out after {DurationMs}ms.", sw.ElapsedMilliseconds);
             return Result.Failure<LLMResponse>("Local LLM request timed out.");
         }
-        catch (HttpRequestException ex)
+        catch (FlurlHttpException ex)
         {
             sw.Stop();
+
             var baseUrl = NormalizeBaseUrl(settings.LocalHttp.BaseUrl);
-            _logger.LogWarning(ex, "Local LLM endpoint is unreachable at {BaseUrl}.", baseUrl);
+            var statusCode = ex.Call?.Response?.StatusCode;
+            var serverMessage = await TryReadServerErrorMessageAsync(ex);
+
+            if (statusCode is null)
+            {
+                _logger.LogWarning(ex, "Local LLM endpoint is unreachable at {BaseUrl}.", baseUrl);
+                return Result.Failure<LLMResponse>(
+                    $"Local LLM endpoint is unreachable at {baseUrl}. Make sure Ollama is running.");
+            }
+
+            _logger.LogWarning(
+                ex,
+                "Local LLM request failed with status={StatusCode}, serverMessage={ServerMessage}",
+                statusCode.Value,
+                serverMessage);
+
             return Result.Failure<LLMResponse>(
-                $"Local LLM endpoint is unreachable at {baseUrl}. Make sure Ollama is running.");
+                BuildFailureMessage(statusCode.Value, baseUrl, settings.LocalHttp.Model, serverMessage));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            sw.Stop();
+            _logger.LogWarning("Local LLM request timed out after {DurationMs}ms.", sw.ElapsedMilliseconds);
+            return Result.Failure<LLMResponse>("Local LLM request timed out.");
         }
         catch (Exception ex)
         {
@@ -137,11 +144,6 @@ public class LocalHttpLLMClient : ILLMClient
         }
     }
 
-    private static string BuildEndpoint(string normalizedBaseUrl)
-    {
-        return $"{normalizedBaseUrl}/api/generate";
-    }
-
     private static string NormalizeBaseUrl(string baseUrl)
     {
         return string.IsNullOrWhiteSpace(baseUrl)
@@ -149,7 +151,11 @@ public class LocalHttpLLMClient : ILLMClient
             : baseUrl.TrimEnd('/');
     }
 
-    private static string BuildPayload(LLMRequest request, LLMSettings settings, LLMResponseFormat format, string model)
+    private static Dictionary<string, object?> BuildPayload(
+        LLMRequest request,
+        LLMSettings settings,
+        LLMResponseFormat format,
+        string model)
     {
         var contextJson = request.ContextObjects.Count == 0
             ? "{}"
@@ -178,7 +184,131 @@ public class LocalHttpLLMClient : ILLMClient
             payload["format"] = "json";
         }
 
-        return JsonSerializer.Serialize(payload, SerializerOptions);
+        return payload;
+    }
+
+    private async Task<string> ResolveModelAsync(
+        string baseUrl,
+        LocalHttpSettings settings,
+        CancellationToken cancellationToken)
+    {
+        var configuredModel = string.IsNullOrWhiteSpace(settings.Model)
+            ? "llama3"
+            : settings.Model.Trim();
+
+        if (!settings.AutoSelectInstalledModel)
+        {
+            return configuredModel;
+        }
+
+        var installedModels = await GetInstalledModelsAsync(baseUrl, cancellationToken);
+        if (installedModels.Count == 0)
+        {
+            return configuredModel;
+        }
+
+        var configuredMatch = FindModelMatch(installedModels, configuredModel);
+        if (configuredMatch != null)
+        {
+            return configuredMatch;
+        }
+
+        foreach (var fallback in settings.FallbackModels.Where(item => !string.IsNullOrWhiteSpace(item)))
+        {
+            var match = FindModelMatch(installedModels, fallback);
+            if (match != null)
+            {
+                _logger.LogWarning(
+                    "Configured LLM model {ConfiguredModel} is not installed. Falling back to installed model {ResolvedModel}.",
+                    configuredModel,
+                    match);
+                return match;
+            }
+        }
+
+        var preferred = installedModels.FirstOrDefault(model =>
+            model.Contains("llama", StringComparison.OrdinalIgnoreCase))
+            ?? installedModels[0];
+
+        _logger.LogWarning(
+            "Configured LLM model {ConfiguredModel} is not installed. Falling back to available model {ResolvedModel}.",
+            configuredModel,
+            preferred);
+
+        return preferred;
+    }
+
+    private async Task<IReadOnlyList<string>> GetInstalledModelsAsync(string baseUrl, CancellationToken cancellationToken)
+    {
+        lock (_modelsLock)
+        {
+            if (_cachedModels.Count > 0 && (DateTimeOffset.UtcNow - _cachedModelsAt) < TimeSpan.FromMinutes(2))
+            {
+                return _cachedModels;
+            }
+        }
+
+        try
+        {
+            var payload = await _flurlClient
+                .Request(baseUrl.AppendPathSegment("api/tags"))
+                .WithTimeout(TimeSpan.FromSeconds(5))
+                .GetStringAsync(cancellationToken: cancellationToken);
+
+            using var json = JsonDocument.Parse(payload);
+            if (!json.RootElement.TryGetProperty("models", out var modelsElement) ||
+                modelsElement.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<string>();
+            }
+
+            var models = new List<string>();
+            foreach (var item in modelsElement.EnumerateArray())
+            {
+                if (!item.TryGetProperty("name", out var nameElement))
+                {
+                    continue;
+                }
+
+                var modelName = nameElement.GetString();
+                if (!string.IsNullOrWhiteSpace(modelName))
+                {
+                    models.Add(modelName.Trim());
+                }
+            }
+
+            lock (_modelsLock)
+            {
+                _cachedModels = models;
+                _cachedModelsAt = DateTimeOffset.UtcNow;
+            }
+
+            return models;
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static string? FindModelMatch(IReadOnlyList<string> installedModels, string requestedModel)
+    {
+        if (string.IsNullOrWhiteSpace(requestedModel))
+        {
+            return null;
+        }
+
+        var normalized = requestedModel.Trim();
+        var exact = installedModels.FirstOrDefault(model =>
+            string.Equals(model, normalized, StringComparison.OrdinalIgnoreCase));
+        if (exact != null)
+        {
+            return exact;
+        }
+
+        return installedModels.FirstOrDefault(model =>
+            model.StartsWith($"{normalized}:", StringComparison.OrdinalIgnoreCase) ||
+            model.StartsWith(normalized, StringComparison.OrdinalIgnoreCase));
     }
 
     private static Result<LLMResponse> ParseResponse(string responseContent)
@@ -271,128 +401,6 @@ public class LocalHttpLLMClient : ILLMClient
         return false;
     }
 
-    private async Task<string> ResolveModelAsync(
-        string baseUrl,
-        LocalHttpSettings settings,
-        CancellationToken cancellationToken)
-    {
-        var configuredModel = string.IsNullOrWhiteSpace(settings.Model)
-            ? "llama3"
-            : settings.Model.Trim();
-
-        if (!settings.AutoSelectInstalledModel)
-        {
-            return configuredModel;
-        }
-
-        var installedModels = await GetInstalledModelsAsync(baseUrl, cancellationToken);
-        if (installedModels.Count == 0)
-        {
-            return configuredModel;
-        }
-
-        var configuredMatch = FindModelMatch(installedModels, configuredModel);
-        if (configuredMatch != null)
-        {
-            return configuredMatch;
-        }
-
-        foreach (var fallback in settings.FallbackModels.Where(item => !string.IsNullOrWhiteSpace(item)))
-        {
-            var match = FindModelMatch(installedModels, fallback);
-            if (match != null)
-            {
-                _logger.LogWarning(
-                    "Configured LLM model {ConfiguredModel} is not installed. Falling back to installed model {ResolvedModel}.",
-                    configuredModel,
-                    match);
-                return match;
-            }
-        }
-
-        var preferred = installedModels.FirstOrDefault(model =>
-            model.Contains("llama", StringComparison.OrdinalIgnoreCase))
-            ?? installedModels[0];
-
-        _logger.LogWarning(
-            "Configured LLM model {ConfiguredModel} is not installed. Falling back to available model {ResolvedModel}.",
-            configuredModel,
-            preferred);
-
-        return preferred;
-    }
-
-    private async Task<IReadOnlyList<string>> GetInstalledModelsAsync(string baseUrl, CancellationToken cancellationToken)
-    {
-        var cacheKey = $"llm:installed-models:{baseUrl}";
-        if (_cache.TryGetValue<IReadOnlyList<string>>(cacheKey, out var cached) && cached != null)
-        {
-            return cached;
-        }
-
-        try
-        {
-            using var response = await _httpClient.GetAsync($"{baseUrl}/api/tags", cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                return Array.Empty<string>();
-            }
-
-            var payload = await response.Content.ReadAsStringAsync(cancellationToken);
-            using var json = JsonDocument.Parse(payload);
-
-            if (!json.RootElement.TryGetProperty("models", out var modelsElement) ||
-                modelsElement.ValueKind != JsonValueKind.Array)
-            {
-                return Array.Empty<string>();
-            }
-
-            var models = new List<string>();
-            foreach (var item in modelsElement.EnumerateArray())
-            {
-                if (item.TryGetProperty("name", out var nameElement))
-                {
-                    var modelName = nameElement.GetString();
-                    if (!string.IsNullOrWhiteSpace(modelName))
-                    {
-                        models.Add(modelName.Trim());
-                    }
-                }
-            }
-
-            if (models.Count > 0)
-            {
-                _cache.Set(cacheKey, models, TimeSpan.FromMinutes(2));
-            }
-
-            return models;
-        }
-        catch
-        {
-            return Array.Empty<string>();
-        }
-    }
-
-    private static string? FindModelMatch(IReadOnlyList<string> installedModels, string requestedModel)
-    {
-        if (string.IsNullOrWhiteSpace(requestedModel))
-        {
-            return null;
-        }
-
-        var normalized = requestedModel.Trim();
-        var exact = installedModels.FirstOrDefault(model =>
-            string.Equals(model, normalized, StringComparison.OrdinalIgnoreCase));
-        if (exact != null)
-        {
-            return exact;
-        }
-
-        return installedModels.FirstOrDefault(model =>
-            model.StartsWith($"{normalized}:", StringComparison.OrdinalIgnoreCase) ||
-            model.StartsWith(normalized, StringComparison.OrdinalIgnoreCase));
-    }
-
     private static bool TryParseAndSerializeJson(string candidate, out string json)
     {
         json = string.Empty;
@@ -474,8 +482,18 @@ public class LocalHttpLLMClient : ILLMClient
         return false;
     }
 
-    private static string TryReadServerErrorMessage(string responseContent)
+    private static async Task<string> TryReadServerErrorMessageAsync(FlurlHttpException ex)
     {
+        var responseContent = string.Empty;
+        try
+        {
+            responseContent = await ex.GetResponseStringAsync();
+        }
+        catch
+        {
+            return "unknown";
+        }
+
         if (string.IsNullOrWhiteSpace(responseContent))
         {
             return "unknown";

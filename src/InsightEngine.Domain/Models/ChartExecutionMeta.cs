@@ -39,4 +39,14 @@ public class ChartExecutionMeta
     /// Indicates if response came from cache.
     /// </summary>
     public bool CacheHit { get; set; }
+
+    /// <summary>
+    /// Percentile drilldown metadata for current chart.
+    /// </summary>
+    public ChartPercentileMeta? Percentiles { get; set; }
+
+    /// <summary>
+    /// Active chart view metadata (base or percentile).
+    /// </summary>
+    public ChartViewMeta? View { get; set; }
 }

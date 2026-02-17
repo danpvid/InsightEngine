@@ -9,6 +9,8 @@ public class ChartExecutionResponse
     public string RecommendationId { get; set; } = string.Empty;
     public ChartExecutionResult ExecutionResult { get; set; } = null!;
     public InsightSummary? InsightSummary { get; set; }
+    public ChartPercentileMeta? Percentiles { get; set; }
+    public ChartViewMeta? View { get; set; }
     public long TotalExecutionMs { get; set; }
     public string QueryHash { get; set; } = string.Empty;
     public bool CacheHit { get; set; }

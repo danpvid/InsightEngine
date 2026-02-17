@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using Flurl.Http;
 using FluentAssertions;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Settings;
 using InsightEngine.Infra.Data.Services;
+using InsightEngine.Infra.ExternalService.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -43,10 +45,10 @@ public class LLMCacheAndRedactionTests
 }
 """);
         var httpClient = new HttpClient(handler);
+        var flurlClient = new FlurlClient(httpClient);
 
         var localClient = new LocalHttpLLMClient(
-            httpClient,
-            new MemoryCache(new MemoryCacheOptions()),
+            flurlClient,
             new TestOptionsMonitor<LLMSettings>(llmSettings),
             NullLogger<LocalHttpLLMClient>.Instance);
         var router = new LLMClientRouter(

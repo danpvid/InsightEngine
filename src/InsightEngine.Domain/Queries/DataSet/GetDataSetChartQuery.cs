@@ -1,4 +1,5 @@
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Models;
 
 namespace InsightEngine.Domain.Queries.DataSet;
@@ -17,6 +18,10 @@ public class GetDataSetChartQuery : Query<ChartExecutionResponse>
     public string? YColumn { get; set; }
     public string? GroupBy { get; set; }
     public List<ChartFilter> Filters { get; set; } = new();
+    public ChartViewKind View { get; set; } = ChartViewKind.Base;
+    public PercentileMode PercentileMode { get; set; } = PercentileMode.None;
+    public PercentileKind? PercentileKind { get; set; }
+    public string PercentileTarget { get; set; } = "y";
 
     public GetDataSetChartQuery() { }
 
@@ -27,7 +32,11 @@ public class GetDataSetChartQuery : Query<ChartExecutionResponse>
         string? timeBin = null,
         string? yColumn = null,
         string? groupBy = null,
-        List<ChartFilter>? filters = null)
+        List<ChartFilter>? filters = null,
+        ChartViewKind view = ChartViewKind.Base,
+        PercentileMode percentileMode = PercentileMode.None,
+        PercentileKind? percentileKind = null,
+        string? percentileTarget = null)
     {
         DatasetId = datasetId;
         RecommendationId = recommendationId;
@@ -36,5 +45,9 @@ public class GetDataSetChartQuery : Query<ChartExecutionResponse>
         YColumn = yColumn;
         GroupBy = groupBy;
         Filters = filters ?? new List<ChartFilter>();
+        View = view;
+        PercentileMode = percentileMode;
+        PercentileKind = percentileKind;
+        PercentileTarget = string.IsNullOrWhiteSpace(percentileTarget) ? "y" : percentileTarget!;
     }
 }

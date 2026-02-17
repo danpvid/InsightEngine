@@ -67,7 +67,7 @@ public class LLMContextBuilder : ILLMContextBuilder
             request.MetricY,
             request.GroupBy,
             request.Filters,
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
         if (!chartResult.IsSuccess || chartResult.Data == null)
         {

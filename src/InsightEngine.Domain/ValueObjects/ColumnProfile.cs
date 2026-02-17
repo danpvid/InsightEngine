@@ -9,6 +9,7 @@ public class ColumnProfile
     public double NullRate { get; set; }
     public int DistinctCount { get; set; }
     public List<string> TopValues { get; set; } = new();
+    public List<TopValueStat> TopValueStats { get; set; } = new();
     
     /// <summary>
     /// Minimum value (only for numeric columns)

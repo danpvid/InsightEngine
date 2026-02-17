@@ -3,6 +3,7 @@ using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Settings;
+using InsightEngine.Infra.ExternalService.Services;
 using Microsoft.Extensions.Options;
 
 namespace InsightEngine.Infra.Data.Services;

@@ -1,5 +1,6 @@
 using InsightEngine.Domain.Commands.DataSet;
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Queries.DataSet;
@@ -151,13 +152,28 @@ public class DataSetApplicationService : IDataSetApplicationService
         string? yColumn = null,
         string? groupBy = null,
         List<ChartFilter>? filters = null,
+        ChartViewKind view = ChartViewKind.Base,
+        PercentileMode percentileMode = PercentileMode.None,
+        PercentileKind? percentileKind = null,
+        string? percentileTarget = null,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "Executing chart for dataset {DatasetId}, recommendation {RecommendationId}, aggregation: {Aggregation}, timeBin: {TimeBin}, yColumn: {YColumn}", 
             datasetId, recommendationId, aggregation, timeBin, yColumn);
 
-        var query = new GetDataSetChartQuery(datasetId, recommendationId, aggregation, timeBin, yColumn, groupBy, filters);
+        var query = new GetDataSetChartQuery(
+            datasetId,
+            recommendationId,
+            aggregation,
+            timeBin,
+            yColumn,
+            groupBy,
+            filters,
+            view,
+            percentileMode,
+            percentileKind,
+            percentileTarget);
         var result = await _mediator.Send(query, cancellationToken);
 
         if (result.IsSuccess)

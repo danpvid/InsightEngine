@@ -73,7 +73,7 @@ public class EvidencePackService : IEvidencePackService
             request.MetricY,
             request.GroupBy,
             request.Filters,
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
         if (!chartResult.IsSuccess || chartResult.Data == null)
         {

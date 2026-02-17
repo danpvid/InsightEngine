@@ -265,6 +265,10 @@ public class DeepInsightsTests
             string? yColumn = null,
             string? groupBy = null,
             List<ChartFilter>? filters = null,
+            ChartViewKind view = ChartViewKind.Base,
+            PercentileMode percentileMode = PercentileMode.None,
+            PercentileKind? percentileKind = null,
+            string? percentileTarget = null,
             CancellationToken cancellationToken = default)
         {
             var series = Enumerable.Range(0, 90)

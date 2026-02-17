@@ -21,6 +21,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICsvProfiler _csvProfiler;
     private readonly IChartExecutionService _chartExecutionService;
+    private readonly IChartPercentileService _chartPercentileService;
     private readonly IChartQueryCache _chartQueryCache;
     private readonly ILogger<GetDataSetChartQueryHandler> _logger;
 
@@ -29,6 +30,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         IUnitOfWork unitOfWork,
         ICsvProfiler csvProfiler,
         IChartExecutionService chartExecutionService,
+        IChartPercentileService chartPercentileService,
         IChartQueryCache chartQueryCache,
         ILogger<GetDataSetChartQueryHandler> logger)
     {
@@ -36,6 +38,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         _unitOfWork = unitOfWork;
         _csvProfiler = csvProfiler;
         _chartExecutionService = chartExecutionService;
+        _chartPercentileService = chartPercentileService;
         _chartQueryCache = chartQueryCache;
         _logger = logger;
     }
@@ -140,7 +143,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 {
                     Column = filterProfile.Name,
                     Operator = filter.Operator,
-                    Values = filter.Values
+                    Values = filter.Values,
+                    LogicalOperator = filter.LogicalOperator
                 });
             }
 
@@ -180,7 +184,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
             }
 
             // 5. Executar a recomendação via DuckDB
-            var queryHash = QueryHashHelper.ComputeQueryHash(recommendation, request.DatasetId);
+            var viewFingerprint = $"{request.View}|{request.PercentileMode}|{request.PercentileKind}|{request.PercentileTarget?.Trim().ToLowerInvariant()}";
+            var queryHash = QueryHashHelper.ComputeQueryHash(recommendation, request.DatasetId, viewFingerprint);
 
             var cachedResponse = await _chartQueryCache.GetAsync(
                 request.DatasetId,
@@ -222,6 +227,52 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
 
             sw.Stop();
 
+            var percentileComputation = await _chartPercentileService.ComputeAsync(
+                csvPath,
+                recommendation,
+                executionResult.Data!.Option,
+                request.View,
+                request.PercentileMode,
+                request.PercentileKind,
+                request.PercentileTarget ?? "y",
+                cancellationToken);
+
+            ChartPercentileMeta percentilesMeta = new()
+            {
+                Supported = false,
+                Mode = PercentileMode.NotApplicable,
+                Available = new List<PercentileKind>
+                {
+                    PercentileKind.P5,
+                    PercentileKind.P10,
+                    PercentileKind.P90,
+                    PercentileKind.P95
+                },
+                Reason = "Percentile metadata unavailable."
+            };
+            ChartViewMeta viewMeta = new()
+            {
+                Kind = ChartViewKind.Base
+            };
+
+            if (percentileComputation.IsSuccess && percentileComputation.Data != null)
+            {
+                percentilesMeta = percentileComputation.Data.Percentiles;
+                viewMeta = percentileComputation.Data.View;
+                if (percentileComputation.Data.Option != null)
+                {
+                    executionResult.Data!.Option = percentileComputation.Data.Option;
+                }
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Percentile computation failed DatasetId={DatasetId} RecommendationId={RecommendationId}: {Errors}",
+                    request.DatasetId,
+                    request.RecommendationId,
+                    string.Join(", ", percentileComputation.Errors));
+            }
+
             InsightSummary? insightSummary = null;
             try
             {
@@ -239,6 +290,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 RecommendationId = request.RecommendationId,
                 ExecutionResult = executionResult.Data!,
                 InsightSummary = insightSummary,
+                Percentiles = percentilesMeta,
+                View = viewMeta,
                 TotalExecutionMs = sw.ElapsedMilliseconds,
                 QueryHash = queryHash,
                 CacheHit = false
