@@ -21,6 +21,7 @@ import {
   InferredType,
   IndexBuildState
 } from '../../../../core/models/metadata-index.model';
+import { RawDatasetRow } from '../../../../core/models/dataset.model';
 
 @Component({
   selector: 'app-explore-page',
@@ -55,6 +56,16 @@ export class ExplorePageComponent implements OnInit {
   correlationStrengthFilter: string = 'All';
   selectedDistributionFields: string[] = [];
   selectedDistributionDateField: string = '';
+  gridLoading: boolean = false;
+  gridColumns: string[] = [];
+  gridRows: RawDatasetRow[] = [];
+  gridQuickFilter: string = '';
+  gridHiddenColumns: string[] = [];
+  gridSortColumn: string = '';
+  gridSortDirection: 'asc' | 'desc' = 'asc';
+  gridBackendFilters: string[] = [];
+  gridTotalRows: number = 0;
+  gridPageSize: number = 200;
   activeFilters: string[] = [];
   pinnedFieldNames: string[] = [];
 
@@ -214,6 +225,34 @@ export class ExplorePageComponent implements OnInit {
         }
       ]
     };
+  }
+
+  get visibleGridColumns(): string[] {
+    return this.gridColumns.filter(column => !this.gridHiddenColumns.includes(column));
+  }
+
+  get displayedGridRows(): RawDatasetRow[] {
+    let rows = [...this.gridRows];
+
+    const quickFilter = this.gridQuickFilter.trim().toLowerCase();
+    if (quickFilter.length > 0) {
+      rows = rows.filter(row => this.visibleGridColumns.some(column => {
+        const value = row[column];
+        return (value || '').toString().toLowerCase().includes(quickFilter);
+      }));
+    }
+
+    if (this.gridSortColumn) {
+      rows.sort((left, right) => {
+        const leftValue = (left[this.gridSortColumn] || '').toString();
+        const rightValue = (right[this.gridSortColumn] || '').toString();
+
+        const comparison = leftValue.localeCompare(rightValue, undefined, { numeric: true, sensitivity: 'base' });
+        return this.gridSortDirection === 'asc' ? comparison : -comparison;
+      });
+    }
+
+    return rows;
   }
 
   get selectedCorrelation(): CorrelationEdge | null {
@@ -418,6 +457,85 @@ export class ExplorePageComponent implements OnInit {
     }
 
     this.selectedDistributionFields = [...this.selectedDistributionFields, fieldName];
+  }
+
+  onTabChanged(index: number): void {
+    this.selectedTabIndex = index;
+    if (index === 4 && this.gridRows.length === 0 && !this.gridLoading) {
+      this.loadGridData();
+    }
+  }
+
+  loadGridData(): void {
+    if (!this.datasetId) {
+      return;
+    }
+
+    this.gridLoading = true;
+    this.datasetApi.getRawRows(this.datasetId, {
+      page: 1,
+      pageSize: this.gridPageSize,
+      filters: this.gridBackendFilters
+    }).pipe(
+      finalize(() => {
+        this.gridLoading = false;
+      })
+    ).subscribe({
+      next: response => {
+        if (!response.success || !response.data) {
+          this.gridRows = [];
+          this.gridColumns = [];
+          this.gridTotalRows = 0;
+          return;
+        }
+
+        this.gridRows = response.data.rows || [];
+        this.gridColumns = response.data.columns || [];
+        this.gridTotalRows = response.data.rowCountTotal || 0;
+      },
+      error: err => {
+        this.toast.error(HttpErrorUtil.extractErrorMessage(err));
+      }
+    });
+  }
+
+  toggleGridColumn(column: string): void {
+    if (this.gridHiddenColumns.includes(column)) {
+      this.gridHiddenColumns = this.gridHiddenColumns.filter(item => item !== column);
+      return;
+    }
+
+    this.gridHiddenColumns = [...this.gridHiddenColumns, column];
+  }
+
+  sortGridBy(column: string): void {
+    if (this.gridSortColumn === column) {
+      this.gridSortDirection = this.gridSortDirection === 'asc' ? 'desc' : 'asc';
+      return;
+    }
+
+    this.gridSortColumn = column;
+    this.gridSortDirection = 'asc';
+  }
+
+  addGridCellFilter(column: string, value: string | null, exclude: boolean): void {
+    if (!value) {
+      return;
+    }
+
+    const op = exclude ? 'neq' : 'eq';
+    const token = `${column}|${op}|${value}`;
+    if (this.gridBackendFilters.includes(token)) {
+      return;
+    }
+
+    this.gridBackendFilters = [...this.gridBackendFilters, token];
+    this.loadGridData();
+  }
+
+  removeGridFilter(token: string): void {
+    this.gridBackendFilters = this.gridBackendFilters.filter(item => item !== token);
+    this.loadGridData();
   }
 
   useCorrelationInChart(): void {
@@ -646,6 +764,9 @@ export class ExplorePageComponent implements OnInit {
 
         this.index = response.data;
         this.ensureFieldSelection();
+        if (this.selectedTabIndex === 4 && this.gridRows.length === 0) {
+          this.loadGridData();
+        }
       },
       error: () => {
         this.index = null;

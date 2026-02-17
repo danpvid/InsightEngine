@@ -94,7 +94,7 @@
     <section class="main-panels">
       <mat-card>
         <mat-card-content>
-          <mat-tab-group [(selectedIndex)]="selectedTabIndex">
+          <mat-tab-group [(selectedIndex)]="selectedTabIndex" (selectedIndexChange)="onTabChanged($event)">
             <mat-tab [label]="'explore.tabOverview' | translate">
               <div class="overview-grid" *ngIf="index as indexData; else noOverview">
                 <mat-card class="overview-card">
@@ -472,7 +472,87 @@
               </ng-template>
             </mat-tab>
             <mat-tab [label]="'explore.tabGrid' | translate">
-              <div class="tab-placeholder">{{ 'explore.gridPlaceholder' | translate }}</div>
+              <div class="grid-tab">
+                <section class="grid-controls">
+                  <mat-form-field appearance="outline">
+                    <mat-label>{{ 'explore.gridQuickFilter' | translate }}</mat-label>
+                    <input matInput [(ngModel)]="gridQuickFilter" />
+                  </mat-form-field>
+
+                  <div class="grid-columns-toggle">
+                    <span class="label">{{ 'explore.gridColumns' | translate }}</span>
+                    <mat-chip-set>
+                      <mat-chip
+                        *ngFor="let column of gridColumns"
+                        [class.grid-column-hidden]="gridHiddenColumns.includes(column)"
+                        (click)="toggleGridColumn(column)">
+                        {{ column }}
+                      </mat-chip>
+                    </mat-chip-set>
+                  </div>
+
+                  <button mat-stroked-button color="primary" (click)="loadGridData()">
+                    <mat-icon>refresh</mat-icon>
+                    {{ 'explore.gridReload' | translate }}
+                  </button>
+                </section>
+
+                <section class="grid-filters" *ngIf="gridBackendFilters.length > 0">
+                  <mat-chip-set>
+                    <mat-chip *ngFor="let filter of gridBackendFilters" [removable]="true" (removed)="removeGridFilter(filter)">
+                      {{ filter }}
+                      <button matChipRemove aria-label="remove grid filter">
+                        <mat-icon>cancel</mat-icon>
+                      </button>
+                    </mat-chip>
+                  </mat-chip-set>
+                </section>
+
+                <section class="grid-meta">
+                  <span>{{ 'explore.gridRowsMeta' | translate:{ shown: displayedGridRows.length, total: gridTotalRows } }}</span>
+                </section>
+
+                <section class="grid-table-wrapper" *ngIf="!gridLoading; else gridLoadingState">
+                  <table class="data-grid-table" *ngIf="visibleGridColumns.length > 0; else noGridColumns">
+                    <thead>
+                      <tr>
+                        <th *ngFor="let column of visibleGridColumns" (click)="sortGridBy(column)">
+                          {{ column }}
+                          <mat-icon *ngIf="gridSortColumn === column">
+                            {{ gridSortDirection === 'asc' ? 'north' : 'south' }}
+                          </mat-icon>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let row of displayedGridRows">
+                        <td *ngFor="let column of visibleGridColumns">
+                          <div class="cell-content">
+                            <span>{{ row[column] }}</span>
+                            <div class="cell-actions" *ngIf="row[column] as value">
+                              <button mat-icon-button (click)="addGridCellFilter(column, value, false)" [matTooltip]="'explore.gridFilterTo' | translate">
+                                <mat-icon>filter_alt</mat-icon>
+                              </button>
+                              <button mat-icon-button (click)="addGridCellFilter(column, value, true)" [matTooltip]="'explore.gridExclude' | translate">
+                                <mat-icon>block</mat-icon>
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </section>
+              </div>
+              <ng-template #gridLoadingState>
+                <div class="loading-card">
+                  <mat-spinner diameter="32"></mat-spinner>
+                  <span>{{ 'explore.gridLoading' | translate }}</span>
+                </div>
+              </ng-template>
+              <ng-template #noGridColumns>
+                <div class="tab-placeholder">{{ 'explore.gridPlaceholder' | translate }}</div>
+              </ng-template>
             </mat-tab>
           </mat-tab-group>
         </mat-card-content>
