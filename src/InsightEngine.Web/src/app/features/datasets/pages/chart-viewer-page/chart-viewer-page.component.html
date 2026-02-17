@@ -1,11 +1,11 @@
 <div class="container-wide">
   <nav class="breadcrumb">
-    <a mat-button [routerLink]="newDatasetLink">
+    <a mat-button [attr.href]="newDatasetHref">
       <mat-icon>upload_file</mat-icon>
       {{ 'common.datasets' | translate }}
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
-    <a mat-button [routerLink]="recommendationsLink">
+    <a mat-button [attr.href]="recommendationsHref">
       <mat-icon>auto_awesome</mat-icon>
       {{ 'recommendations.breadcrumb' | translate }}
     </a>
