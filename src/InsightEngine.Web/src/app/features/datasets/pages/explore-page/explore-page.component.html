@@ -96,7 +96,88 @@
         <mat-card-content>
           <mat-tab-group [(selectedIndex)]="selectedTabIndex">
             <mat-tab [label]="'explore.tabOverview' | translate">
-              <div class="tab-placeholder">{{ 'explore.overviewPlaceholder' | translate }}</div>
+              <div class="overview-grid" *ngIf="index as indexData; else noOverview">
+                <mat-card class="overview-card">
+                  <mat-card-header>
+                    <mat-card-title>{{ 'explore.healthTitle' | translate }}</mat-card-title>
+                  </mat-card-header>
+                  <mat-card-content>
+                    <div class="kv-row"><span>{{ 'explore.healthRows' | translate }}</span><strong>{{ indexData.rowCount }}</strong></div>
+                    <div class="kv-row"><span>{{ 'explore.healthColumns' | translate }}</span><strong>{{ indexData.columnCount }}</strong></div>
+                    <div class="kv-row"><span>{{ 'explore.healthMissingAvg' | translate }}</span><strong>{{ formatPercent(indexData.quality.missingnessSummary.averageNullRate) }}</strong></div>
+                    <div class="kv-row"><span>{{ 'explore.healthDuplicateRate' | translate }}</span><strong>{{ formatPercent(indexData.quality.duplicateRowRate) }}</strong></div>
+                    <div class="warnings" *ngIf="indexData.quality.warnings.length > 0">
+                      <div class="warnings-title">{{ 'explore.healthWarnings' | translate }}</div>
+                      <ul>
+                        <li *ngFor="let warning of indexData.quality.warnings">{{ warning }}</li>
+                      </ul>
+                    </div>
+                  </mat-card-content>
+                </mat-card>
+
+                <mat-card class="overview-card">
+                  <mat-card-header>
+                    <mat-card-title>{{ 'explore.keysTitle' | translate }}</mat-card-title>
+                  </mat-card-header>
+                  <mat-card-content>
+                    <div *ngIf="indexData.candidateKeys.length === 0" class="muted">{{ 'explore.keysEmpty' | translate }}</div>
+                    <div class="key-row" *ngFor="let key of indexData.candidateKeys | slice:0:5">
+                      <div class="key-columns">{{ key.columns.join(' + ') }}</div>
+                      <div class="key-metrics">
+                        <span>{{ 'explore.keysUniqueness' | translate }} {{ formatPercent(key.uniquenessRatio) }}</span>
+                        <span>{{ 'explore.keysNullRate' | translate }} {{ formatPercent(key.nullRate) }}</span>
+                        <span>{{ key.confidence }}</span>
+                      </div>
+                    </div>
+                  </mat-card-content>
+                </mat-card>
+
+                <mat-card class="overview-card">
+                  <mat-card-header>
+                    <mat-card-title>{{ 'explore.topFieldsTitle' | translate }}</mat-card-title>
+                  </mat-card-header>
+                  <mat-card-content>
+                    <div class="list-block">
+                      <h4>{{ 'explore.topFieldsVariance' | translate }}</h4>
+                      <div class="muted" *ngIf="topVarianceFields.length === 0">{{ 'explore.topFieldsEmpty' | translate }}</div>
+                      <div class="simple-row" *ngFor="let column of topVarianceFields">
+                        <span>{{ column.name }}</span>
+                        <strong>{{ column.numericStats?.stdDev?.toFixed(3) }}</strong>
+                      </div>
+                    </div>
+
+                    <div class="list-block">
+                      <h4>{{ 'explore.topFieldsNullRate' | translate }}</h4>
+                      <div class="simple-row" *ngFor="let column of topNullRateFields">
+                        <span>{{ column.name }}</span>
+                        <strong>{{ formatPercent(column.nullRate) }}</strong>
+                      </div>
+                    </div>
+
+                    <div class="list-block">
+                      <h4>{{ 'explore.topFieldsCardinality' | translate }}</h4>
+                      <div class="simple-row" *ngFor="let column of topCardinalityFields">
+                        <span>{{ column.name }}</span>
+                        <strong>{{ column.distinctCount }}</strong>
+                      </div>
+                    </div>
+                  </mat-card-content>
+                </mat-card>
+
+                <mat-card class="overview-card">
+                  <mat-card-header>
+                    <mat-card-title>{{ 'explore.nextStepsTitle' | translate }}</mat-card-title>
+                  </mat-card-header>
+                  <mat-card-content>
+                    <ul>
+                      <li *ngFor="let step of suggestedNextSteps">{{ step | translate }}</li>
+                    </ul>
+                  </mat-card-content>
+                </mat-card>
+              </div>
+              <ng-template #noOverview>
+                <div class="tab-placeholder">{{ 'explore.overviewPlaceholder' | translate }}</div>
+              </ng-template>
             </mat-tab>
             <mat-tab [label]="'explore.tabField' | translate">
               <div class="tab-placeholder">{{ 'explore.fieldPlaceholder' | translate }}</div>

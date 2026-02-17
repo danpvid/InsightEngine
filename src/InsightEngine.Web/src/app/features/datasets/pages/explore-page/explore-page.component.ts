@@ -101,6 +101,72 @@ export class ExplorePageComponent implements OnInit {
     return !!this.index && this.index.columns.length > 0;
   }
 
+  get topNullRateFields(): ColumnIndex[] {
+    if (!this.index) {
+      return [];
+    }
+
+    return [...this.index.columns]
+      .sort((left, right) => right.nullRate - left.nullRate)
+      .slice(0, 5);
+  }
+
+  get topVarianceFields(): ColumnIndex[] {
+    if (!this.index) {
+      return [];
+    }
+
+    return this.index.columns
+      .filter(column => column.numericStats?.stdDev != null)
+      .sort((left, right) => (right.numericStats?.stdDev || 0) - (left.numericStats?.stdDev || 0))
+      .slice(0, 5);
+  }
+
+  get topCardinalityFields(): ColumnIndex[] {
+    if (!this.index) {
+      return [];
+    }
+
+    return this.index.columns
+      .filter(column => column.inferredType === 'Category' || column.inferredType === 'String')
+      .sort((left, right) => right.distinctCount - left.distinctCount)
+      .slice(0, 5);
+  }
+
+  get suggestedNextSteps(): string[] {
+    if (!this.index) {
+      return [];
+    }
+
+    const suggestions: string[] = [];
+    const hasStrongCorrelations = this.index.correlations.edges.some(edge => Math.abs(edge.score) >= 0.7);
+    const hasHighNullRate = this.topNullRateFields.some(column => column.nullRate >= 0.2);
+    const hasDateTag = this.index.tags.some(tag => tag.name.toLowerCase().includes('time'));
+    const hasPotentialKey = this.index.candidateKeys.some(candidate => candidate.uniquenessRatio >= 0.9);
+
+    if (hasStrongCorrelations) {
+      suggestions.push('explore.nextStepCorrelation');
+    }
+
+    if (hasDateTag) {
+      suggestions.push('explore.nextStepTimeSeries');
+    }
+
+    if (hasHighNullRate) {
+      suggestions.push('explore.nextStepMissing');
+    }
+
+    if (hasPotentialKey) {
+      suggestions.push('explore.nextStepKeys');
+    }
+
+    if (suggestions.length === 0) {
+      suggestions.push('explore.nextStepFallback');
+    }
+
+    return suggestions;
+  }
+
   onToggleTypeFilter(type: string): void {
     if (this.selectedTypeFilters.includes(type)) {
       this.selectedTypeFilters = this.selectedTypeFilters.filter(item => item !== type);
@@ -156,6 +222,10 @@ export class ExplorePageComponent implements OnInit {
   getNullRateWidth(column: ColumnIndex): string {
     const width = Math.max(0, Math.min(100, Math.round(column.nullRate * 100)));
     return `${width}%`;
+  }
+
+  formatPercent(value: number): string {
+    return `${(value * 100).toFixed(2)}%`;
   }
 
   getInferredTypeIcon(type: InferredType): string {
