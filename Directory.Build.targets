@@ -1,0 +1,6 @@
+<Project>
+  <ItemGroup>
+    <Compile Remove="artifacts/**/*.cs" />
+    <Compile Remove="bin_local/**/*.cs" />
+  </ItemGroup>
+</Project>

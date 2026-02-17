@@ -75,6 +75,10 @@ export class RecommendationsPageComponent implements OnInit {
     return ['/', this.currentLanguage, 'datasets', 'new'];
   }
 
+  get exploreLink(): string[] {
+    return ['/', this.currentLanguage, 'datasets', this.datasetId, 'explore'];
+  }
+
   ngOnInit(): void {
     this.datasetId = this.route.snapshot.paramMap.get('datasetId') || '';
 

@@ -170,14 +170,19 @@
               </div>
             </div>
           </mat-card-content>
-          <mat-card-actions>
-            <button mat-button color="primary">
+          <mat-card-actions class="dataset-actions">
+            <button mat-button color="primary" class="dataset-action-button view-button">
               <mat-icon>analytics</mat-icon>
               {{ 'upload.viewRecommendations' | translate }}
+            </button>
+            <button mat-button color="accent" class="dataset-action-button explore-button" (click)="openExplore(dataset, $event)">
+              <mat-icon>travel_explore</mat-icon>
+              {{ 'upload.openExplore' | translate }}
             </button>
             <button
               mat-button
               color="warn"
+              class="dataset-action-button delete-button"
               (click)="deleteDataset(dataset, $event)"
               [disabled]="deletingDatasetId === dataset.datasetId">
               <mat-icon>{{ deletingDatasetId === dataset.datasetId ? 'hourglass_top' : 'delete' }}</mat-icon>

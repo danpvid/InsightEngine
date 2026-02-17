@@ -1,10 +1,12 @@
 using FluentAssertions;
+using InsightEngine.Application.Models.DataSet;
 using InsightEngine.Application.Services;
 using InsightEngine.Domain.Commands.DataSet;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.Settings;
 using InsightEngine.Domain.ValueObjects;
@@ -269,6 +271,7 @@ public class DeepInsightsTests
             PercentileMode percentileMode = PercentileMode.None,
             PercentileKind? percentileKind = null,
             string? percentileTarget = null,
+            string? xColumn = null,
             CancellationToken cancellationToken = default)
         {
             var series = Enumerable.Range(0, 90)
@@ -331,6 +334,21 @@ public class DeepInsightsTests
                     ChangedPoints = 2
                 }
             }));
+        }
+
+        public Task<Result<BuildDataSetIndexResponse>> BuildIndexAsync(Guid datasetId, BuildIndexRequest request, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result.Failure<BuildDataSetIndexResponse>("Not used."));
+        }
+
+        public Task<Result<DatasetIndex>> GetIndexAsync(Guid datasetId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result.Failure<DatasetIndex>("Not used."));
+        }
+
+        public Task<Result<DatasetIndexStatus>> GetIndexStatusAsync(Guid datasetId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result.Failure<DatasetIndexStatus>("Not used."));
         }
     }
 

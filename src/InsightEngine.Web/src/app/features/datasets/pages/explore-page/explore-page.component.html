@@ -1,0 +1,661 @@
+<div class="container-wide" style="max-width:none;width:100%;">
+  <nav class="breadcrumb">
+    <a [routerLink]="newDatasetLink" class="breadcrumb-item">
+      <mat-icon>upload_file</mat-icon>
+      <span>{{ 'common.datasets' | translate }}</span>
+    </a>
+    <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
+    <span class="breadcrumb-item active">
+      <mat-icon>travel_explore</mat-icon>
+      <span>{{ 'explore.title' | translate }}</span>
+    </span>
+  </nav>
+
+  <app-page-header
+    [title]="'explore.title' | translate"
+    [subtitle]="datasetName ? datasetName + ' (' + datasetId + ')' : datasetId"
+    icon="travel_explore">
+  </app-page-header>
+
+  <section class="explore-toolbar">
+    <div class="status-chip" [ngClass]="statusClass">
+      <mat-icon>dns</mat-icon>
+      <span>{{ statusLabelKey | translate }}</span>
+    </div>
+
+    <div class="toolbar-actions">
+      <mat-form-field appearance="outline" class="saved-view-select">
+        <mat-label>{{ 'explore.savedViews' | translate }}</mat-label>
+        <mat-select [(ngModel)]="selectedSavedViewId" (selectionChange)="onSavedViewSelected()">
+          <mat-option [value]="''">{{ 'explore.savedViewsNone' | translate }}</mat-option>
+          <mat-option *ngFor="let view of savedViews" [value]="view.id">{{ view.name }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+      <button mat-stroked-button color="primary" (click)="saveCurrentView()">
+        <mat-icon>save</mat-icon>
+        {{ 'explore.savedViewsSave' | translate }}
+      </button>
+      <button mat-stroked-button color="primary" (click)="renameSelectedView()" [disabled]="!selectedSavedViewId">
+        <mat-icon>drive_file_rename_outline</mat-icon>
+        {{ 'explore.savedViewsRename' | translate }}
+      </button>
+      <button mat-stroked-button color="warn" (click)="deleteSelectedView()" [disabled]="!selectedSavedViewId">
+        <mat-icon>delete</mat-icon>
+        {{ 'explore.savedViewsDelete' | translate }}
+      </button>
+      <button mat-stroked-button color="primary" (click)="rebuildIndex()" [disabled]="rebuilding">
+        <mat-icon>{{ rebuilding ? 'hourglass_top' : 'refresh' }}</mat-icon>
+        {{ rebuilding ? ('explore.rebuilding' | translate) : ('explore.rebuild' | translate) }}
+      </button>
+      <button mat-flat-button color="primary" (click)="exportIndexJson()" [disabled]="!hasIndexData">
+        <mat-icon>download</mat-icon>
+        {{ 'explore.exportIndex' | translate }}
+      </button>
+    </div>
+  </section>
+
+  <section class="explore-layout" *ngIf="!loadingIndex && hasIndexData; else nonReadyState">
+    <aside class="fields-sidebar">
+      <mat-card>
+        <mat-card-content>
+          <div class="sidebar-header">
+            <h3>{{ 'explore.fields' | translate }}</h3>
+            <span>{{ displayedFields.length }}</span>
+          </div>
+
+          <mat-form-field appearance="outline" class="sidebar-search">
+            <mat-label>{{ 'explore.searchFields' | translate }}</mat-label>
+            <input matInput [(ngModel)]="fieldSearch" />
+            <mat-icon matSuffix>search</mat-icon>
+          </mat-form-field>
+
+          <div class="type-filters">
+            <button
+              mat-stroked-button
+              *ngFor="let type of availableTypeFilters"
+              (click)="onToggleTypeFilter(type)"
+              [class.active]="selectedTypeFilters.includes(type)">
+              {{ type }}
+            </button>
+          </div>
+
+          <div class="field-list">
+            <button
+              class="field-row"
+              *ngFor="let column of displayedFields"
+              [class.selected]="column.name === selectedFieldName"
+              (click)="onSelectField(column)">
+              <div class="field-main">
+                <mat-icon>{{ getInferredTypeIcon(column.inferredType) }}</mat-icon>
+                <div class="field-labels">
+                  <div class="field-name">{{ column.name }}</div>
+                  <div class="field-meta">
+                    <span>{{ column.inferredType }}</span>
+                    <span>•</span>
+                    <span>{{ column.distinctCount }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="null-rate">
+                <div class="null-rate-bar" [style.width]="getNullRateWidth(column)"></div>
+              </div>
+              <div class="tags" *ngIf="column.semanticTags.length > 0">
+                <mat-chip-set>
+                  <mat-chip *ngFor="let tag of column.semanticTags | slice:0:2">{{ tag }}</mat-chip>
+                </mat-chip-set>
+              </div>
+            </button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </aside>
+
+    <section class="main-panels">
+      <mat-card>
+        <mat-card-content>
+          <mat-tab-group [(selectedIndex)]="selectedTabIndex" (selectedIndexChange)="onTabChanged($event)">
+            <mat-tab [label]="'explore.tabOverview' | translate">
+              <div class="overview-grid" *ngIf="index as indexData; else noOverview">
+                <mat-card class="overview-card">
+                  <mat-card-header>
+                    <mat-card-title>{{ 'explore.healthTitle' | translate }}</mat-card-title>
+                  </mat-card-header>
+                  <mat-card-content>
+                    <div class="kv-row"><span>{{ 'explore.healthRows' | translate }}</span><strong>{{ indexData.rowCount }}</strong></div>
+                    <div class="kv-row"><span>{{ 'explore.healthColumns' | translate }}</span><strong>{{ indexData.columnCount }}</strong></div>
+                    <div class="kv-row"><span>{{ 'explore.healthMissingAvg' | translate }}</span><strong>{{ formatPercent(indexData.quality.missingnessSummary.averageNullRate) }}</strong></div>
+                    <div class="kv-row"><span>{{ 'explore.healthDuplicateRate' | translate }}</span><strong>{{ formatPercent(indexData.quality.duplicateRowRate) }}</strong></div>
+                    <div class="warnings" *ngIf="indexData.quality.warnings.length > 0">
+                      <div class="warnings-title">{{ 'explore.healthWarnings' | translate }}</div>
+                      <ul>
+                        <li *ngFor="let warning of indexData.quality.warnings">{{ warning }}</li>
+                      </ul>
+                    </div>
+                  </mat-card-content>
+                </mat-card>
+
+                <mat-card class="overview-card">
+                  <mat-card-header>
+                    <mat-card-title>{{ 'explore.keysTitle' | translate }}</mat-card-title>
+                  </mat-card-header>
+                  <mat-card-content>
+                    <div *ngIf="indexData.candidateKeys.length === 0" class="muted">{{ 'explore.keysEmpty' | translate }}</div>
+                    <div class="key-row" *ngFor="let key of indexData.candidateKeys | slice:0:5">
+                      <div class="key-columns">{{ key.columns.join(' + ') }}</div>
+                      <div class="key-metrics">
+                        <span>{{ 'explore.keysUniqueness' | translate }} {{ formatPercent(key.uniquenessRatio) }}</span>
+                        <span>{{ 'explore.keysNullRate' | translate }} {{ formatPercent(key.nullRate) }}</span>
+                        <span>{{ key.confidence }}</span>
+                      </div>
+                    </div>
+                  </mat-card-content>
+                </mat-card>
+
+                <mat-card class="overview-card">
+                  <mat-card-header>
+                    <mat-card-title>{{ 'explore.topFieldsTitle' | translate }}</mat-card-title>
+                  </mat-card-header>
+                  <mat-card-content>
+                    <div class="list-block">
+                      <h4>{{ 'explore.topFieldsVariance' | translate }}</h4>
+                      <div class="muted" *ngIf="topVarianceFields.length === 0">{{ 'explore.topFieldsEmpty' | translate }}</div>
+                      <div class="simple-row" *ngFor="let column of topVarianceFields">
+                        <span>{{ column.name }}</span>
+                        <strong>{{ column.numericStats?.stdDev?.toFixed(3) }}</strong>
+                      </div>
+                    </div>
+
+                    <div class="list-block">
+                      <h4>{{ 'explore.topFieldsNullRate' | translate }}</h4>
+                      <div class="simple-row" *ngFor="let column of topNullRateFields">
+                        <span>{{ column.name }}</span>
+                        <strong>{{ formatPercent(column.nullRate) }}</strong>
+                      </div>
+                    </div>
+
+                    <div class="list-block">
+                      <h4>{{ 'explore.topFieldsCardinality' | translate }}</h4>
+                      <div class="simple-row" *ngFor="let column of topCardinalityFields">
+                        <span>{{ column.name }}</span>
+                        <strong>{{ column.distinctCount }}</strong>
+                      </div>
+                    </div>
+                  </mat-card-content>
+                </mat-card>
+
+                <mat-card class="overview-card">
+                  <mat-card-header>
+                    <mat-card-title>{{ 'explore.nextStepsTitle' | translate }}</mat-card-title>
+                  </mat-card-header>
+                  <mat-card-content>
+                    <ul>
+                      <li *ngFor="let step of suggestedNextSteps">{{ step | translate }}</li>
+                    </ul>
+                  </mat-card-content>
+                </mat-card>
+              </div>
+              <ng-template #noOverview>
+                <div class="tab-placeholder">{{ 'explore.overviewPlaceholder' | translate }}</div>
+              </ng-template>
+            </mat-tab>
+            <mat-tab [label]="'explore.tabField' | translate">
+              <div class="field-tab" *ngIf="selectedField as field; else noField">
+                <section class="field-actions">
+                  <button mat-stroked-button color="primary" (click)="useFieldInChart()">
+                    <mat-icon>bar_chart</mat-icon>
+                    {{ 'explore.fieldUseInChart' | translate }}
+                  </button>
+                  <button mat-stroked-button color="primary" (click)="addFieldFilter()">
+                    <mat-icon>filter_alt</mat-icon>
+                    {{ 'explore.fieldAddFilter' | translate }}
+                  </button>
+                  <button mat-flat-button color="primary" (click)="pinSelectedField()">
+                    <mat-icon>push_pin</mat-icon>
+                    {{ 'explore.fieldPinPanel' | translate }}
+                  </button>
+                </section>
+
+                <section class="active-filters" *ngIf="activeFilters.length > 0">
+                  <h4>{{ 'explore.queryFilters' | translate }}</h4>
+                  <mat-chip-set>
+                    <mat-chip *ngFor="let filter of activeFilters" [removable]="true" (removed)="removeFilter(filter)">
+                      {{ filter }}
+                      <button matChipRemove aria-label="remove filter">
+                        <mat-icon>cancel</mat-icon>
+                      </button>
+                    </mat-chip>
+                  </mat-chip-set>
+                </section>
+
+                <section class="field-summary-grid">
+                  <mat-card>
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.fieldSummaryTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <div class="kv-row"><span>{{ 'explore.fieldType' | translate }}</span><strong>{{ field.inferredType }}</strong></div>
+                      <div class="kv-row"><span>{{ 'explore.distinctCount' | translate }}</span><strong>{{ field.distinctCount }}</strong></div>
+                      <div class="kv-row"><span>{{ 'explore.nullRate' | translate }}</span><strong>{{ formatPercent(field.nullRate) }}</strong></div>
+                      <div class="kv-row" *ngIf="field.numericStats?.mean != null"><span>Mean</span><strong>{{ field.numericStats?.mean | number:'1.2-2' }}</strong></div>
+                      <div class="kv-row" *ngIf="field.numericStats?.stdDev != null"><span>StdDev</span><strong>{{ field.numericStats?.stdDev | number:'1.2-2' }}</strong></div>
+                      <div class="kv-row" *ngIf="field.numericStats?.min != null"><span>Min</span><strong>{{ field.numericStats?.min | number:'1.2-2' }}</strong></div>
+                      <div class="kv-row" *ngIf="field.numericStats?.max != null"><span>Max</span><strong>{{ field.numericStats?.max | number:'1.2-2' }}</strong></div>
+                      <div class="kv-row" *ngIf="field.numericStats?.p50 != null"><span>P50</span><strong>{{ field.numericStats?.p50 | number:'1.2-2' }}</strong></div>
+                    </mat-card-content>
+                  </mat-card>
+
+                  <mat-card *ngIf="fieldHistogramOption">
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.fieldHistogramTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <div echarts class="field-chart" [options]="fieldHistogramOption"></div>
+                    </mat-card-content>
+                  </mat-card>
+
+                  <mat-card *ngIf="dateCoverageOption">
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.fieldDateCoverageTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <div echarts class="field-chart" [options]="dateCoverageOption"></div>
+                    </mat-card-content>
+                  </mat-card>
+
+                  <mat-card *ngIf="field.topValues.length > 0">
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.fieldTopValuesTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <mat-chip-set>
+                        <mat-chip *ngFor="let value of field.topValues | slice:0:25">{{ value }}</mat-chip>
+                      </mat-chip-set>
+                    </mat-card-content>
+                  </mat-card>
+
+                  <mat-card *ngIf="field.semanticTags.length > 0">
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.fieldTagsTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <div class="tag-row" *ngFor="let tag of field.semanticTags">
+                        <mat-chip>{{ tag }}</mat-chip>
+                        <span>{{ getTagReason(tag) | translate }}</span>
+                      </div>
+                    </mat-card-content>
+                  </mat-card>
+                </section>
+
+                <section class="pinned-section" *ngIf="pinnedFields.length > 0">
+                  <h4>{{ 'explore.pinnedTitle' | translate }}</h4>
+                  <mat-chip-set>
+                    <mat-chip *ngFor="let pinned of pinnedFields" [removable]="true" (removed)="unpinField(pinned.name)">
+                      {{ pinned.name }}
+                      <button matChipRemove aria-label="remove pinned field">
+                        <mat-icon>cancel</mat-icon>
+                      </button>
+                    </mat-chip>
+                  </mat-chip-set>
+                </section>
+              </div>
+              <ng-template #noField>
+                <div class="tab-placeholder">{{ 'explore.fieldPlaceholder' | translate }}</div>
+              </ng-template>
+            </mat-tab>
+            <mat-tab [label]="'explore.tabCorrelations' | translate">
+              <div class="correlations-tab" *ngIf="index; else noCorrelations">
+                <section class="correlations-filters">
+                  <mat-form-field appearance="outline">
+                    <mat-label>{{ 'explore.correlationSearch' | translate }}</mat-label>
+                    <input matInput [(ngModel)]="correlationSearch" />
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline">
+                    <mat-label>{{ 'explore.correlationMethod' | translate }}</mat-label>
+                    <mat-select [(ngModel)]="correlationMethodFilter">
+                      <mat-option *ngFor="let method of correlationMethods" [value]="method">{{ method }}</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline">
+                    <mat-label>{{ 'explore.correlationStrength' | translate }}</mat-label>
+                    <mat-select [(ngModel)]="correlationStrengthFilter">
+                      <mat-option *ngFor="let strength of correlationStrengths" [value]="strength">{{ strength }}</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                </section>
+
+                <section class="correlations-grid">
+                  <mat-card>
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.correlationRankedTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <div class="table-wrapper">
+                        <table class="edge-table">
+                          <thead>
+                            <tr>
+                              <th>{{ 'explore.correlationLeft' | translate }}</th>
+                              <th>{{ 'explore.correlationRight' | translate }}</th>
+                              <th>{{ 'explore.correlationMethod' | translate }}</th>
+                              <th>{{ 'explore.correlationScore' | translate }}</th>
+                              <th>{{ 'explore.correlationStrength' | translate }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr
+                              *ngFor="let edge of filteredCorrelationEdges | slice:0:120"
+                              [class.selected]="buildCorrelationKey(edge) === selectedCorrelationKey"
+                              (click)="onSelectCorrelation(edge)">
+                              <td>{{ edge.leftColumn }}</td>
+                              <td>{{ edge.rightColumn }}</td>
+                              <td>{{ edge.method }}</td>
+                              <td>{{ formatCorrelationScore(edge.score) }}</td>
+                              <td>{{ edge.strength }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </mat-card-content>
+                  </mat-card>
+
+                  <mat-card>
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.correlationMatrixTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <div class="matrix-wrapper" *ngIf="matrixColumns.length > 1; else emptyMatrix">
+                        <table class="matrix-table">
+                          <thead>
+                            <tr>
+                              <th></th>
+                              <th *ngFor="let column of matrixColumns">{{ column }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr *ngFor="let row of matrixColumns">
+                              <th>{{ row }}</th>
+                              <td
+                                *ngFor="let column of matrixColumns"
+                                [ngClass]="getMatrixCellClass(getMatrixScore(row, column))">
+                                <span *ngIf="getMatrixScore(row, column) != null">
+                                  {{ formatCorrelationScore(getMatrixScore(row, column)!) }}
+                                </span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <ng-template #emptyMatrix>
+                        <div class="muted">{{ 'explore.correlationMatrixEmpty' | translate }}</div>
+                      </ng-template>
+                    </mat-card-content>
+                  </mat-card>
+                </section>
+
+                <section class="correlation-details" *ngIf="selectedCorrelation as correlation">
+                  <mat-card>
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.correlationDetailsTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <p>
+                        {{ correlation.leftColumn }} ↔ {{ correlation.rightColumn }}
+                        ({{ correlation.method }}) = <strong>{{ formatCorrelationScore(correlation.score) }}</strong>
+                      </p>
+                      <p class="muted">{{ 'explore.correlationDetailsHint' | translate }}</p>
+                      <div class="details-row">
+                        <span>{{ 'explore.correlationSample' | translate }}</span>
+                        <strong>{{ correlation.sampleSize }}</strong>
+                      </div>
+                      <div class="details-row">
+                        <span>{{ 'explore.correlationConfidence' | translate }}</span>
+                        <strong>{{ correlation.confidence }}</strong>
+                      </div>
+                      <div class="correlation-actions">
+                        <button mat-stroked-button color="primary" (click)="useCorrelationInChart()">
+                          <mat-icon>scatter_plot</mat-icon>
+                          {{ 'explore.correlationBuildScatter' | translate }}
+                        </button>
+                        <button mat-stroked-button color="primary" (click)="addCorrelationComparison()">
+                          <mat-icon>compare_arrows</mat-icon>
+                          {{ 'explore.correlationAddComparison' | translate }}
+                        </button>
+                      </div>
+                    </mat-card-content>
+                  </mat-card>
+                </section>
+              </div>
+              <ng-template #noCorrelations>
+                <div class="tab-placeholder">{{ 'explore.correlationsPlaceholder' | translate }}</div>
+              </ng-template>
+            </mat-tab>
+            <mat-tab [label]="'explore.tabDistributions' | translate">
+              <div class="distributions-tab" *ngIf="index; else noDistributions">
+                <section class="distribution-controls">
+                  <mat-card>
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.distributionNumericTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <div class="muted">{{ 'explore.distributionNumericHint' | translate }}</div>
+                      <div class="distribution-checklist">
+                        <mat-checkbox
+                          *ngFor="let field of numericFields"
+                          [checked]="selectedDistributionFields.includes(field.name)"
+                          (change)="onToggleDistributionField(field.name, $event.checked)">
+                          {{ field.name }}
+                        </mat-checkbox>
+                      </div>
+                    </mat-card-content>
+                  </mat-card>
+
+                  <mat-card>
+                    <mat-card-header>
+                      <mat-card-title>{{ 'explore.distributionDateTitle' | translate }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <mat-form-field appearance="outline" class="distribution-date-select">
+                        <mat-label>{{ 'explore.distributionDateSelect' | translate }}</mat-label>
+                        <mat-select [(ngModel)]="selectedDistributionDateField" (selectionChange)="onDistributionDateFieldChange()">
+                          <mat-option [value]="''">None</mat-option>
+                          <mat-option *ngFor="let field of dateFields" [value]="field.name">{{ field.name }}</mat-option>
+                        </mat-select>
+                      </mat-form-field>
+                    </mat-card-content>
+                  </mat-card>
+                </section>
+
+                <section class="distribution-charts">
+                  <mat-card *ngFor="let chart of distributionSeries">
+                    <mat-card-header>
+                      <mat-card-title>{{ chart.field.name }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <div
+                        echarts
+                        class="distribution-chart"
+                        [options]="chart.option"
+                        [autoResize]="true"
+                        (chartInit)="onDistributionChartInit($event)"></div>
+                    </mat-card-content>
+                  </mat-card>
+
+                  <mat-card *ngIf="selectedDateDistributionOption">
+                    <mat-card-header>
+                      <mat-card-title>{{ selectedDistributionDateField }}</mat-card-title>
+                    </mat-card-header>
+                    <mat-card-content>
+                      <div
+                        echarts
+                        class="distribution-chart"
+                        [options]="selectedDateDistributionOption"
+                        [autoResize]="true"
+                        (chartInit)="onDistributionChartInit($event)"></div>
+                    </mat-card-content>
+                  </mat-card>
+                </section>
+              </div>
+              <ng-template #noDistributions>
+                <div class="tab-placeholder">{{ 'explore.distributionsPlaceholder' | translate }}</div>
+              </ng-template>
+            </mat-tab>
+            <mat-tab [label]="'explore.tabGrid' | translate">
+              <div class="grid-tab">
+                <section class="grid-controls">
+                  <mat-form-field appearance="outline">
+                    <mat-label>{{ 'explore.gridQuickFilter' | translate }}</mat-label>
+                    <input matInput [(ngModel)]="gridQuickFilter" />
+                  </mat-form-field>
+
+                  <div class="grid-columns-toggle">
+                    <span class="label">{{ 'explore.gridColumns' | translate }}</span>
+                    <mat-chip-set>
+                      <mat-chip
+                        *ngFor="let column of gridColumns"
+                        [class.grid-column-hidden]="gridHiddenColumns.includes(column)"
+                        (click)="toggleGridColumn(column)">
+                        {{ column }}
+                      </mat-chip>
+                    </mat-chip-set>
+                  </div>
+
+                  <button mat-stroked-button color="primary" (click)="loadGridData()">
+                    <mat-icon>refresh</mat-icon>
+                    {{ 'explore.gridReload' | translate }}
+                  </button>
+                </section>
+
+                <section class="grid-filters" *ngIf="gridBackendFilters.length > 0">
+                  <mat-chip-set>
+                    <mat-chip *ngFor="let filter of gridBackendFilters" [removable]="true" (removed)="removeGridFilter(filter)">
+                      {{ filter }}
+                      <button matChipRemove aria-label="remove grid filter">
+                        <mat-icon>cancel</mat-icon>
+                      </button>
+                    </mat-chip>
+                  </mat-chip-set>
+                </section>
+
+                <section class="grid-meta">
+                  <span>{{ 'explore.gridRowsMeta' | translate:{ shown: displayedGridRows.length, total: gridTotalRows } }}</span>
+                </section>
+
+                <section class="grid-table-wrapper" *ngIf="!gridLoading; else gridLoadingState">
+                  <table class="data-grid-table" *ngIf="visibleGridColumns.length > 0; else noGridColumns">
+                    <thead>
+                      <tr>
+                        <th *ngFor="let column of visibleGridColumns" (click)="sortGridBy(column)">
+                          {{ column }}
+                          <mat-icon *ngIf="gridSortColumn === column">
+                            {{ gridSortDirection === 'asc' ? 'north' : 'south' }}
+                          </mat-icon>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let row of displayedGridRows">
+                        <td *ngFor="let column of visibleGridColumns">
+                          <div class="cell-content">
+                            <span [matTooltip]="(row[column] || '').toString()">{{ row[column] }}</span>
+                            <div class="cell-actions" *ngIf="row[column] as value">
+                              <button
+                                mat-icon-button
+                                [matMenuTriggerFor]="gridCellActionsMenu"
+                                (click)="setGridCellActionContext(column, value); $event.stopPropagation()"
+                                [attr.aria-label]="'Grid cell actions'">
+                                <mat-icon>more_vert</mat-icon>
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </section>
+              </div>
+              <ng-template #gridLoadingState>
+                <div class="loading-card">
+                  <mat-spinner diameter="32"></mat-spinner>
+                  <span>{{ 'explore.gridLoading' | translate }}</span>
+                </div>
+              </ng-template>
+              <ng-template #noGridColumns>
+                <div class="tab-placeholder">{{ 'explore.gridPlaceholder' | translate }}</div>
+              </ng-template>
+              <mat-menu #gridCellActionsMenu="matMenu" class="grid-cell-menu">
+                <button mat-menu-item (click)="applyGridCellAction(false)">
+                  <mat-icon>filter_alt</mat-icon>
+                  <span>{{ 'explore.gridFilterTo' | translate }}</span>
+                </button>
+                <button mat-menu-item (click)="applyGridCellAction(true)">
+                  <mat-icon>block</mat-icon>
+                  <span>{{ 'explore.gridExclude' | translate }}</span>
+                </button>
+              </mat-menu>
+            </mat-tab>
+          </mat-tab-group>
+        </mat-card-content>
+      </mat-card>
+    </section>
+
+    <aside class="details-panel">
+      <mat-card>
+        <mat-card-content>
+          <h3>{{ 'explore.details' | translate }}</h3>
+          <ng-container *ngIf="selectedField; else noFieldSelected">
+            <div class="details-row">
+              <span class="label">{{ 'explore.fieldName' | translate }}</span>
+              <strong>{{ selectedField.name }}</strong>
+            </div>
+            <div class="details-row">
+              <span class="label">{{ 'explore.fieldType' | translate }}</span>
+              <strong>{{ selectedField.inferredType }}</strong>
+            </div>
+            <div class="details-row">
+              <span class="label">{{ 'explore.distinctCount' | translate }}</span>
+              <strong>{{ selectedField.distinctCount }}</strong>
+            </div>
+            <div class="details-row">
+              <span class="label">{{ 'explore.nullRate' | translate }}</span>
+              <strong>{{ (selectedField.nullRate * 100).toFixed(2) }}%</strong>
+            </div>
+          </ng-container>
+          <ng-template #noFieldSelected>
+            <p class="muted">{{ 'explore.selectFieldHint' | translate }}</p>
+          </ng-template>
+        </mat-card-content>
+      </mat-card>
+    </aside>
+  </section>
+
+  <ng-template #nonReadyState>
+    <ng-container *ngIf="loadingIndex; else readyStateMessage">
+      <mat-card>
+        <mat-card-content class="skeleton-wrapper">
+          <div class="skeleton-line skeleton-long"></div>
+          <div class="skeleton-line skeleton-medium"></div>
+          <div class="skeleton-grid">
+            <div class="skeleton-box"></div>
+            <div class="skeleton-box"></div>
+            <div class="skeleton-box"></div>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </ng-container>
+  </ng-template>
+
+  <ng-template #readyStateMessage>
+    <mat-card>
+      <mat-card-content class="status-card">
+        <mat-icon>hourglass_empty</mat-icon>
+        <h3>{{ 'explore.notReadyTitle' | translate }}</h3>
+        <p class="muted">{{ indexErrorMessage || ('explore.notReadySubtitle' | translate) }}</p>
+        <button mat-flat-button color="primary" (click)="rebuildIndex()" [disabled]="rebuilding">
+          <mat-icon>{{ rebuilding ? 'hourglass_top' : 'refresh' }}</mat-icon>
+          {{ rebuilding ? ('explore.rebuilding' | translate) : ('explore.rebuild' | translate) }}
+        </button>
+      </mat-card-content>
+    </mat-card>
+  </ng-template>
+</div>
