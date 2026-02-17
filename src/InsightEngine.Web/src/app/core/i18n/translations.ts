@@ -181,6 +181,8 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'explore.savedViewsSave': 'Salvar view',
     'explore.savedViewsRename': 'Renomear',
     'explore.savedViewsDelete': 'Excluir',
+    'explore.notReadyTitle': 'Índice ainda indisponível',
+    'explore.notReadySubtitle': 'Construa ou recarregue o índice para habilitar a exploração completa.',
 
     'chartViewer.chart': 'Gráfico',
     'chartViewer.previous': 'Anterior',
@@ -529,6 +531,8 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'explore.savedViewsSave': 'Save view',
     'explore.savedViewsRename': 'Rename',
     'explore.savedViewsDelete': 'Delete',
+    'explore.notReadyTitle': 'Index not available yet',
+    'explore.notReadySubtitle': 'Build or reload the index to enable full exploration.',
 
     'chartViewer.chart': 'Chart',
     'chartViewer.previous': 'Previous',

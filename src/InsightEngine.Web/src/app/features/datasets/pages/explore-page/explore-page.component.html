@@ -54,7 +54,7 @@
     </div>
   </section>
 
-  <section class="explore-layout" *ngIf="!loadingIndex; else loadingState">
+  <section class="explore-layout" *ngIf="!loadingIndex && hasIndexData; else nonReadyState">
     <aside class="fields-sidebar">
       <mat-card>
         <mat-card-content>
@@ -608,11 +608,32 @@
     </aside>
   </section>
 
-  <ng-template #loadingState>
+  <ng-template #nonReadyState>
+    <ng-container *ngIf="loadingIndex; else readyStateMessage">
+      <mat-card>
+        <mat-card-content class="skeleton-wrapper">
+          <div class="skeleton-line skeleton-long"></div>
+          <div class="skeleton-line skeleton-medium"></div>
+          <div class="skeleton-grid">
+            <div class="skeleton-box"></div>
+            <div class="skeleton-box"></div>
+            <div class="skeleton-box"></div>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </ng-container>
+  </ng-template>
+
+  <ng-template #readyStateMessage>
     <mat-card>
-      <mat-card-content class="loading-card">
-        <mat-spinner diameter="36"></mat-spinner>
-        <span>{{ 'explore.loadingIndex' | translate }}</span>
+      <mat-card-content class="status-card">
+        <mat-icon>hourglass_empty</mat-icon>
+        <h3>{{ 'explore.notReadyTitle' | translate }}</h3>
+        <p class="muted">{{ indexErrorMessage || ('explore.notReadySubtitle' | translate) }}</p>
+        <button mat-flat-button color="primary" (click)="rebuildIndex()" [disabled]="rebuilding">
+          <mat-icon>{{ rebuilding ? 'hourglass_top' : 'refresh' }}</mat-icon>
+          {{ rebuilding ? ('explore.rebuilding' | translate) : ('explore.rebuild' | translate) }}
+        </button>
       </mat-card-content>
     </mat-card>
   </ng-template>

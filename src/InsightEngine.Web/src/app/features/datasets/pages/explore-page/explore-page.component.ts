@@ -69,6 +69,7 @@ export class ExplorePageComponent implements OnInit {
   indexStatus: DatasetIndexStatus | null = null;
   loadingIndex: boolean = false;
   rebuilding: boolean = false;
+  indexErrorMessage: string = '';
   statusClass: 'status-ready' | 'status-building' | 'status-failed' | 'status-idle' = 'status-idle';
   selectedTabIndex: number = 0;
   fieldSearch: string = '';
@@ -846,6 +847,7 @@ export class ExplorePageComponent implements OnInit {
       })
     ).subscribe({
       next: response => {
+        this.indexErrorMessage = '';
         if (!response.success || !response.data) {
           this.index = null;
           return;
@@ -859,6 +861,7 @@ export class ExplorePageComponent implements OnInit {
       },
       error: () => {
         this.index = null;
+        this.indexErrorMessage = this.indexStatus?.message || 'Metadata index is not available yet.';
       }
     });
   }
