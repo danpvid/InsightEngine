@@ -1,0 +1,76 @@
+/* Design tokens (CSS variables + small SCSS helpers)
+   - Tokens are semantic and are referenced by components via var(--token)
+   - Two theme classes: .theme-light and .theme-dark
+*/
+
+:root {
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+}
+
+/* Light theme — Postman-like warm/light surfaces */
+.theme-light {
+  --bg: #f3f6fb;            /* app background */
+  --surface: #ffffff;       /* main surface */
+  --surface-2: #f6f8fb;     /* elevated cards/panels */
+  --border: rgba(15,20,25,0.08);
+
+  --text: #0b1531;          /* primary text */
+  --text-2: #556173;        /* secondary text */
+  --muted: rgba(11,21,49,0.42);
+
+  --primary: #ff6a00;       /* brand accent */
+  --primary-2: #ff8a42;     /* hover/active */
+
+  --danger: #e53935;
+  --success: #2e7d32;
+  --warn: #f6a11a;
+
+  --shadow: rgba(2,6,23,0.06);
+  --code-bg: #f5f7fa;
+  --chip-bg: #f0f3ff;
+  --focus: rgba(255,106,0,0.18);
+}
+
+/* Dark theme — deep surfaces with same accent */
+.theme-dark {
+  --bg: #071126;            /* app background (deep navy) */
+  --surface: #0f1a2b;       /* main surface */
+  --surface-2: #0b1626;     /* cards/panels */
+  --border: rgba(255,255,255,0.06);
+
+  --text: #e6eef8;
+  --text-2: #9aa6bf;
+  --muted: rgba(230,238,248,0.32);
+
+  --primary: #ff6a00;
+  --primary-2: #ff8a42;
+
+  --danger: #ff6b6b;
+  --success: #66d187;
+  --warn: #ffb86b;
+
+  --shadow: rgba(2,6,23,0.6);
+  --code-bg: #071426;
+  --chip-bg: rgba(255,255,255,0.02);
+  --focus: rgba(255,106,0,0.14);
+}
+
+/* Small SCSS helpers */
+$radius-sm: 4px;
+$radius-md: 8px;
+$radius-lg: 12px;
+
+$space-1: 4px;
+$space-2: 8px;
+$space-3: 12px;
+$space-4: 16px;

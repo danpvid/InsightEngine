@@ -1,0 +1,11 @@
+@use './_tokens';
+@use './_material';
+@use './_components';
+
+/* Entrypoint for theming. Import this from the global styles (styles.scss).
+   - Exposes .theme-light and .theme-dark root classes (via _tokens.scss)
+   - Registers Material themes inside those classes (_material.scss)
+   - Provides component overrides that read CSS variables (_components.scss)
+*/
+
+/* Nothing else required here — partials contain the rule sets. */

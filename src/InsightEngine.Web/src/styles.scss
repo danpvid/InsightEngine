@@ -1,22 +1,4 @@
-@use '@angular/material' as mat;
-
-@include mat.core();
-
-$insight-primary: mat.define-palette(mat.$indigo-palette);
-$insight-accent: mat.define-palette(mat.$pink-palette, A200, A100, A400);
-$insight-warn: mat.define-palette(mat.$red-palette);
-
-$insight-theme: mat.define-light-theme((
-  color: (
-    primary: $insight-primary,
-    accent: $insight-accent,
-    warn: $insight-warn,
-  ),
-  typography: mat.define-typography-config(),
-  density: 0,
-));
-
-@include mat.all-component-themes($insight-theme);
+@use 'src/styles/theme/theme';
 
 /* Global Styles */
 * {

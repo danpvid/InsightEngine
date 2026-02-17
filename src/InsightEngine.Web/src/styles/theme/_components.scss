@@ -1,0 +1,106 @@
+/* Component-level overrides that use CSS variables defined in _tokens.scss
+   Keep visual language Postman-like: layered surfaces, subtle borders, crisp cards.
+*/
+
+/* App baseline */
+html, body {
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+/* Global container (will adopt background automatically) */
+.app-root, .container, .container-wide {
+  background: transparent;
+  color: var(--text);
+}
+
+/* Toolbar */
+.mat-toolbar {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-bottom: 1px solid var(--border);
+  box-shadow: none !important;
+  height: 56px;
+}
+
+/* Cards / panels */
+.mat-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 0 var(--shadow);
+  color: var(--text);
+}
+
+/* Buttons */
+.mat-flat-button.mat-primary, .mat-raised-button.mat-primary {
+  background-color: var(--primary) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.mat-flat-button.mat-primary:hover, .mat-raised-button.mat-primary:hover {
+  background-color: var(--primary-2) !important;
+}
+.mat-button, .mat-icon-button, .mat-stroked-button {
+  border-radius: 6px;
+}
+.mat-stroked-button {
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+
+/* Form fields */
+.mat-form-field-appearance-outline .mat-form-field-outline {
+  color: var(--border);
+}
+.mat-form-field .mat-input-element {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.mat-form-field-appearance-outline .mat-form-field-outline-thick {
+  border-color: var(--border);
+}
+.mat-form-field.mat-focused .mat-form-field-outline-thick {
+  box-shadow: 0 0 0 4px var(--focus);
+}
+
+/* Chips / badges */
+.mat-chip {
+  background: var(--chip-bg);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+}
+
+/* Tables */
+.mat-table {
+  background: transparent;
+}
+.mat-row:hover {
+  background: rgba(0,0,0,0.02);
+}
+
+/* Dialogs & snackbars */
+.mat-dialog-container {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.mat-snack-bar-container {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Focus states */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Utility */
+.separator {
+  height: 1px;
+  background: var(--border);
+}
