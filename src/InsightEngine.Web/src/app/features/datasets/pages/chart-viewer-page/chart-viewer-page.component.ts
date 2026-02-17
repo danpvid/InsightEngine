@@ -78,6 +78,7 @@ interface ChartLoadOptions {
   aggregation?: string;
   timeBin?: string;
   metricY?: string;
+  xColumn?: string;
   yColumn?: string;
   groupBy?: string;
   filters?: string[];
@@ -100,6 +101,7 @@ interface RecommendedChartState {
   aggregation: string;
   timeBin: string;
   metric: string;
+  xColumn: string;
 }
 
 interface RawFieldMetric {
@@ -216,6 +218,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   selectedMetric: string = '';
   selectedMetricsY: string[] = [];
   metricToAdd: string = '';
+  selectedXAxis: string = '';
   selectedGroupBy: string = '';
   selectedVisualizationType: VisualizationType | '' = '';
   zoomStart: number | null = null;
@@ -377,6 +380,18 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   get supportsMultiMetricControl(): boolean {
+    return this.currentBaseChartType === 'Line' || this.currentBaseChartType === 'Bar' || this.currentBaseChartType === 'Scatter';
+  }
+
+  get supportsScatterXAxisControl(): boolean {
+    return this.currentBaseChartType === 'Scatter';
+  }
+
+  get supportsMetricCheckboxControl(): boolean {
+    return this.currentBaseChartType === 'Scatter';
+  }
+
+  get supportsMetricBuilderControl(): boolean {
     return this.currentBaseChartType === 'Line' || this.currentBaseChartType === 'Bar';
   }
 
@@ -416,7 +431,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   get canAddMetric(): boolean {
     return !!this.metricToAdd &&
-      this.supportsMultiMetricControl &&
+      this.supportsMetricBuilderControl &&
       !this.selectedMetricsY.includes(this.metricToAdd) &&
       this.selectedMetricsY.length < 4;
   }
@@ -603,6 +618,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     const queryParams = this.route.snapshot.queryParamMap;
     const aggFromUrl = queryParams.get('aggregation');
     const timeBinFromUrl = queryParams.get('timeBin');
+    const xColumnFromUrl = queryParams.get('xColumn');
     const yColumnFromUrl = queryParams.get('yColumn');
     const metricYFromUrl = queryParams.getAll('metricY');
     const groupByFromUrl = queryParams.get('groupBy');
@@ -616,6 +632,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
     if (groupByFromUrl) {
       this.selectedGroupBy = groupByFromUrl;
+    }
+
+    if (xColumnFromUrl) {
+      this.selectedXAxis = xColumnFromUrl;
     }
 
     if (chartTypeFromUrl) {
@@ -660,6 +680,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     const shouldLoadWithOverrides =
       !!aggFromUrl ||
       !!timeBinFromUrl ||
+      !!xColumnFromUrl ||
       !!yColumnFromUrl ||
       metricYFromUrl.length > 0 ||
       !!groupByFromUrl ||
@@ -674,6 +695,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       const options: ChartLoadOptions = {};
       if (aggFromUrl) options.aggregation = aggFromUrl;
       if (timeBinFromUrl) options.timeBin = timeBinFromUrl;
+      if (xColumnFromUrl) options.xColumn = xColumnFromUrl;
       if (this.selectedMetric) options.metricY = this.selectedMetric;
       if (yColumnFromUrl) options.yColumn = yColumnFromUrl;
       if (groupByFromUrl) options.groupBy = groupByFromUrl;
@@ -753,6 +775,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           const queryParams = this.route.snapshot.queryParamMap;
           const aggFromUrl = queryParams.get('aggregation');
           const timeBinFromUrl = queryParams.get('timeBin');
+          const xColumnFromUrl = queryParams.get('xColumn');
           const yColumnFromUrl = queryParams.get('yColumn');
           const metricYFromUrl = queryParams.getAll('metricY');
           const groupByFromUrl = queryParams.get('groupBy');
@@ -766,6 +789,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
             this.selectedMetric = yColumnFromUrl || this.currentRecommendation.yColumn || '';
             this.selectedMetricsY = this.selectedMetric ? [this.selectedMetric] : [];
           }
+          this.selectedXAxis = xColumnFromUrl || this.currentRecommendation.xColumn || '';
           this.selectedGroupBy = groupByFromUrl || '';
           this.selectedVisualizationType = this.ensureAllowedVisualization(this.selectedVisualizationType);
         }
@@ -805,10 +829,15 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         }
 
         this.syncSelectedMetricsWithAvailability();
+        this.syncSelectedXAxisWithAvailability();
         this.rebuildRawFieldMetrics();
 
         if (this.selectedMetric && !this.availableMetrics.includes(this.selectedMetric)) {
           this.availableMetrics = [this.selectedMetric, ...this.availableMetrics];
+        }
+
+        if (this.selectedXAxis && !this.availableMetrics.includes(this.selectedXAxis)) {
+          this.availableMetrics = [this.selectedXAxis, ...this.availableMetrics];
         }
 
         this.initializeScenarioDefaults();
@@ -830,6 +859,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       const primaryMetric = requestOptions.metricY || this.selectedMetric;
       if (primaryMetric) {
         requestOptions.metricY = primaryMetric;
+      }
+    }
+
+    if (this.supportsScatterXAxisControl) {
+      const xColumn = requestOptions.xColumn || this.selectedXAxis;
+      if (xColumn) {
+        requestOptions.xColumn = xColumn;
       }
     }
 
@@ -1372,6 +1408,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       if (!keepContext && this.currentRecommendation) {
         this.selectedAggregation = this.currentRecommendation.aggregation || 'Sum';
         this.selectedTimeBin = this.currentRecommendation.timeBin || 'Month';
+        this.selectedXAxis = this.currentRecommendation.xColumn || '';
         this.selectedMetric = this.currentRecommendation.yColumn || '';
         this.selectedMetricsY = this.selectedMetric ? [this.selectedMetric] : [];
         this.metricToAdd = '';
@@ -1427,6 +1464,35 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     if (!this.simulationTargetMetric) {
       this.simulationTargetMetric = this.selectedMetric;
     }
+  }
+
+  onScatterXAxisChange(): void {
+    this.reloadChartWithCurrentParameters();
+  }
+
+  isScatterMetricSelected(metric: string): boolean {
+    return this.selectedMetricsY.includes(metric);
+  }
+
+  onScatterMetricToggle(metric: string, checked: boolean): void {
+    if (!metric) {
+      return;
+    }
+
+    if (checked) {
+      if (!this.selectedMetricsY.includes(metric)) {
+        this.selectedMetricsY = [...this.selectedMetricsY, metric];
+      }
+    } else {
+      if (!this.selectedMetricsY.includes(metric) || this.selectedMetricsY.length <= 1) {
+        return;
+      }
+
+      this.selectedMetricsY = this.selectedMetricsY.filter(item => item !== metric);
+    }
+
+    this.selectedMetric = this.selectedMetricsY[0] || metric;
+    this.reloadChartWithCurrentParameters();
   }
 
   onGroupByChange(): void {
@@ -1688,6 +1754,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       options.timeBin = this.selectedTimeBin;
     }
 
+    if (this.supportsScatterXAxisControl && this.selectedXAxis) {
+      options.xColumn = this.selectedXAxis;
+    }
+
     if (this.supportsMetricControl && this.selectedMetric) {
       options.metricY = this.selectedMetric;
     }
@@ -1722,6 +1792,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
     if (this.supportsTimeBinControl && this.selectedTimeBin) {
       options['timeBin'] = this.selectedTimeBin;
+    }
+
+    if (this.supportsScatterXAxisControl && this.selectedXAxis) {
+      options['xColumn'] = this.selectedXAxis;
     }
 
     if (this.supportsMetricControl && this.selectedMetricsY.length > 0) {
@@ -2937,13 +3011,15 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     return {
       aggregation: recommendation.aggregation || 'Sum',
       timeBin: recommendation.timeBin || 'Month',
-      metric: recommendation.yColumn || ''
+      metric: recommendation.yColumn || '',
+      xColumn: recommendation.xColumn || ''
     };
   }
 
   private applyRecommendedState(state: RecommendedChartState | null): void {
     this.selectedAggregation = state?.aggregation || 'Sum';
     this.selectedTimeBin = state?.timeBin || 'Month';
+    this.selectedXAxis = state?.xColumn || '';
     this.selectedMetric = state?.metric || '';
     this.selectedMetricsY = this.selectedMetric ? [this.selectedMetric] : [];
   }
@@ -3125,9 +3201,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     const clonedBase = this.cloneOption(baseOption);
 
     if (this.percentileView !== 'percentile' && this.supportsMultiMetricControl && this.selectedMetricsY.length > 1) {
-      const additionalMetrics = this.selectedMetricsY
-        .filter(metric => metric !== primaryMetric)
-        .slice(0, 3);
+      const baseAdditional = this.selectedMetricsY.filter(metric => metric !== primaryMetric);
+      const additionalMetrics = this.currentBaseChartType === 'Scatter'
+        ? baseAdditional
+        : baseAdditional.slice(0, 3);
 
       if (additionalMetrics.length > 0) {
         this.loadAdditionalMetrics(additionalMetrics, options, loadVersion).subscribe(results => {
@@ -3421,6 +3498,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       const axisType = `${axis['type'] ?? ''}`.toLowerCase();
       const axisData = Array.isArray(axis['data']) ? axis['data'] : [];
       const denseLabels = axisData.length > (this.isMobile ? 8 : 14);
+      const axisName = `${axis['name'] ?? ''}`.trim();
 
       const axisLabel = this.asObject(axis['axisLabel']) || {};
       axisLabel['fontSize'] = 11;
@@ -3437,6 +3515,21 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       }
 
       axis['axisLabel'] = axisLabel;
+
+      if (axisName.length > 0) {
+        axis['name'] = this.normalizeAxisNameLabel(axisName);
+        axis['nameLocation'] = 'middle';
+        axis['nameGap'] = denseLabels
+          ? (this.isMobile ? 38 : 44)
+          : (this.isMobile ? 30 : 34);
+
+        const nameTextStyle = this.asObject(axis['nameTextStyle']) || {};
+        nameTextStyle['fontSize'] = 11;
+        nameTextStyle['color'] = '#475569';
+        nameTextStyle['align'] = 'center';
+        nameTextStyle['verticalAlign'] = 'top';
+        axis['nameTextStyle'] = nameTextStyle;
+      }
 
       const axisTick = this.asObject(axis['axisTick']) || {};
       axisTick['alignWithLabel'] = true;
@@ -4180,6 +4273,27 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     return this.availableVisualizationTypes.includes(value) ? value : '';
+  }
+
+  private syncSelectedXAxisWithAvailability(): void {
+    if (!this.supportsScatterXAxisControl) {
+      return;
+    }
+
+    const allowed = new Set(this.availableMetrics);
+    if (this.selectedXAxis && allowed.has(this.selectedXAxis)) {
+      return;
+    }
+
+    const recommendedX = this.currentRecommendation?.xColumn || '';
+    if (recommendedX && allowed.has(recommendedX)) {
+      this.selectedXAxis = recommendedX;
+      return;
+    }
+
+    if (this.availableMetrics.length > 0) {
+      this.selectedXAxis = this.availableMetrics[0];
+    }
   }
 
   private syncSelectedMetricsWithAvailability(): void {

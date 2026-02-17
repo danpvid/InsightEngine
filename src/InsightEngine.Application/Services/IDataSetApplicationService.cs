@@ -43,6 +43,7 @@ public interface IDataSetApplicationService
     /// <param name="recommendationId">Recommendation ID</param>
     /// <param name="aggregation">Optional: Override aggregation (Sum, Avg, Count, Min, Max)</param>
     /// <param name="timeBin">Optional: Override time bin (Day, Week, Month, Quarter, Year)</param>
+    /// <param name="xColumn">Optional: Override X axis column</param>
     /// <param name="yColumn">Optional: Override Y metric column</param>
     /// <param name="cancellationToken">Cancellation token</param>
     Task<Result<ChartExecutionResponse>> GetChartAsync(
@@ -57,6 +58,7 @@ public interface IDataSetApplicationService
         PercentileMode percentileMode = PercentileMode.None,
         PercentileKind? percentileKind = null,
         string? percentileTarget = null,
+        string? xColumn = null,
         CancellationToken cancellationToken = default);
 
     Task<Result<ScenarioSimulationResponse>> SimulateAsync(

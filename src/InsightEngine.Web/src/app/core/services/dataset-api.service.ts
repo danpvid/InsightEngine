@@ -163,6 +163,7 @@ export class DatasetApiService {
     options?: {
       aggregation?: string;
       timeBin?: string;
+      xColumn?: string;
       metricY?: string;
       yColumn?: string;
       groupBy?: string;
@@ -181,6 +182,7 @@ export class DatasetApiService {
       const params = new URLSearchParams();
       if (options.aggregation) params.append('aggregation', options.aggregation);
       if (options.timeBin) params.append('timeBin', options.timeBin);
+      if (options.xColumn) params.append('xColumn', options.xColumn);
       if (options.metricY) params.append('metricY', options.metricY);
       if (options.yColumn) params.append('yColumn', options.yColumn);
       if (options.groupBy) params.append('groupBy', options.groupBy);

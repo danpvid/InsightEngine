@@ -15,6 +15,7 @@ public class GetDataSetChartQuery : Query<ChartExecutionResponse>
     // Parâmetros opcionais para controles dinâmicos (frontend)
     public string? Aggregation { get; set; }
     public string? TimeBin { get; set; }
+    public string? XColumn { get; set; }
     public string? YColumn { get; set; }
     public string? GroupBy { get; set; }
     public List<ChartFilter> Filters { get; set; } = new();
@@ -36,12 +37,14 @@ public class GetDataSetChartQuery : Query<ChartExecutionResponse>
         ChartViewKind view = ChartViewKind.Base,
         PercentileMode percentileMode = PercentileMode.None,
         PercentileKind? percentileKind = null,
-        string? percentileTarget = null)
+        string? percentileTarget = null,
+        string? xColumn = null)
     {
         DatasetId = datasetId;
         RecommendationId = recommendationId;
         Aggregation = aggregation;
         TimeBin = timeBin;
+        XColumn = xColumn;
         YColumn = yColumn;
         GroupBy = groupBy;
         Filters = filters ?? new List<ChartFilter>();

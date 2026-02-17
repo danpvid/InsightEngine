@@ -48,8 +48,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         var sw = Stopwatch.StartNew();
 
         _logger.LogInformation(
-            "Chart execution started DatasetId={DatasetId} RecommendationId={RecommendationId} Aggregation={Aggregation} TimeBin={TimeBin} YColumn={YColumn}",
-            request.DatasetId, request.RecommendationId, request.Aggregation ?? "null", request.TimeBin ?? "null", request.YColumn ?? "null");
+            "Chart execution started DatasetId={DatasetId} RecommendationId={RecommendationId} Aggregation={Aggregation} TimeBin={TimeBin} XColumn={XColumn} YColumn={YColumn}",
+            request.DatasetId, request.RecommendationId, request.Aggregation ?? "null", request.TimeBin ?? "null", request.XColumn ?? "null", request.YColumn ?? "null");
 
         try
         {
@@ -91,6 +91,25 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
             var columnLookup = profile.Columns
                 .ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
             var invalidColumns = new List<string>();
+            var allowXOverride = recommendation.Chart.Type == ChartType.Scatter;
+
+            string? resolvedXColumn = null;
+            if (!string.IsNullOrWhiteSpace(request.XColumn) && allowXOverride)
+            {
+                if (!columnLookup.TryGetValue(request.XColumn, out var xProfile))
+                {
+                    invalidColumns.Add(request.XColumn);
+                }
+                else
+                {
+                    resolvedXColumn = xProfile.Name;
+                    if (recommendation.Query.X.Role == AxisRole.Measure && xProfile.InferredType != InferredType.Number)
+                    {
+                        return Result.Failure<ChartExecutionResponse>(
+                            $"XColumn '{resolvedXColumn}' must be numeric.");
+                    }
+                }
+            }
 
             string? resolvedYColumn = null;
             if (!string.IsNullOrWhiteSpace(request.YColumn))
@@ -161,6 +180,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
             // 4.1. Aplicar overrides dos parâmetros (controles dinâmicos do frontend)
             if (!string.IsNullOrWhiteSpace(request.Aggregation) || 
                 !string.IsNullOrWhiteSpace(request.TimeBin) || 
+                !string.IsNullOrWhiteSpace(resolvedXColumn) ||
                 !string.IsNullOrWhiteSpace(request.YColumn) ||
                 !string.IsNullOrWhiteSpace(request.GroupBy) ||
                 resolvedFilters.Count > 0)
@@ -170,6 +190,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                     recommendation,
                     request.Aggregation,
                     request.TimeBin,
+                    resolvedXColumn,
                     resolvedYColumn,
                     resolvedGroupBy,
                     resolvedFilters);
@@ -341,6 +362,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         ChartRecommendation original, 
         string? aggregation, 
         string? timeBin, 
+        string? xColumn,
         string? yColumn,
         string? groupBy,
         List<ChartFilter> filters)
@@ -399,7 +421,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         {
             X = new FieldSpec
             {
-                Column = original.Query.X.Column,
+                Column = !string.IsNullOrWhiteSpace(xColumn) ? xColumn : original.Query.X.Column,
                 Role = original.Query.X.Role,
                 Aggregation = original.Query.X.Aggregation,
                 Bin = binEnum ?? original.Query.X.Bin  // Apply override se presente

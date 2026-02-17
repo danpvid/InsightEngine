@@ -1143,11 +1143,11 @@
 
           <mat-divider *ngIf="supportsTimeBinControl"></mat-divider>
 
-          <div class="controls-section" *ngIf="supportsMetricControl">
-            <h3>{{ 'chartViewer.metricY' | translate }}</h3>
+          <div class="controls-section" *ngIf="supportsScatterXAxisControl">
+            <h3>{{ 'chartViewer.axisX' | translate }}</h3>
             <mat-form-field appearance="outline">
-              <mat-label>{{ 'chartViewer.primaryMetric' | translate }}</mat-label>
-              <mat-select [(ngModel)]="selectedMetric" (selectionChange)="onMetricChange()" [disabled]="availableMetrics.length === 0">
+              <mat-label>{{ 'chartViewer.column' | translate }}</mat-label>
+              <mat-select [(ngModel)]="selectedXAxis" (selectionChange)="onScatterXAxisChange()" [disabled]="availableMetrics.length === 0">
                 <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
                   {{ metric }}
                 </mat-option>
@@ -1156,32 +1156,68 @@
                 {{ 'chartViewer.basedOnRecommendation' | translate }}
               </mat-hint>
             </mat-form-field>
+          </div>
 
-            <div class="multi-metric" *ngIf="supportsMultiMetricControl">
-              <div class="multi-metric-builder">
-                <mat-form-field appearance="outline">
-                  <mat-label>{{ 'chartViewer.addMetric' | translate }}</mat-label>
-                  <mat-select [(ngModel)]="metricToAdd">
-                    <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
-                      {{ metric }}
-                    </mat-option>
-                  </mat-select>
-                </mat-form-field>
+          <mat-divider *ngIf="supportsScatterXAxisControl && supportsMetricControl"></mat-divider>
 
-                <button mat-stroked-button color="primary" (click)="addMetricY()" [disabled]="!canAddMetric">
-                  {{ 'chartViewer.add' | translate }}
-                </button>
-              </div>
+          <div class="controls-section" *ngIf="supportsMetricControl">
+            <h3>{{ 'chartViewer.metricY' | translate }}</h3>
 
-              <div class="selected-metrics" *ngIf="selectedMetricsY.length > 0">
-                <mat-chip *ngFor="let metric of selectedMetricsY" selected>
+            <ng-container *ngIf="supportsMetricCheckboxControl; else metricPrimarySelect">
+              <div class="multi-metric" *ngIf="availableMetrics.length > 0; else noScatterMetrics" style="max-height: 220px; overflow: auto;">
+                <mat-checkbox
+                  *ngFor="let metric of availableMetrics"
+                  [checked]="isScatterMetricSelected(metric)"
+                  [disabled]="selectedMetricsY.length <= 1 && isScatterMetricSelected(metric)"
+                  (change)="onScatterMetricToggle(metric, $event.checked)">
                   {{ metric }}
-                  <button mat-icon-button matChipRemove (click)="removeMetricY(metric)" [disabled]="selectedMetricsY.length <= 1 && metric === selectedMetric">
-                    <mat-icon>cancel</mat-icon>
-                  </button>
-                </mat-chip>
+                </mat-checkbox>
               </div>
-            </div>
+            </ng-container>
+
+            <ng-template #metricPrimarySelect>
+              <mat-form-field appearance="outline">
+                <mat-label>{{ 'chartViewer.primaryMetric' | translate }}</mat-label>
+                <mat-select [(ngModel)]="selectedMetric" (selectionChange)="onMetricChange()" [disabled]="availableMetrics.length === 0">
+                  <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
+                    {{ metric }}
+                  </mat-option>
+                </mat-select>
+                <mat-hint *ngIf="availableMetrics.length === 0">
+                  {{ 'chartViewer.basedOnRecommendation' | translate }}
+                </mat-hint>
+              </mat-form-field>
+
+              <div class="multi-metric" *ngIf="supportsMetricBuilderControl">
+                <div class="multi-metric-builder">
+                  <mat-form-field appearance="outline">
+                    <mat-label>{{ 'chartViewer.addMetric' | translate }}</mat-label>
+                    <mat-select [(ngModel)]="metricToAdd">
+                      <mat-option *ngFor="let metric of availableMetrics" [value]="metric">
+                        {{ metric }}
+                      </mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <button mat-stroked-button color="primary" (click)="addMetricY()" [disabled]="!canAddMetric">
+                    {{ 'chartViewer.add' | translate }}
+                  </button>
+                </div>
+
+                <div class="selected-metrics" *ngIf="selectedMetricsY.length > 0">
+                  <mat-chip *ngFor="let metric of selectedMetricsY" selected>
+                    {{ metric }}
+                    <button mat-icon-button matChipRemove (click)="removeMetricY(metric)" [disabled]="selectedMetricsY.length <= 1 && metric === selectedMetric">
+                      <mat-icon>cancel</mat-icon>
+                    </button>
+                  </mat-chip>
+                </div>
+              </div>
+            </ng-template>
+
+            <ng-template #noScatterMetrics>
+              <p style="margin: 0; font-size: 12px; color: #64748b;">{{ 'chartViewer.basedOnRecommendation' | translate }}</p>
+            </ng-template>
           </div>
 
           <mat-divider *ngIf="supportsMetricControl"></mat-divider>

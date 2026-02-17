@@ -628,6 +628,7 @@ OFFSET {offset};
         string recommendationId,
         [FromQuery] string? aggregation = null,
         [FromQuery] string? timeBin = null,
+        [FromQuery] string? xColumn = null,
         [FromQuery] string? yColumn = null,
         [FromQuery] string? metricY = null,
         [FromQuery] string? groupBy = null,
@@ -643,8 +644,8 @@ OFFSET {offset};
         PercentileKind? resolvedPercentile = null;
 
         _logger.LogInformation(
-            "GetChart called - DatasetId: {DatasetId}, RecommendationId: {RecommendationId}, Aggregation: {Aggregation}, TimeBin: {TimeBin}, YColumn: {YColumn}, GroupBy: {GroupBy}, Filters: {FilterCount}, View: {View}, Percentile: {Percentile}, Mode: {Mode}",
-            id, recommendationId, aggregation ?? "null", timeBin ?? "null", resolvedMetricY ?? "null", groupBy ?? "null", filters?.Length ?? 0, view ?? "base", percentile ?? "null", mode ?? "none");
+            "GetChart called - DatasetId: {DatasetId}, RecommendationId: {RecommendationId}, Aggregation: {Aggregation}, TimeBin: {TimeBin}, XColumn: {XColumn}, YColumn: {YColumn}, GroupBy: {GroupBy}, Filters: {FilterCount}, View: {View}, Percentile: {Percentile}, Mode: {Mode}",
+            id, recommendationId, aggregation ?? "null", timeBin ?? "null", xColumn ?? "null", resolvedMetricY ?? "null", groupBy ?? "null", filters?.Length ?? 0, view ?? "base", percentile ?? "null", mode ?? "none");
 
         try
         {
@@ -734,7 +735,8 @@ OFFSET {offset};
                 resolvedView,
                 resolvedMode,
                 resolvedPercentile,
-                percentileTarget);
+                percentileTarget,
+                xColumn);
 
             if (!result.IsSuccess)
             {

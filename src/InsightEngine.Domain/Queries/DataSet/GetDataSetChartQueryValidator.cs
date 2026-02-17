@@ -37,6 +37,11 @@ public class GetDataSetChartQueryValidator : AbstractValidator<GetDataSetChartQu
             .When(x => !string.IsNullOrWhiteSpace(x.GroupBy))
             .WithMessage("GroupBy must not exceed 128 characters");
 
+        RuleFor(x => x.XColumn)
+            .MaximumLength(128)
+            .When(x => !string.IsNullOrWhiteSpace(x.XColumn))
+            .WithMessage("XColumn must not exceed 128 characters");
+
         RuleFor(x => x.Filters)
             .Must(filters => filters == null || filters.Count <= 3)
             .WithMessage("No more than 3 filters are allowed");

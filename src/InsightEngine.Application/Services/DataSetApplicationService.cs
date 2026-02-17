@@ -156,11 +156,12 @@ public class DataSetApplicationService : IDataSetApplicationService
         PercentileMode percentileMode = PercentileMode.None,
         PercentileKind? percentileKind = null,
         string? percentileTarget = null,
+        string? xColumn = null,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Executing chart for dataset {DatasetId}, recommendation {RecommendationId}, aggregation: {Aggregation}, timeBin: {TimeBin}, yColumn: {YColumn}", 
-            datasetId, recommendationId, aggregation, timeBin, yColumn);
+            "Executing chart for dataset {DatasetId}, recommendation {RecommendationId}, aggregation: {Aggregation}, timeBin: {TimeBin}, xColumn: {XColumn}, yColumn: {YColumn}", 
+            datasetId, recommendationId, aggregation, timeBin, xColumn, yColumn);
 
         var query = new GetDataSetChartQuery(
             datasetId,
@@ -173,7 +174,8 @@ public class DataSetApplicationService : IDataSetApplicationService
             view,
             percentileMode,
             percentileKind,
-            percentileTarget);
+            percentileTarget,
+            xColumn);
         var result = await _mediator.Send(query, cancellationToken);
 
         if (result.IsSuccess)
