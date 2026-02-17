@@ -53,6 +53,8 @@ export class ExplorePageComponent implements OnInit {
   correlationSearch: string = '';
   correlationMethodFilter: string = 'All';
   correlationStrengthFilter: string = 'All';
+  selectedDistributionFields: string[] = [];
+  selectedDistributionDateField: string = '';
   activeFilters: string[] = [];
   pinnedFieldNames: string[] = [];
 
@@ -143,6 +145,75 @@ export class ExplorePageComponent implements OnInit {
 
       return methodMatch && strengthMatch && searchMatch;
     });
+  }
+
+  get numericFields(): ColumnIndex[] {
+    return (this.index?.columns || []).filter(column => column.inferredType === 'Number' && !!column.numericStats);
+  }
+
+  get dateFields(): ColumnIndex[] {
+    return (this.index?.columns || []).filter(column => column.inferredType === 'Date' && !!column.dateStats);
+  }
+
+  get distributionSeries(): Array<{ field: ColumnIndex; option: EChartsOption }> {
+    if (!this.index) {
+      return [];
+    }
+
+    return this.selectedDistributionFields
+      .map(fieldName => this.index!.columns.find(column => column.name === fieldName) || null)
+      .filter((field): field is ColumnIndex => !!field?.numericStats?.histogram?.length)
+      .map(field => ({
+        field,
+        option: this.buildDistributionOption(field)
+      }));
+  }
+
+  get selectedDateDistributionOption(): EChartsOption | null {
+    if (!this.index || !this.selectedDistributionDateField) {
+      return null;
+    }
+
+    const field = this.index.columns.find(column => column.name === this.selectedDistributionDateField);
+    if (!field?.dateStats?.coverage || field.dateStats.coverage.length === 0) {
+      return null;
+    }
+
+    return {
+      tooltip: {
+        trigger: 'axis'
+      },
+      grid: {
+        left: 40,
+        right: 14,
+        top: 18,
+        bottom: 34
+      },
+      xAxis: {
+        type: 'category',
+        axisLabel: { rotate: 30 },
+        data: field.dateStats.coverage.map(item => new Date(item.start).toLocaleDateString())
+      },
+      yAxis: {
+        type: 'value'
+      },
+      series: [
+        {
+          type: 'line',
+          data: field.dateStats.coverage.map(item => item.count),
+          smooth: true,
+          areaStyle: {
+            color: 'rgba(59, 130, 246, 0.12)'
+          },
+          lineStyle: {
+            color: '#2563eb'
+          },
+          itemStyle: {
+            color: '#2563eb'
+          }
+        }
+      ]
+    };
   }
 
   get selectedCorrelation(): CorrelationEdge | null {
@@ -333,6 +404,20 @@ export class ExplorePageComponent implements OnInit {
 
   onSelectCorrelation(edge: CorrelationEdge): void {
     this.selectedCorrelationKey = this.buildCorrelationKey(edge);
+  }
+
+  onToggleDistributionField(fieldName: string, checked: boolean): void {
+    if (!checked) {
+      this.selectedDistributionFields = this.selectedDistributionFields.filter(name => name !== fieldName);
+      return;
+    }
+
+    if (this.selectedDistributionFields.length >= 4) {
+      this.toast.info('You can select up to 4 numeric fields.');
+      return;
+    }
+
+    this.selectedDistributionFields = [...this.selectedDistributionFields, fieldName];
   }
 
   useCorrelationInChart(): void {
@@ -601,5 +686,58 @@ export class ExplorePageComponent implements OnInit {
 
   buildCorrelationKey(edge: CorrelationEdge): string {
     return `${edge.leftColumn}|${edge.rightColumn}|${edge.method}`;
+  }
+
+  private buildDistributionOption(field: ColumnIndex): EChartsOption {
+    const histogram = field.numericStats?.histogram ?? [];
+    const stats = field.numericStats;
+
+    return {
+      tooltip: {
+        trigger: 'axis'
+      },
+      grid: {
+        left: 40,
+        right: 14,
+        top: 18,
+        bottom: 28
+      },
+      xAxis: {
+        type: 'category',
+        axisLabel: { show: false },
+        data: histogram.map((_, index) => `${index + 1}`)
+      },
+      yAxis: {
+        type: 'value'
+      },
+      series: [
+        {
+          type: 'bar',
+          data: histogram.map(bin => bin.count),
+          itemStyle: {
+            color: '#1d4ed8'
+          },
+          markLine: {
+            symbol: 'none',
+            label: { show: false },
+            data: [
+              { xAxis: stats?.p5 != null ? this.findHistogramIndex(histogram, stats.p5) : undefined },
+              { xAxis: stats?.p10 != null ? this.findHistogramIndex(histogram, stats.p10) : undefined },
+              { xAxis: stats?.p50 != null ? this.findHistogramIndex(histogram, stats.p50) : undefined },
+              { xAxis: stats?.p90 != null ? this.findHistogramIndex(histogram, stats.p90) : undefined },
+              { xAxis: stats?.p95 != null ? this.findHistogramIndex(histogram, stats.p95) : undefined }
+            ].filter(item => item.xAxis != null)
+          }
+        }
+      ]
+    };
+  }
+
+  private findHistogramIndex(
+    histogram: Array<{ lowerBound: number; upperBound: number }>,
+    value: number
+  ): number {
+    const index = histogram.findIndex(bin => value >= bin.lowerBound && value <= bin.upperBound);
+    return index >= 0 ? index : 0;
   }
 }

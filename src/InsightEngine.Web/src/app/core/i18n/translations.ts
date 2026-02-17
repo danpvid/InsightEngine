@@ -165,6 +165,10 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'explore.correlationConfidence': 'Confiança',
     'explore.correlationBuildScatter': 'Gerar scatter',
     'explore.correlationAddComparison': 'Adicionar comparação',
+    'explore.distributionNumericTitle': 'Distribuições numéricas',
+    'explore.distributionNumericHint': 'Selecione até 4 campos numéricos para comparação lado a lado.',
+    'explore.distributionDateTitle': 'Distribuição temporal',
+    'explore.distributionDateSelect': 'Campo de data',
 
     'chartViewer.chart': 'Gráfico',
     'chartViewer.previous': 'Anterior',
@@ -497,6 +501,10 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'explore.correlationConfidence': 'Confidence',
     'explore.correlationBuildScatter': 'Build scatter',
     'explore.correlationAddComparison': 'Add comparison',
+    'explore.distributionNumericTitle': 'Numeric distributions',
+    'explore.distributionNumericHint': 'Select up to 4 numeric fields for side-by-side comparison.',
+    'explore.distributionDateTitle': 'Date distribution',
+    'explore.distributionDateSelect': 'Date field',
 
     'chartViewer.chart': 'Chart',
     'chartViewer.previous': 'Previous',

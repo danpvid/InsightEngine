@@ -319,6 +319,39 @@
   margin-top: 10px;
 }
 
+.distributions-tab {
+  padding: 10px 4px 0;
+}
+
+.distribution-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.distribution-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.distribution-date-select {
+  width: 100%;
+}
+
+.distribution-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.distribution-chart {
+  width: 100%;
+  height: 220px;
+}
+
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -464,6 +497,12 @@
   }
 
   .correlations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .distribution-controls,
+  .distribution-charts,
+  .distribution-checklist {
     grid-template-columns: 1fr;
   }
 }
