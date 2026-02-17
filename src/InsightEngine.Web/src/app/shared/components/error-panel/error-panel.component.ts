@@ -47,12 +47,12 @@ import { ApiError } from '../../../core/models/api-response.model';
     h3 {
       text-align: center;
       margin-bottom: 8px;
-      color: #c62828;
+      color: var(--danger);
     }
 
     .error-code {
       text-align: center;
-      color: #666;
+      color: var(--text-2);
       font-size: 12px;
       margin-bottom: 8px;
       word-break: break-all;
@@ -61,7 +61,7 @@ import { ApiError } from '../../../core/models/api-response.model';
     .error-details {
       margin-top: 16px;
       padding: 12px;
-      background-color: #fff;
+      background-color: var(--surface);
       border-radius: 4px;
     }
 
@@ -72,7 +72,7 @@ import { ApiError } from '../../../core/models/api-response.model';
 
     .error-details li {
       margin-bottom: 4px;
-      color: #666;
+      color: var(--text-2);
     }
   `]
 })

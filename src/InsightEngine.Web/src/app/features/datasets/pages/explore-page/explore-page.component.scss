@@ -14,7 +14,7 @@
   gap: 8px;
   margin-bottom: 10px;
   padding: 10px 14px;
-  background-color: #f5f5f5;
+  background-color: var(--surface-2);
   border-radius: 8px;
   flex-wrap: wrap;
 }
@@ -26,16 +26,16 @@
   min-height: 34px;
   padding: 0 8px;
   border-radius: 6px;
-  color: #3f51b5;
+  color: var(--primary);
   text-decoration: none;
   font-weight: 500;
 
   &:hover {
-    background-color: #e3f2fd;
+    background-color: var(--hover-bg);
   }
 
   &.active {
-    color: #475569;
+    color: var(--text-2);
     font-weight: 600;
     background: transparent;
   }
@@ -53,9 +53,9 @@
   gap: 12px;
   margin-bottom: 12px;
   padding: 8px 10px;
-  background-color: #f8fafc;
+  background-color: var(--surface-2);
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
 }
 
 .status-chip {
@@ -70,28 +70,28 @@
 }
 
 .status-ready {
-  color: #166534;
-  background: #dcfce7;
-  border-color: #86efac;
+  color: var(--success);
+  background: var(--chip-bg);
+  border-color: rgba(0,0,0,0.04);
 }
 
 .status-building {
-  color: #7c2d12;
-  background: #ffedd5;
-  border-color: #fdba74;
+  color: var(--warn);
+  background: var(--chip-bg);
+  border-color: rgba(0,0,0,0.04);
 }
 
 .status-failed {
-  color: #7f1d1d;
-  background: #fee2e2;
-  border-color: #fca5a5;
+  color: var(--danger);
+  background: var(--chip-bg);
+  border-color: rgba(0,0,0,0.04);
 }
 
 .status-idle {
-  color: #1f2937;
-  background: #f3f4f6;
-  border-color: #d1d5db;
-}
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border);
+} 
 
 .toolbar-actions {
   display: flex;
@@ -179,18 +179,18 @@
 }
 
 .field-row {
-  border: 1px solid #dbe3f1;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
-  background: #fff;
+  background: var(--surface);
   text-align: left;
   cursor: pointer;
 
   &.selected {
-    border-color: #3b82f6;
-    background: #eff6ff;
+    border-color: var(--primary);
+    background: var(--hover-bg);
   }
-}
+} 
 
 .field-main {
   display: flex;
@@ -210,24 +210,24 @@
 }
 
 .field-meta {
-  color: #475569;
+  color: var(--text-2);
   font-size: 11px;
   display: flex;
   gap: 6px;
-}
+} 
 
 .null-rate {
   height: 4px;
-  background: #e5e7eb;
+  background: var(--border);
   border-radius: 999px;
   margin: 8px 0 4px;
 }
 
 .null-rate-bar {
   height: 100%;
-  background: #f97316;
+  background: var(--warn);
   border-radius: 999px;
-}
+} 
 
 .tags {
   margin-top: 6px;
@@ -236,8 +236,8 @@
 .tab-placeholder {
   min-height: 360px;
   padding: 12px 4px;
-  color: #475569;
-}
+  color: var(--text-2);
+} 
 
 .field-tab {
   padding: 10px 4px 0;
@@ -277,8 +277,8 @@
   gap: 8px;
   margin-bottom: 6px;
   font-size: 12px;
-  color: #475569;
-}
+  color: var(--text-2);
+} 
 
 .pinned-section {
   margin-top: 12px;

@@ -5,27 +5,27 @@
 
 // Drag & Drop Zone
 .drag-drop-zone {
-  border: 3px dashed #3f51b5;
+  border: 3px dashed var(--border);
   border-radius: 12px;
   padding: 48px 24px;
-  background-color: #fafafa;
+  background-color: var(--surface-2);
   transition: all 0.3s ease;
   cursor: pointer;
 
   &.dragging {
-    background-color: #e3f2fd;
-    border-color: #1976d2;
+    background-color: var(--hover-bg);
+    border-color: var(--primary-2);
     transform: scale(1.02);
   }
 
   h3 {
     margin: 16px 0 8px;
-    color: #333;
+    color: var(--text);
     font-weight: 500;
   }
 
   .text-muted {
-    color: #999;
+    color: var(--text-2);
     margin: 8px 0;
   }
 
@@ -35,7 +35,7 @@
     justify-content: center;
     gap: 8px;
     margin-top: 24px;
-    color: #666;
+    color: var(--text-2);
     font-size: 14px;
 
     mat-icon {
@@ -54,7 +54,7 @@
   font-size: 80px;
   width: 80px;
   height: 80px;
-  color: #3f51b5;
+  color: var(--primary);
 }
 
 .file-input-wrapper {
@@ -71,11 +71,11 @@
   justify-content: center;
   gap: 12px;
   padding: 20px;
-  background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+  background: var(--surface);
   border-radius: 8px;
   margin: 24px 0;
-  border: 2px solid #3f51b5;
-  box-shadow: 0 2px 8px rgba(63, 81, 181, 0.15);
+  border: 2px solid var(--primary);
+  box-shadow: 0 2px 8px var(--shadow);
 }
 
 .file-info .file-icon {
@@ -93,13 +93,13 @@
 .file-name {
   font-weight: 500;
   margin: 0;
-  color: #1a237e;
+  color: var(--text);
   font-size: 16px;
 }
 
 .file-size {
   font-size: 13px;
-  color: #5c6bc0;
+  color: var(--text-2);
   margin: 4px 0 0 0;
 }
 
@@ -127,7 +127,7 @@
 .upload-progress {
   margin: 24px 0;
   padding: 16px;
-  background-color: #e3f2fd;
+  background-color: var(--surface-2);
   border-radius: 8px;
 
   mat-progress-bar {
@@ -138,7 +138,7 @@
 
   .progress-text {
     margin: 0;
-    color: #1976d2;
+    color: var(--primary);
     font-weight: 500;
     font-size: 14px;
     text-align: center;
@@ -161,24 +161,24 @@
   text-align: left;
   margin-top: 32px;
   padding: 16px;
-  background-color: #e3f2fd;
+  background-color: var(--surface-2);
   border-radius: 8px;
 }
 
 .upload-info mat-icon {
-  color: #1976d2;
+  color: var(--primary);
   margin-top: 4px;
 }
 
 .upload-info p {
   margin: 0 0 8px 0;
-  color: #333;
+  color: var(--text);
 }
 
 .upload-info ul {
   margin: 0;
   padding-left: 20px;
-  color: #666;
+  color: var(--text-2);
 }
 
 .upload-info li {

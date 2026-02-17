@@ -2039,10 +2039,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     try {
+      const bg = (getComputedStyle(document.documentElement).getPropertyValue('--surface') || '#ffffff').trim();
       const imageDataUrl = this.echartsInstance.getDataURL({
         type: 'png',
         pixelRatio: 2,
-        backgroundColor: '#fff'
+        backgroundColor: bg || '#ffffff'
       });
 
       const link = document.createElement('a');
@@ -3426,7 +3427,90 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.ensureZoomWindow(mutable);
     this.ensureGridSpacing(mutable);
 
+    // Make ECharts option respect app theme (colors, tooltip, axes, background)
+    this.applyThemeToEchartsOption(mutable);
+
     return mutable as EChartsOption;
+  }
+
+  /**
+   * Apply visual tokens to an ECharts option so charts follow light/dark/legacy themes.
+   */
+  private applyThemeToEchartsOption(option: Record<string, unknown>): void {
+    try {
+      const css = (name: string) => (getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim();
+      const surface = css('--surface') || '#ffffff';
+      const surface2 = css('--surface-2') || surface;
+      const text = css('--text') || '#000';
+      const text2 = css('--text-2') || '#666';
+      const border = css('--border') || 'rgba(0,0,0,0.08)';
+
+      // Background
+      option['backgroundColor'] = option['backgroundColor'] ?? surface;
+
+      // Title
+      if (option['title']) {
+        const t = Array.isArray(option['title']) ? (option['title'] as any[])[0] : (option['title'] as any);
+        t.textStyle = t.textStyle || {};
+        t.textStyle.color = t.textStyle.color || text;
+        if (t.subtext) {
+          t.subtextStyle = t.subtextStyle || {};
+          t.subtextStyle.color = t.subtextStyle.color || text2;
+        }
+      }
+
+      // Tooltip
+      option['tooltip'] = option['tooltip'] || {};
+      const tt = option['tooltip'] as Record<string, unknown>;
+      tt['backgroundColor'] = tt['backgroundColor'] || surface2;
+      tt['borderColor'] = tt['borderColor'] || border;
+      tt['textStyle'] = tt['textStyle'] || {};
+      (tt['textStyle'] as any).color = (tt['textStyle'] as any).color || text;
+
+      // Legend
+      if (option['legend']) {
+        const lg = option['legend'] as Record<string, unknown>;
+        lg['textStyle'] = lg['textStyle'] || {};
+        (lg['textStyle'] as any).color = (lg['textStyle'] as any).color || text2;
+      }
+
+      // Toolbox / dataZoom / visual elements
+      const helpers = ['toolbox', 'dataZoom', 'visualMap', 'timeline'];
+      helpers.forEach(k => {
+        const el = option[k] as Record<string, unknown> | undefined;
+        if (el) {
+          el['textStyle'] = el['textStyle'] || {};
+          (el['textStyle'] as any).color = (el['textStyle'] as any).color || text2;
+        }
+      });
+
+      // Axes
+      const applyAxis = (axis: unknown) => {
+        if (!axis) return;
+        const arr = Array.isArray(axis) ? axis as any[] : [axis];
+        arr.forEach(a => {
+          a.axisLine = a.axisLine || {};
+          a.axisLine.lineStyle = a.axisLine.lineStyle || {};
+          a.axisLine.lineStyle.color = a.axisLine.lineStyle.color || border;
+
+          a.axisLabel = a.axisLabel || {};
+          a.axisLabel.color = a.axisLabel.color || text2;
+
+          if (a.splitLine) {
+            a.splitLine = a.splitLine || {};
+            a.splitLine.lineStyle = a.splitLine.lineStyle || {};
+            a.splitLine.lineStyle.color = a.splitLine.lineStyle.color || border;
+          }
+        });
+      };
+
+      applyAxis(option['xAxis']);
+      applyAxis(option['yAxis']);
+
+    } catch (e) {
+      // non-fatal — chart will keep original colors
+      // console.debug('applyThemeToEchartsOption failed', e);
+    }
   }
 
   private normalizeTitleAndAxisLayout(option: Record<string, unknown>): void {
