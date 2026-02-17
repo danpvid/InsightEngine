@@ -10,6 +10,7 @@ import { LanguageCode } from '../../core/models/language.model';
 import { LanguageService } from '../../core/services/language.service';
 import { TranslatePipe } from '../../core/pipes/translate.pipe';
 import { Router } from '@angular/router';
+import { ThemeToggleComponent } from '../../shared/components/theme-toggle/theme-toggle.component';
 
 @Component({
   selector: 'app-shell',
@@ -23,7 +24,9 @@ import { Router } from '@angular/router';
     MatButtonModule,
     MatIconModule,
     MatFormFieldModule,
-    MatSelectModule
+    MatSelectModule,
+    // Theme toggle
+    ThemeToggleComponent
   ],
   templateUrl: './shell.component.html',
   styleUrls: ['./shell.component.scss']
