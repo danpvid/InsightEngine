@@ -1,14 +1,17 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs/operators';
+import { NgxEchartsModule } from 'ngx-echarts';
+import { EChartsOption } from 'echarts';
 import { MATERIAL_MODULES } from '../../../../shared/material/material.imports';
 import { TranslatePipe } from '../../../../core/pipes/translate.pipe';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { MetadataIndexApiService } from '../../../../core/services/metadata-index-api.service';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
 import { ToastService } from '../../../../core/services/toast.service';
+import { LanguageService } from '../../../../core/services/language.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
 import {
   ColumnIndex,
@@ -25,6 +28,7 @@ import {
     CommonModule,
     FormsModule,
     RouterLink,
+    NgxEchartsModule,
     TranslatePipe,
     ...MATERIAL_MODULES,
     PageHeaderComponent
@@ -44,14 +48,18 @@ export class ExplorePageComponent implements OnInit {
   fieldSearch: string = '';
   selectedTypeFilters: string[] = [];
   selectedFieldName: string = '';
+  activeFilters: string[] = [];
+  pinnedFieldNames: string[] = [];
 
   readonly availableTypeFilters: string[] = ['Number', 'Date', 'String', 'Category', 'Boolean'];
 
   constructor(
     private route: ActivatedRoute,
+    private router: Router,
     private metadataIndexApi: MetadataIndexApiService,
     private datasetApi: DatasetApiService,
-    private toast: ToastService
+    private toast: ToastService,
+    private languageService: LanguageService
   ) {}
 
   ngOnInit(): void {
@@ -62,6 +70,20 @@ export class ExplorePageComponent implements OnInit {
 
   get recommendationsLink(): string[] {
     return ['../recommendations'];
+  }
+
+  get currentLanguage(): string {
+    const firstSegment = this.router.url
+      .split('?')[0]
+      .split('#')[0]
+      .split('/')
+      .filter(segment => segment.length > 0)[0];
+
+    if (this.languageService.isSupportedLanguage(firstSegment)) {
+      return firstSegment;
+    }
+
+    return this.languageService.currentLanguage;
   }
 
   get displayedFields(): ColumnIndex[] {
@@ -87,6 +109,91 @@ export class ExplorePageComponent implements OnInit {
     }
 
     return this.index.columns.find(column => column.name === this.selectedFieldName) || null;
+  }
+
+  get pinnedFields(): ColumnIndex[] {
+    if (!this.index || this.pinnedFieldNames.length === 0) {
+      return [];
+    }
+
+    return this.pinnedFieldNames
+      .map(name => this.index!.columns.find(column => column.name === name) || null)
+      .filter((column): column is ColumnIndex => column !== null);
+  }
+
+  get fieldHistogramOption(): EChartsOption | null {
+    const field = this.selectedField;
+    const histogram = field?.numericStats?.histogram ?? [];
+    if (!field || histogram.length === 0) {
+      return null;
+    }
+
+    return {
+      tooltip: {
+        trigger: 'axis'
+      },
+      grid: {
+        left: 40,
+        right: 14,
+        top: 18,
+        bottom: 28
+      },
+      xAxis: {
+        type: 'category',
+        axisLabel: { show: false },
+        data: histogram.map((_, index) => `B${index + 1}`)
+      },
+      yAxis: {
+        type: 'value'
+      },
+      series: [
+        {
+          type: 'bar',
+          data: histogram.map(bin => bin.count),
+          itemStyle: {
+            color: '#2563eb'
+          }
+        }
+      ]
+    };
+  }
+
+  get dateCoverageOption(): EChartsOption | null {
+    const field = this.selectedField;
+    const coverage = field?.dateStats?.coverage ?? [];
+    if (!field || coverage.length === 0) {
+      return null;
+    }
+
+    return {
+      tooltip: {
+        trigger: 'axis'
+      },
+      grid: {
+        left: 40,
+        right: 14,
+        top: 18,
+        bottom: 34
+      },
+      xAxis: {
+        type: 'category',
+        axisLabel: { rotate: 30 },
+        data: coverage.map(bin => new Date(bin.start).toLocaleDateString())
+      },
+      yAxis: {
+        type: 'value'
+      },
+      series: [
+        {
+          type: 'line',
+          data: coverage.map(bin => bin.count),
+          smooth: true,
+          symbolSize: 6,
+          lineStyle: { width: 2, color: '#0d9488' },
+          itemStyle: { color: '#0d9488' }
+        }
+      ]
+    };
   }
 
   get statusLabelKey(): string {
@@ -178,9 +285,64 @@ export class ExplorePageComponent implements OnInit {
 
   onSelectField(column: ColumnIndex): void {
     this.selectedFieldName = column.name;
-    if (this.selectedTabIndex === 0) {
+    if (this.selectedTabIndex !== 1) {
       this.selectedTabIndex = 1;
     }
+  }
+
+  pinSelectedField(): void {
+    const field = this.selectedField;
+    if (!field) {
+      return;
+    }
+
+    if (this.pinnedFieldNames.includes(field.name)) {
+      this.toast.info('Field already pinned.');
+      return;
+    }
+
+    this.pinnedFieldNames = [...this.pinnedFieldNames, field.name];
+    this.toast.success('Field pinned to quick access.');
+  }
+
+  unpinField(fieldName: string): void {
+    this.pinnedFieldNames = this.pinnedFieldNames.filter(name => name !== fieldName);
+  }
+
+  addFieldFilter(): void {
+    const field = this.selectedField;
+    if (!field) {
+      return;
+    }
+
+    const firstValue = field.topValues[0];
+    const filter = firstValue
+      ? `${field.name} = ${firstValue}`
+      : `${field.name} IS NOT NULL`;
+
+    if (this.activeFilters.includes(filter)) {
+      this.toast.info('Filter already present.');
+      return;
+    }
+
+    this.activeFilters = [...this.activeFilters, filter];
+    this.toast.success('Filter added to query bar.');
+  }
+
+  removeFilter(filter: string): void {
+    this.activeFilters = this.activeFilters.filter(item => item !== filter);
+  }
+
+  useFieldInChart(): void {
+    const field = this.selectedField;
+    if (!field) {
+      return;
+    }
+
+    this.router.navigate(
+      ['/', this.currentLanguage, 'datasets', this.datasetId, 'recommendations'],
+      { queryParams: { focusField: field.name } }
+    );
   }
 
   rebuildIndex(): void {
@@ -226,6 +388,17 @@ export class ExplorePageComponent implements OnInit {
 
   formatPercent(value: number): string {
     return `${(value * 100).toFixed(2)}%`;
+  }
+
+  getTagReason(tag: string): string {
+    const normalizedTag = tag.toLowerCase();
+    if (normalizedTag === 'identifier') return 'explore.tagReasonIdentifier';
+    if (normalizedTag === 'timestamp') return 'explore.tagReasonTimestamp';
+    if (normalizedTag === 'amount') return 'explore.tagReasonAmount';
+    if (normalizedTag === 'rate') return 'explore.tagReasonRate';
+    if (normalizedTag === 'category') return 'explore.tagReasonCategory';
+    if (normalizedTag === 'freetext') return 'explore.tagReasonFreeText';
+    return 'explore.tagReasonDefault';
   }
 
   getInferredTypeIcon(type: InferredType): string {
