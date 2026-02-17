@@ -2429,7 +2429,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           type: chartType,
           data: baseline,
           smooth: chartType === 'line',
-          itemStyle: { color: '#64748b' }
+          itemStyle: { color: (getComputedStyle(document.documentElement).getPropertyValue('--text-2') || '#64748b').trim() }
         },
         {
           name: 'Simulado',
@@ -3564,7 +3564,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       const subtextStyle = this.asObject(first['subtextStyle']) || {};
       subtextStyle['fontSize'] = 12;
       subtextStyle['lineHeight'] = 16;
-      subtextStyle['color'] = '#64748b';
+      subtextStyle['color'] = (getComputedStyle(document.documentElement).getPropertyValue('--text-2') || '#64748b').trim();
       first['subtextStyle'] = subtextStyle;
     }
 
@@ -3607,7 +3607,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
       const nameTextStyle = this.asObject(axis['nameTextStyle']) || {};
       nameTextStyle['fontSize'] = 11;
-      nameTextStyle['color'] = '#475569';
+      nameTextStyle['color'] = (getComputedStyle(document.documentElement).getPropertyValue('--text-2') || '#475569').trim();
       if (isSingleAxis) {
         nameTextStyle['align'] = 'right';
         nameTextStyle['verticalAlign'] = 'middle';
@@ -3726,7 +3726,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
         const nameTextStyle = this.asObject(axis['nameTextStyle']) || {};
         nameTextStyle['fontSize'] = 11;
-        nameTextStyle['color'] = '#475569';
+        nameTextStyle['color'] = (getComputedStyle(document.documentElement).getPropertyValue('--text-2') || '#475569').trim();
         nameTextStyle['align'] = 'center';
         nameTextStyle['verticalAlign'] = 'top';
         axis['nameTextStyle'] = nameTextStyle;
@@ -3879,7 +3879,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           top: '64%',
           bottom: '8%',
           textStyle: {
-            color: '#334155',
+            color: (getComputedStyle(document.documentElement).getPropertyValue('--text-2') || '#334155').trim(),
             fontSize: 11
           },
           data: chunk
@@ -3898,9 +3898,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     legend['left'] = 'center';
     legend['bottom'] = 8;
     legend['itemGap'] = 12;
-    legend['pageIconColor'] = '#64748b';
-    legend['pageIconInactiveColor'] = '#cbd5e1';
-    legend['pageTextStyle'] = { color: '#475569', fontSize: 11 };
+    legend['pageIconColor'] = (getComputedStyle(document.documentElement).getPropertyValue('--text-2') || '#64748b').trim();
+    legend['pageIconInactiveColor'] = (getComputedStyle(document.documentElement).getPropertyValue('--border') || '#cbd5e1').trim();
+    legend['pageTextStyle'] = { color: (getComputedStyle(document.documentElement).getPropertyValue('--text-2') || '#475569').trim(), fontSize: 11 };
     delete legend['top'];
     delete legend['right'];
     option['legend'] = legend;

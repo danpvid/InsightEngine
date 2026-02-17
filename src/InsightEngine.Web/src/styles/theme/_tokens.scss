@@ -17,6 +17,33 @@
   --space-5: 24px;
 }
 
+/* Legacy theme — preserve old app look (available as "Legacy" option) */
+.theme-legacy {
+  --bg: #f5f5f5;           /* old app background */
+  --surface: #ffffff;      /* main surface */
+  --surface-2: #f5f5f5;    /* panels */
+  --border: rgba(0,0,0,0.08);
+  --hover-bg: rgba(0,0,0,0.03);
+
+  --text: #222222;
+  --text-2: #666666;
+  --muted: rgba(34,34,34,0.48);
+
+  --primary: #3f51b5;      /* legacy indigo */
+  --primary-2: #5c6bc0;
+
+  --danger: #c62828;
+  --success: #2e7d32;
+  --warn: #f6a11a;
+
+  --shadow: rgba(2,6,23,0.06);
+  --code-bg: #f5f5f5;
+  --chip-bg: #e8eefc;  
+  /* skeleton gradient for light theme */
+  --skeleton-gradient: linear-gradient(90deg, #e2e8f0 25%, #eef2f7 50%, #f8fafc 75%);
+  --focus: rgba(63,81,181,0.12);
+}
+
 /* Light theme — Postman-like warm/light surfaces */
 .theme-light {
   --bg: #f3f6fb;            /* app background */
@@ -38,7 +65,9 @@
 
   --shadow: rgba(2,6,23,0.06);
   --code-bg: #f5f7fa;
-  --chip-bg: #f0f3ff;
+  --chip-bg: #f0f3ff;  
+  /* skeleton gradient for light theme */
+  --skeleton-gradient: linear-gradient(90deg, #e2e8f0 25%, #eef2f7 50%, #f8fafc 75%);
   --focus: rgba(255,106,0,0.18);
 }
 
@@ -63,7 +92,9 @@
 
   --shadow: rgba(2,6,23,0.6);
   --code-bg: #071426;
-  --chip-bg: rgba(255,255,255,0.02);
+  --chip-bg: rgba(255,255,255,0.02);  
+  /* skeleton gradient for dark theme */
+  --skeleton-gradient: linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0.02) 75%);
   --focus: rgba(255,106,0,0.14);
 }
 

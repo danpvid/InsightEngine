@@ -40,7 +40,7 @@ import { MatCardModule } from '@angular/material/card';
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background: var(--skeleton-gradient);
       background-size: 200% 100%;
       animation: shimmer 2s infinite;
     }
@@ -53,7 +53,7 @@ import { MatCardModule } from '@angular/material/card';
     .skeleton-title {
       height: 20px;
       width: 60%;
-      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background: var(--skeleton-gradient);
       background-size: 200% 100%;
       animation: shimmer 2s infinite;
       border-radius: 4px;
@@ -63,7 +63,7 @@ import { MatCardModule } from '@angular/material/card';
     .skeleton-subtitle {
       height: 14px;
       width: 80%;
-      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background: var(--skeleton-gradient);
       background-size: 200% 100%;
       animation: shimmer 2s infinite;
       border-radius: 4px;
@@ -72,7 +72,7 @@ import { MatCardModule } from '@angular/material/card';
     .skeleton-badge {
       height: 24px;
       width: 80px;
-      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background: var(--skeleton-gradient);
       background-size: 200% 100%;
       animation: shimmer 2s infinite;
       border-radius: 12px;
@@ -82,7 +82,7 @@ import { MatCardModule } from '@angular/material/card';
     .skeleton-line {
       height: 14px;
       width: 100%;
-      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background: var(--skeleton-gradient);
       background-size: 200% 100%;
       animation: shimmer 2s infinite;
       border-radius: 4px;

@@ -72,7 +72,7 @@ import { ApiError } from '../../../core/models/api-response.model';
     .trace {
       margin-top: 12px;
       font-size: 12px;
-      color: #475569;
+      color: var(--text-2);
       word-break: break-all;
     }
   `]

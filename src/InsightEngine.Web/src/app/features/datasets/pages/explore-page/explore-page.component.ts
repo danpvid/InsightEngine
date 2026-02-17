@@ -986,7 +986,7 @@ export class ExplorePageComponent implements OnInit {
             silent: true,
             style: {
               text: 'No histogram data',
-              fill: '#64748b',
+              fill: (getComputedStyle(document.documentElement).getPropertyValue('--text-2') || '#64748b').trim(),
               fontSize: 12,
               fontWeight: 500
             }

@@ -305,12 +305,12 @@
   h3 {
     font-size: 24px;
     font-weight: 400;
-    color: #666;
+    color: var(--text-2);
     margin-bottom: 16px;
   }
 
   p {
-    color: #999;
+    color: var(--text-2);
     margin-bottom: 24px;
   }
 }
