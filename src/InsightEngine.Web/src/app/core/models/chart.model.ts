@@ -77,6 +77,31 @@ export interface ChartMeta {
   generatedAt?: string;
   queryHash?: string;
   cacheHit?: boolean;
+  percentiles?: ChartPercentilesMeta;
+  view?: ChartViewMeta;
+}
+
+export type PercentileKind = 'P5' | 'P10' | 'P90' | 'P95';
+export type PercentileMode = 'None' | 'Bucket' | 'Overall' | 'NotApplicable';
+export type ChartViewKind = 'Base' | 'Percentile';
+
+export interface ChartPercentilesMeta {
+  supported: boolean;
+  mode: PercentileMode;
+  available: PercentileKind[];
+  reason?: string;
+  values?: PercentileValue[];
+}
+
+export interface PercentileValue {
+  kind: PercentileKind;
+  value: number;
+}
+
+export interface ChartViewMeta {
+  kind: ChartViewKind;
+  percentileKind?: PercentileKind;
+  percentileMode?: PercentileMode;
 }
 
 export interface InsightSummary {

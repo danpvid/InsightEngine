@@ -35,11 +35,21 @@ export class ShellComponent {
   ) {}
 
   get currentLanguage(): LanguageCode {
+    const firstSegment = this.router.url
+      .split('?')[0]
+      .split('#')[0]
+      .split('/')
+      .filter(segment => segment.length > 0)[0];
+
+    if (this.languageService.isSupportedLanguage(firstSegment)) {
+      return firstSegment;
+    }
+
     return this.languageService.currentLanguage;
   }
 
-  get newDatasetLink(): string {
-    return `/${this.currentLanguage}/datasets/new`;
+  get newDatasetLink(): string[] {
+    return ['/', this.currentLanguage, 'datasets', 'new'];
   }
 
   async onLanguageChange(language: string): Promise<void> {

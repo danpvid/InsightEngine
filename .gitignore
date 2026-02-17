@@ -15,6 +15,7 @@ secrets.json
 
 # Uploads de arquivos
 uploads/
+artifacts/
 *.csv
 !**/sample.csv
 

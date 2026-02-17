@@ -58,11 +58,21 @@ export class RecommendationsPageComponent implements OnInit {
   ) {}
 
   get currentLanguage(): string {
+    const firstSegment = this.router.url
+      .split('?')[0]
+      .split('#')[0]
+      .split('/')
+      .filter(segment => segment.length > 0)[0];
+
+    if (this.languageService.isSupportedLanguage(firstSegment)) {
+      return firstSegment;
+    }
+
     return this.languageService.currentLanguage;
   }
 
-  get newDatasetLink(): string {
-    return `/${this.currentLanguage}/datasets/new`;
+  get newDatasetLink(): string[] {
+    return ['/', this.currentLanguage, 'datasets', 'new'];
   }
 
   ngOnInit(): void {

@@ -9,13 +9,19 @@
         <mat-icon>upload_file</mat-icon>
         <span>{{ 'shell.newDataset' | translate }}</span>
       </button>
-      <mat-form-field appearance="outline" class="language-select">
-        <mat-label>{{ 'shell.language' | translate }}</mat-label>
-        <mat-select [ngModel]="currentLanguage" (ngModelChange)="onLanguageChange($event)">
-          <mat-option value="pt-br">PT-BR</mat-option>
-          <mat-option value="en">EN</mat-option>
-        </mat-select>
-      </mat-form-field>
+      <div class="language-picker">
+        <span class="language-caption">{{ 'shell.language' | translate }}</span>
+        <mat-form-field appearance="outline" class="language-select">
+          <mat-select
+            [ngModel]="currentLanguage"
+            (ngModelChange)="onLanguageChange($event)"
+            panelClass="language-select-panel"
+            aria-label="Language">
+            <mat-option value="pt-br">PT-BR</mat-option>
+            <mat-option value="en">EN</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
     </div>
   </div>
 </mat-toolbar>
