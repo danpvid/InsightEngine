@@ -26,6 +26,7 @@ namespace InsightEngine.API.Controllers.V1;
 [AllowAnonymous]
 public class DataSetController : BaseController
 {
+    private const string RawRowControlColumn = "__row_control_id";
     private readonly IDataSetApplicationService _dataSetApplicationService;
     private readonly IAIInsightService _aiInsightService;
     private readonly IDataSetCleanupService _dataSetCleanupService;
@@ -193,6 +194,55 @@ public class DataSetController : BaseController
     }
 
     /// <summary>
+    /// Remove permanentemente um dataset e todos os artefatos relacionados.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        try
+        {
+            var deletion = await _dataSetCleanupService.DeleteDatasetAsync(id);
+            if (deletion is null)
+            {
+                return ErrorResponse(StatusCodes.Status404NotFound, "not_found", $"Dataset not found: {id}");
+            }
+
+            if (!deletion.RemovedMetadataRecord)
+            {
+                return ErrorResponse(
+                    StatusCodes.Status500InternalServerError,
+                    "internal_error",
+                    $"Failed to remove dataset metadata for: {id}");
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    datasetId = deletion.DatasetId,
+                    removedMetadataRecord = deletion.RemovedMetadataRecord,
+                    deletedFile = deletion.DeletedFile,
+                    deletedLegacyArtifacts = deletion.DeletedLegacyArtifacts,
+                    clearedMetadataCache = deletion.ClearedMetadataCache,
+                    clearedChartCache = deletion.ClearedChartCache
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting dataset {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao remover dataset.");
+        }
+    }
+
+    /// <summary>
     /// Gera profile (análise) de um dataset CSV
     /// </summary>
     /// <param name="id">ID do dataset</param>
@@ -348,7 +398,8 @@ public class DataSetController : BaseController
                 {
                     Column = columnLookup[filter.Column],
                     Operator = filter.Operator,
-                    Values = filter.Values
+                    Values = filter.Values,
+                    LogicalOperator = filter.LogicalOperator
                 });
             }
 
@@ -371,8 +422,14 @@ FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause
 ";
 
             var dataSql = $@"
+WITH source_rows AS (
+    SELECT
+        ROW_NUMBER() OVER () AS {EscapeIdentifier(RawRowControlColumn)},
+        *
+    FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
+)
 SELECT {selectColumns}
-FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause}
+FROM source_rows{whereClause}
 {orderClause}
 LIMIT {effectivePageSize}
 OFFSET {offset};
@@ -1488,13 +1545,14 @@ LIMIT {RawTopRangesLimit};
                 return string.Empty;
             }
 
-            return $"\nORDER BY {EscapeIdentifier(columns[0])} ASC";
+            return $"\nORDER BY {EscapeIdentifier(columns[0])} ASC, {EscapeIdentifier(RawRowControlColumn)} ASC";
         }
 
         var segments = sortRules
             .Select(rule => $"{EscapeIdentifier(rule.Column)} {(rule.Descending ? "DESC" : "ASC")}")
             .ToList();
 
+        segments.Add($"{EscapeIdentifier(RawRowControlColumn)} ASC");
         return $"\nORDER BY {string.Join(", ", segments)}";
     }
 

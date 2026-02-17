@@ -8,17 +8,23 @@ public class DataSetCleanupService : IDataSetCleanupService
 {
     private readonly IDataSetRepository _dataSetRepository;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IMetadataCacheService _metadataCacheService;
+    private readonly IChartQueryCache _chartQueryCache;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<DataSetCleanupService> _logger;
 
     public DataSetCleanupService(
         IDataSetRepository dataSetRepository,
         IFileStorageService fileStorageService,
+        IMetadataCacheService metadataCacheService,
+        IChartQueryCache chartQueryCache,
         IUnitOfWork unitOfWork,
         ILogger<DataSetCleanupService> logger)
     {
         _dataSetRepository = dataSetRepository;
         _fileStorageService = fileStorageService;
+        _metadataCacheService = metadataCacheService;
+        _chartQueryCache = chartQueryCache;
         _unitOfWork = unitOfWork;
         _logger = logger;
     }
@@ -73,6 +79,56 @@ public class DataSetCleanupService : IDataSetCleanupService
             result.DeletedLegacyArtifacts);
 
         return result;
+    }
+
+    public async Task<DataSetDeletionResult?> DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    {
+        var dataSet = await _dataSetRepository.GetByIdAsync(datasetId);
+        if (dataSet is null)
+        {
+            return null;
+        }
+
+        var deletedFile = false;
+        if (!string.IsNullOrWhiteSpace(dataSet.StoredFileName))
+        {
+            deletedFile = await _fileStorageService.DeleteFileAsync(dataSet.StoredFileName);
+        }
+
+        if (!deletedFile && !string.IsNullOrWhiteSpace(dataSet.StoredPath))
+        {
+            deletedFile = DeleteIfExists(dataSet.StoredPath);
+        }
+
+        var legacyMetadataDeleted = false;
+        var legacyMetadataPath = Path.Combine(_fileStorageService.GetStoragePath(), $"{datasetId}.meta.json");
+        if (DeleteIfExists(legacyMetadataPath))
+        {
+            legacyMetadataDeleted = true;
+        }
+
+        await _metadataCacheService.ClearCacheAsync(datasetId);
+        await _chartQueryCache.InvalidateDatasetAsync(datasetId);
+
+        _dataSetRepository.Remove(dataSet);
+        var commitSucceeded = await _unitOfWork.CommitAsync();
+
+        _logger.LogInformation(
+            "Dataset deleted. DatasetId={DatasetId} MetadataRemoved={MetadataRemoved} FileDeleted={FileDeleted} LegacyArtifactsDeleted={LegacyDeleted}",
+            datasetId,
+            commitSucceeded,
+            deletedFile,
+            legacyMetadataDeleted);
+
+        return new DataSetDeletionResult
+        {
+            DatasetId = datasetId,
+            RemovedMetadataRecord = commitSucceeded,
+            DeletedFile = deletedFile,
+            DeletedLegacyArtifacts = legacyMetadataDeleted,
+            ClearedMetadataCache = true,
+            ClearedChartCache = true
+        };
     }
 
     private static bool DeleteIfExists(string path)
