@@ -239,7 +239,7 @@
 
 .datasets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 16px;
   margin-top: 16px;
 }
@@ -340,9 +340,12 @@
     margin: 0;
     display: flex;
     gap: 8px;
+    align-items: center;
+    justify-content: space-between;
 
     button {
-      flex: 1;
+      flex: 0 1 auto;
+      white-space: nowrap;
     }
   }
 }
