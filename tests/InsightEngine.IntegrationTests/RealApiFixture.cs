@@ -13,8 +13,7 @@ public class RealApiFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         // Start the API in background
-        var projectPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", "..", "..", "src", "InsightEngine.API");
-        var apiPath = Path.GetFullPath(projectPath);
+        var apiPath = ResolveApiProjectPath();
         
         _apiProcess = new Process
         {
@@ -58,6 +57,23 @@ public class RealApiFixture : IAsyncLifetime
         {
             throw new Exception("API failed to start within 30 seconds");
         }
+    }
+
+    private static string ResolveApiProjectPath()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            var candidate = Path.Combine(current.FullName, "src", "InsightEngine.API");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            current = current.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate src/InsightEngine.API from test runtime directory.");
     }
     
     public Task DisposeAsync()
