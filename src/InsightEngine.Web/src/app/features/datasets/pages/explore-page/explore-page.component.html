@@ -1,8 +1,8 @@
 <div class="container-wide" style="max-width:none;width:100%;">
   <nav class="breadcrumb">
-    <a [routerLink]="recommendationsLink" class="breadcrumb-item">
-      <mat-icon>auto_awesome</mat-icon>
-      <span>{{ 'recommendations.breadcrumb' | translate }}</span>
+    <a [routerLink]="newDatasetLink" class="breadcrumb-item">
+      <mat-icon>upload_file</mat-icon>
+      <span>{{ 'common.datasets' | translate }}</span>
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
     <span class="breadcrumb-item active">
@@ -457,7 +457,7 @@
                     <mat-card-content>
                       <mat-form-field appearance="outline" class="distribution-date-select">
                         <mat-label>{{ 'explore.distributionDateSelect' | translate }}</mat-label>
-                        <mat-select [(ngModel)]="selectedDistributionDateField">
+                        <mat-select [(ngModel)]="selectedDistributionDateField" (selectionChange)="onDistributionDateFieldChange()">
                           <mat-option [value]="''">None</mat-option>
                           <mat-option *ngFor="let field of dateFields" [value]="field.name">{{ field.name }}</mat-option>
                         </mat-select>
@@ -472,7 +472,12 @@
                       <mat-card-title>{{ chart.field.name }}</mat-card-title>
                     </mat-card-header>
                     <mat-card-content>
-                      <div echarts class="distribution-chart" [options]="chart.option"></div>
+                      <div
+                        echarts
+                        class="distribution-chart"
+                        [options]="chart.option"
+                        [autoResize]="true"
+                        (chartInit)="onDistributionChartInit($event)"></div>
                     </mat-card-content>
                   </mat-card>
 
@@ -481,7 +486,12 @@
                       <mat-card-title>{{ selectedDistributionDateField }}</mat-card-title>
                     </mat-card-header>
                     <mat-card-content>
-                      <div echarts class="distribution-chart" [options]="selectedDateDistributionOption"></div>
+                      <div
+                        echarts
+                        class="distribution-chart"
+                        [options]="selectedDateDistributionOption"
+                        [autoResize]="true"
+                        (chartInit)="onDistributionChartInit($event)"></div>
                     </mat-card-content>
                   </mat-card>
                 </section>
@@ -547,13 +557,14 @@
                       <tr *ngFor="let row of displayedGridRows">
                         <td *ngFor="let column of visibleGridColumns">
                           <div class="cell-content">
-                            <span>{{ row[column] }}</span>
+                            <span [matTooltip]="(row[column] || '').toString()">{{ row[column] }}</span>
                             <div class="cell-actions" *ngIf="row[column] as value">
-                              <button mat-icon-button (click)="addGridCellFilter(column, value, false)" [matTooltip]="'explore.gridFilterTo' | translate">
-                                <mat-icon>filter_alt</mat-icon>
-                              </button>
-                              <button mat-icon-button (click)="addGridCellFilter(column, value, true)" [matTooltip]="'explore.gridExclude' | translate">
-                                <mat-icon>block</mat-icon>
+                              <button
+                                mat-icon-button
+                                [matMenuTriggerFor]="gridCellActionsMenu"
+                                (click)="setGridCellActionContext(column, value); $event.stopPropagation()"
+                                [attr.aria-label]="'Grid cell actions'">
+                                <mat-icon>more_vert</mat-icon>
                               </button>
                             </div>
                           </div>
@@ -572,6 +583,16 @@
               <ng-template #noGridColumns>
                 <div class="tab-placeholder">{{ 'explore.gridPlaceholder' | translate }}</div>
               </ng-template>
+              <mat-menu #gridCellActionsMenu="matMenu" class="grid-cell-menu">
+                <button mat-menu-item (click)="applyGridCellAction(false)">
+                  <mat-icon>filter_alt</mat-icon>
+                  <span>{{ 'explore.gridFilterTo' | translate }}</span>
+                </button>
+                <button mat-menu-item (click)="applyGridCellAction(true)">
+                  <mat-icon>block</mat-icon>
+                  <span>{{ 'explore.gridExclude' | translate }}</span>
+                </button>
+              </mat-menu>
             </mat-tab>
           </mat-tab-group>
         </mat-card-content>

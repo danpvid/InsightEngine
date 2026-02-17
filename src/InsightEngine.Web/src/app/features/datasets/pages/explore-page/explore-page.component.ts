@@ -13,6 +13,7 @@ import { DatasetApiService } from '../../../../core/services/dataset-api.service
 import { ToastService } from '../../../../core/services/toast.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
+import { ChartRecommendation } from '../../../../core/models/recommendation.model';
 import {
   ColumnIndex,
   CorrelationEdge,
@@ -81,6 +82,8 @@ export class ExplorePageComponent implements OnInit {
   correlationStrengthFilter: string = 'All';
   selectedDistributionFields: string[] = [];
   selectedDistributionDateField: string = '';
+  distributionSeries: Array<{ field: ColumnIndex; option: EChartsOption }> = [];
+  selectedDateDistributionOption: EChartsOption | null = null;
   gridLoading: boolean = false;
   gridColumns: string[] = [];
   gridRows: RawDatasetRow[] = [];
@@ -91,6 +94,7 @@ export class ExplorePageComponent implements OnInit {
   gridBackendFilters: string[] = [];
   gridTotalRows: number = 0;
   gridPageSize: number = 200;
+  gridCellActionContext: { column: string; value: string } | null = null;
   savedViews: ExploreSavedView[] = [];
   selectedSavedViewId: string = '';
   activeFilters: string[] = [];
@@ -116,8 +120,8 @@ export class ExplorePageComponent implements OnInit {
     this.loadIndex();
   }
 
-  get recommendationsLink(): string[] {
-    return ['../recommendations'];
+  get newDatasetLink(): string[] {
+    return ['/', this.currentLanguage, 'datasets', 'new'];
   }
 
   get currentLanguage(): string {
@@ -142,7 +146,8 @@ export class ExplorePageComponent implements OnInit {
     const term = this.fieldSearch.trim().toLowerCase();
 
     return this.index.columns.filter(column => {
-      const typeMatch = this.selectedTypeFilters.length === 0 || this.selectedTypeFilters.includes(column.inferredType);
+      const normalizedType = this.normalizeInferredType(column.inferredType);
+      const typeMatch = this.selectedTypeFilters.length === 0 || this.selectedTypeFilters.includes(normalizedType);
       const termMatch = term.length === 0
         || column.name.toLowerCase().includes(term)
         || column.semanticTags.some(tag => tag.toLowerCase().includes(term));
@@ -187,72 +192,11 @@ export class ExplorePageComponent implements OnInit {
   }
 
   get numericFields(): ColumnIndex[] {
-    return (this.index?.columns || []).filter(column => column.inferredType === 'Number' && !!column.numericStats);
+    return (this.index?.columns || []).filter(column => this.normalizeInferredType(column.inferredType) === 'Number' && !!column.numericStats);
   }
 
   get dateFields(): ColumnIndex[] {
-    return (this.index?.columns || []).filter(column => column.inferredType === 'Date' && !!column.dateStats);
-  }
-
-  get distributionSeries(): Array<{ field: ColumnIndex; option: EChartsOption }> {
-    if (!this.index) {
-      return [];
-    }
-
-    return this.selectedDistributionFields
-      .map(fieldName => this.index!.columns.find(column => column.name === fieldName) || null)
-      .filter((field): field is ColumnIndex => !!field?.numericStats?.histogram?.length)
-      .map(field => ({
-        field,
-        option: this.buildDistributionOption(field)
-      }));
-  }
-
-  get selectedDateDistributionOption(): EChartsOption | null {
-    if (!this.index || !this.selectedDistributionDateField) {
-      return null;
-    }
-
-    const field = this.index.columns.find(column => column.name === this.selectedDistributionDateField);
-    if (!field?.dateStats?.coverage || field.dateStats.coverage.length === 0) {
-      return null;
-    }
-
-    return {
-      tooltip: {
-        trigger: 'axis'
-      },
-      grid: {
-        left: 40,
-        right: 14,
-        top: 18,
-        bottom: 34
-      },
-      xAxis: {
-        type: 'category',
-        axisLabel: { rotate: 30 },
-        data: field.dateStats.coverage.map(item => new Date(item.start).toLocaleDateString())
-      },
-      yAxis: {
-        type: 'value'
-      },
-      series: [
-        {
-          type: 'line',
-          data: field.dateStats.coverage.map(item => item.count),
-          smooth: true,
-          areaStyle: {
-            color: 'rgba(59, 130, 246, 0.12)'
-          },
-          lineStyle: {
-            color: '#2563eb'
-          },
-          itemStyle: {
-            color: '#2563eb'
-          }
-        }
-      ]
-    };
+    return (this.index?.columns || []).filter(column => this.normalizeInferredType(column.inferredType) === 'Date' && !!column.dateStats);
   }
 
   get visibleGridColumns(): string[] {
@@ -414,7 +358,10 @@ export class ExplorePageComponent implements OnInit {
     }
 
     return this.index.columns
-      .filter(column => column.inferredType === 'Category' || column.inferredType === 'String')
+      .filter(column => {
+        const normalizedType = this.normalizeInferredType(column.inferredType);
+        return normalizedType === 'Category' || normalizedType === 'String';
+      })
       .sort((left, right) => right.distinctCount - left.distinctCount)
       .slice(0, 5);
   }
@@ -476,6 +423,7 @@ export class ExplorePageComponent implements OnInit {
   onToggleDistributionField(fieldName: string, checked: boolean): void {
     if (!checked) {
       this.selectedDistributionFields = this.selectedDistributionFields.filter(name => name !== fieldName);
+      this.rebuildDistributionCharts();
       return;
     }
 
@@ -485,10 +433,22 @@ export class ExplorePageComponent implements OnInit {
     }
 
     this.selectedDistributionFields = [...this.selectedDistributionFields, fieldName];
+    this.rebuildDistributionCharts();
+    this.triggerDistributionChartsResize();
+  }
+
+  onDistributionDateFieldChange(): void {
+    this.rebuildDistributionCharts();
+    this.triggerDistributionChartsResize();
   }
 
   onTabChanged(index: number): void {
     this.selectedTabIndex = index;
+    if (index === 3) {
+      this.rebuildDistributionCharts();
+      this.triggerDistributionChartsResize();
+    }
+
     if (index === 4 && this.gridRows.length === 0 && !this.gridLoading) {
       this.loadGridData();
     }
@@ -546,12 +506,46 @@ export class ExplorePageComponent implements OnInit {
     this.gridSortDirection = 'asc';
   }
 
+  setGridCellActionContext(column: string, value: string | null): void {
+    const normalizedValue = value?.toString() ?? '';
+    if (!normalizedValue) {
+      this.gridCellActionContext = null;
+      return;
+    }
+
+    this.gridCellActionContext = {
+      column,
+      value: normalizedValue
+    };
+  }
+
+  applyGridCellAction(exclude: boolean): void {
+    if (!this.gridCellActionContext) {
+      return;
+    }
+
+    this.addGridCellFilter(
+      this.gridCellActionContext.column,
+      this.gridCellActionContext.value,
+      exclude
+    );
+  }
+
+  onDistributionChartInit(chart: any): void {
+    if (!chart || typeof chart.resize !== 'function') {
+      return;
+    }
+
+    setTimeout(() => chart.resize(), 0);
+    setTimeout(() => chart.resize(), 120);
+  }
+
   addGridCellFilter(column: string, value: string | null, exclude: boolean): void {
     if (!value) {
       return;
     }
 
-    const op = exclude ? 'neq' : 'eq';
+    const op = exclude ? 'NotEq' : 'Eq';
     const token = `${column}|${op}|${value}`;
     if (this.gridBackendFilters.includes(token)) {
       return;
@@ -634,10 +628,7 @@ export class ExplorePageComponent implements OnInit {
       return;
     }
 
-    this.router.navigate(
-      ['/', this.currentLanguage, 'datasets', this.datasetId, 'recommendations'],
-      { queryParams: { correlationPair: `${correlation.leftColumn},${correlation.rightColumn}` } }
-    );
+    this.openCorrelationChart(correlation, false);
   }
 
   addCorrelationComparison(): void {
@@ -646,7 +637,7 @@ export class ExplorePageComponent implements OnInit {
       return;
     }
 
-    this.toast.info(`Comparison queued: ${correlation.leftColumn} vs ${correlation.rightColumn}`);
+    this.openCorrelationChart(correlation, true);
   }
 
   pinSelectedField(): void {
@@ -795,7 +786,7 @@ export class ExplorePageComponent implements OnInit {
   }
 
   getInferredTypeIcon(type: InferredType): string {
-    switch (type) {
+    switch (this.normalizeInferredType(type)) {
       case 'Number':
         return 'tag';
       case 'Date':
@@ -855,6 +846,7 @@ export class ExplorePageComponent implements OnInit {
 
         this.index = response.data;
         this.ensureFieldSelection();
+        this.rebuildDistributionCharts();
         if (this.selectedTabIndex === 4 && this.gridRows.length === 0) {
           this.loadGridData();
         }
@@ -967,6 +959,7 @@ export class ExplorePageComponent implements OnInit {
     this.gridSortColumn = state.gridSortColumn;
     this.gridSortDirection = state.gridSortDirection;
     this.gridBackendFilters = [...state.gridBackendFilters];
+    this.rebuildDistributionCharts();
 
     if (this.selectedTabIndex === 4) {
       this.loadGridData();
@@ -978,23 +971,60 @@ export class ExplorePageComponent implements OnInit {
   }
 
   private buildDistributionOption(field: ColumnIndex): EChartsOption {
-    const histogram = field.numericStats?.histogram ?? [];
-    const stats = field.numericStats;
+    const validBins = this.extractHistogramBins(field);
+
+    if (validBins.length === 0) {
+      return {
+        xAxis: { show: false, type: 'category' },
+        yAxis: { show: false, type: 'value' },
+        series: [],
+        graphic: [
+          {
+            type: 'text',
+            left: 'center',
+            top: 'middle',
+            silent: true,
+            style: {
+              text: 'No histogram data',
+              fill: '#64748b',
+              fontSize: 12,
+              fontWeight: 500
+            }
+          }
+        ]
+      };
+    }
 
     return {
       tooltip: {
-        trigger: 'axis'
+        trigger: 'axis',
+        formatter: (params: any) => {
+          const point = Array.isArray(params) ? params[0] : params;
+          const dataIndex = Number(point?.dataIndex ?? 0);
+          const bin = validBins[dataIndex];
+          if (!bin) {
+            return '';
+          }
+
+          const lower = this.formatDistributionNumber(bin.lowerBound);
+          const upper = this.formatDistributionNumber(bin.upperBound);
+          return `${lower} - ${upper}<br/>Count: <strong>${bin.count}</strong>`;
+        }
       },
       grid: {
-        left: 40,
-        right: 14,
+        left: 48,
+        right: 16,
         top: 18,
-        bottom: 28
+        bottom: 40,
+        containLabel: true
       },
       xAxis: {
         type: 'category',
-        axisLabel: { show: false },
-        data: histogram.map((_, index) => `${index + 1}`)
+        axisLabel: {
+          show: false,
+          hideOverlap: true
+        },
+        data: validBins.map((_, index) => `${index + 1}`)
       },
       yAxis: {
         type: 'value'
@@ -1002,31 +1032,241 @@ export class ExplorePageComponent implements OnInit {
       series: [
         {
           type: 'bar',
-          data: histogram.map(bin => bin.count),
+          barMaxWidth: 20,
+          data: validBins.map(bin => Number(bin.count) || 0),
           itemStyle: {
             color: '#1d4ed8'
-          },
-          markLine: {
-            symbol: 'none',
-            label: { show: false },
-            data: [
-              { xAxis: stats?.p5 != null ? this.findHistogramIndex(histogram, stats.p5) : undefined },
-              { xAxis: stats?.p10 != null ? this.findHistogramIndex(histogram, stats.p10) : undefined },
-              { xAxis: stats?.p50 != null ? this.findHistogramIndex(histogram, stats.p50) : undefined },
-              { xAxis: stats?.p90 != null ? this.findHistogramIndex(histogram, stats.p90) : undefined },
-              { xAxis: stats?.p95 != null ? this.findHistogramIndex(histogram, stats.p95) : undefined }
-            ].filter(item => item.xAxis != null)
           }
         }
       ]
     };
   }
 
-  private findHistogramIndex(
-    histogram: Array<{ lowerBound: number; upperBound: number }>,
-    value: number
-  ): number {
-    const index = histogram.findIndex(bin => value >= bin.lowerBound && value <= bin.upperBound);
-    return index >= 0 ? index : 0;
+  private rebuildDistributionCharts(): void {
+    if (!this.index) {
+      this.distributionSeries = [];
+      this.selectedDateDistributionOption = null;
+      return;
+    }
+
+    this.distributionSeries = this.selectedDistributionFields
+      .map(fieldName => this.index!.columns.find(column => column.name === fieldName) || null)
+      .filter((field): field is ColumnIndex => !!field?.numericStats?.histogram?.length)
+      .map(field => ({
+        field,
+        option: this.buildDistributionOption(field)
+      }));
+
+    const dateField = this.index.columns.find(column => column.name === this.selectedDistributionDateField);
+    this.selectedDateDistributionOption = this.buildDateDistributionOption(dateField || null);
+  }
+
+  private buildDateDistributionOption(field: ColumnIndex | null): EChartsOption | null {
+    if (!field?.dateStats?.coverage || field.dateStats.coverage.length === 0) {
+      return null;
+    }
+
+    return {
+      tooltip: {
+        trigger: 'axis'
+      },
+      grid: {
+        left: 48,
+        right: 16,
+        top: 18,
+        bottom: 56,
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        axisLabel: {
+          rotate: 30,
+          hideOverlap: true,
+          formatter: (value: string) => this.formatDateLabel(value)
+        },
+        data: field.dateStats.coverage.map(item => item.start)
+      },
+      yAxis: {
+        type: 'value'
+      },
+      dataZoom: field.dateStats.coverage.length > 30
+        ? [
+            { type: 'inside', start: 0, end: 35 },
+            { type: 'slider', start: 0, end: 35, height: 16, bottom: 6 }
+          ]
+        : undefined,
+      series: [
+        {
+          type: 'line',
+          data: field.dateStats.coverage.map(item => item.count),
+          smooth: true,
+          areaStyle: {
+            color: 'rgba(59, 130, 246, 0.12)'
+          },
+          lineStyle: {
+            color: '#2563eb'
+          },
+          itemStyle: {
+            color: '#2563eb'
+          }
+        }
+      ]
+    };
+  }
+
+  private normalizeInferredType(type: InferredType): 'Number' | 'Date' | 'Boolean' | 'Category' | 'String' {
+    const normalized = (type || '').toString().trim().toLowerCase();
+    if (normalized === 'number' || normalized === 'numeric') return 'Number';
+    if (normalized === 'date' || normalized === 'datetime' || normalized === 'timestamp') return 'Date';
+    if (normalized === 'boolean' || normalized === 'bool') return 'Boolean';
+    if (normalized === 'category' || normalized === 'categorical') return 'Category';
+    return 'String';
+  }
+
+  private formatDateLabel(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleDateString();
+  }
+
+  private extractHistogramBins(field: ColumnIndex): Array<{ lowerBound: number; upperBound: number; count: number }> {
+    const rawBins = (field.numericStats?.histogram || []) as unknown[];
+    const result: Array<{ lowerBound: number; upperBound: number; count: number }> = [];
+
+    for (const raw of rawBins) {
+      if (!raw || typeof raw !== 'object') {
+        continue;
+      }
+
+      const bin = raw as Record<string, unknown>;
+      const lower = this.firstFiniteNumber([
+        bin['lowerBound'],
+        bin['lower'],
+        bin['min'],
+        bin['start'],
+        bin['rangeMin']
+      ]);
+      const upper = this.firstFiniteNumber([
+        bin['upperBound'],
+        bin['upper'],
+        bin['max'],
+        bin['end'],
+        bin['rangeMax']
+      ]);
+      const count = this.firstFiniteNumber([
+        bin['count'],
+        bin['frequency'],
+        bin['value']
+      ]);
+
+      if (count == null) {
+        continue;
+      }
+
+      const normalizedLower = lower ?? upper;
+      const normalizedUpper = upper ?? lower;
+      if (normalizedLower == null || normalizedUpper == null) {
+        continue;
+      }
+
+      result.push({
+        lowerBound: Math.min(normalizedLower, normalizedUpper),
+        upperBound: Math.max(normalizedLower, normalizedUpper),
+        count
+      });
+    }
+
+    return result;
+  }
+
+  private firstFiniteNumber(values: unknown[]): number | null {
+    for (const value of values) {
+      const parsed = this.toFiniteNumber(value);
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  private toFiniteNumber(value: unknown): number | null {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const raw = value.trim();
+    if (raw.length === 0) {
+      return null;
+    }
+
+    const normalized = raw.includes(',')
+      ? raw.replace(/\./g, '').replace(',', '.')
+      : raw;
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private formatDistributionNumber(value: number): string {
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
+  }
+
+  private triggerDistributionChartsResize(): void {
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 120);
+  }
+
+  private openCorrelationChart(correlation: CorrelationEdge, includeComparison: boolean): void {
+    if (!this.datasetId) {
+      return;
+    }
+
+    this.datasetApi.getRecommendations(this.datasetId).subscribe({
+      next: response => {
+        if (!response.success || !response.data || !Array.isArray(response.data) || response.data.length === 0) {
+          this.toast.error('No chart recommendations available for this dataset.');
+          return;
+        }
+
+        const recommendations = response.data as ChartRecommendation[];
+        const scatterRecommendation = recommendations.find(item =>
+          (item.chart?.type || '').toLowerCase() === 'scatter');
+        const targetRecommendation = scatterRecommendation || recommendations[0];
+
+        const metrics = includeComparison
+          ? this.distinctValues([correlation.leftColumn, correlation.rightColumn])
+          : [correlation.rightColumn];
+
+        this.router.navigate(
+          ['/', this.currentLanguage, 'datasets', this.datasetId, 'charts', targetRecommendation.id],
+          {
+            queryParams: {
+              chartType: 'Scatter',
+              xColumn: correlation.leftColumn,
+              metricY: metrics
+            }
+          }
+        );
+      },
+      error: err => {
+        this.toast.error(HttpErrorUtil.extractErrorMessage(err));
+      }
+    });
+  }
+
+  private distinctValues(values: string[]): string[] {
+    const cleaned = values
+      .map(value => value.trim())
+      .filter(value => value.length > 0);
+
+    return [...new Set(cleaned)];
   }
 }

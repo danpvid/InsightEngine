@@ -3455,20 +3455,22 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       }
 
       const normalizedName = this.normalizeAxisNameLabel(`${axis['name']}`);
+      const axisPosition = `${axis['position'] ?? 'left'}`.toLowerCase() === 'right' ? 'right' : 'left';
       const isSingleAxis = axisCount <= 1;
 
       axis['name'] = isSingleAxis
-        ? this.truncateAxisName(normalizedName, 28)
-        : this.truncateAxisName(normalizedName, 22);
+        ? this.truncateAxisName(normalizedName, 24)
+        : this.truncateAxisName(normalizedName, this.isMobile ? 12 : 20);
 
       if (isSingleAxis) {
         axis['nameLocation'] = 'end';
         axis['nameRotate'] = 0;
         axis['nameGap'] = 12;
       } else {
-        axis['nameLocation'] = 'middle';
-        axis['nameRotate'] = 90;
-        axis['nameGap'] = 48;
+        // Horizontal names on top avoid overlap with tick labels on dual-axis charts.
+        axis['nameLocation'] = 'end';
+        axis['nameRotate'] = 0;
+        axis['nameGap'] = this.isMobile ? 16 : 18;
       }
 
       const nameTextStyle = this.asObject(axis['nameTextStyle']) || {};
@@ -3476,12 +3478,17 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       nameTextStyle['color'] = '#475569';
       if (isSingleAxis) {
         nameTextStyle['align'] = 'right';
+        nameTextStyle['verticalAlign'] = 'middle';
+      } else {
+        nameTextStyle['align'] = axisPosition === 'right' ? 'left' : 'right';
+        nameTextStyle['verticalAlign'] = 'bottom';
       }
       axis['nameTextStyle'] = nameTextStyle;
 
       const axisLabel = this.asObject(axis['axisLabel']) || {};
       axisLabel['hideOverlap'] = true;
       axisLabel['fontSize'] = 11;
+       axisLabel['margin'] = Math.max(10, this.tryParseNumeric(axisLabel['margin']) ?? 0);
       axis['axisLabel'] = axisLabel;
 
       return axis;
@@ -3511,9 +3518,25 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   private ensureGridSpacing(option: Record<string, unknown>): void {
     const yAxisRaw = option['yAxis'];
-    const yAxisCount = Array.isArray(yAxisRaw) ? yAxisRaw.length : (yAxisRaw ? 1 : 0);
-    const leftColumns = Math.ceil(Math.max(yAxisCount, 1) / 2);
-    const rightColumns = Math.floor(Math.max(yAxisCount, 1) / 2);
+    const yAxes = Array.isArray(yAxisRaw)
+      ? yAxisRaw.map(item => this.asObject(item)).filter((item): item is Record<string, unknown> => item !== null)
+      : (() => {
+          const single = this.asObject(yAxisRaw);
+          return single ? [single] : [];
+        })();
+
+    const yAxisCount = yAxes.length;
+    const leftColumns = Math.max(1, yAxes.filter(axis => `${axis['position'] ?? 'left'}` !== 'right').length);
+    const rightColumns = yAxes.filter(axis => `${axis['position'] ?? 'left'}` === 'right').length;
+    const longestLeftName = yAxes
+      .filter(axis => `${axis['position'] ?? 'left'}` !== 'right')
+      .map(axis => `${axis['name'] ?? ''}`.length)
+      .reduce((max, length) => Math.max(max, length), 0);
+    const longestRightName = yAxes
+      .filter(axis => `${axis['position'] ?? 'left'}` === 'right')
+      .map(axis => `${axis['name'] ?? ''}`.length)
+      .reduce((max, length) => Math.max(max, length), 0);
+
     const legendItems = this.readLegendList(option);
     const hasVerticalLegendBelow = legendItems.some(item =>
       `${item['orient'] ?? ''}` === 'vertical' && !!item['bottom']);
@@ -3522,10 +3545,13 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
     const grid = this.asObject(option['grid']) || {};
     grid['containLabel'] = true;
-    const leftBase = this.isMobile ? 17 : 14;
-    const rightBase = this.isMobile ? 13 : 12;
-    grid['left'] = `${Math.min(30, leftBase + (leftColumns - 1) * 7)}%`;
-    grid['right'] = `${Math.min(34, rightBase + (rightColumns - 1) * 7)}%`;
+    const leftBase = this.isMobile ? 18 : 15;
+    const rightBase = this.isMobile ? 16 : 14;
+    const leftNameExtra = yAxisCount > 1 ? Math.min(5, Math.floor(longestLeftName / 6)) : 0;
+    const rightNameExtra = yAxisCount > 1 ? Math.min(6, Math.floor(longestRightName / 6)) : 0;
+
+    grid['left'] = `${Math.min(34, leftBase + (leftColumns - 1) * 7 + leftNameExtra)}%`;
+    grid['right'] = `${Math.min(38, rightBase + (rightColumns - 1) * 7 + rightNameExtra)}%`;
     grid['top'] = grid['top'] || '12%';
     grid['bottom'] = hasVerticalLegendBelow
       ? '46%'

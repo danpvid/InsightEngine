@@ -1,9 +1,61 @@
+:host {
+  display: block;
+}
+
+.container-wide {
+  max-width: none;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: #3f51b5;
+  text-decoration: none;
+  font-weight: 500;
+
+  &:hover {
+    background-color: #e3f2fd;
+  }
+
+  &.active {
+    color: #475569;
+    font-weight: 600;
+    background: transparent;
+  }
+}
+
+.breadcrumb-separator {
+  color: #999;
+  font-size: 18px;
+}
+
 .explore-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+  padding: 8px 10px;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
 }
 
 .status-chip {
@@ -54,8 +106,25 @@
 
 .explore-layout {
   display: grid;
-  grid-template-columns: 280px 1fr 280px;
+  grid-template-columns: 280px minmax(0, 1fr) 280px;
   gap: 12px;
+  align-items: start;
+}
+
+.fields-sidebar,
+.main-panels,
+.details-panel {
+  min-width: 0;
+}
+
+.fields-sidebar mat-card,
+.main-panels mat-card,
+.details-panel mat-card {
+  overflow: hidden;
+}
+
+.main-panels :is(mat-card-content, .mat-mdc-tab-group, .mat-mdc-tab-body-wrapper, .mat-mdc-tab-body, .mat-mdc-tab-body-content) {
+  min-width: 0;
 }
 
 .sidebar-header {
@@ -234,11 +303,13 @@
 
 .correlations-grid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: 12px;
 }
 
 .table-wrapper {
+  width: 100%;
+  max-width: 100%;
   max-height: 360px;
   overflow: auto;
 }
@@ -265,6 +336,8 @@
 }
 
 .matrix-wrapper {
+  width: 100%;
+  max-width: 100%;
   overflow: auto;
 }
 
@@ -280,7 +353,14 @@
     min-width: 56px;
   }
 
-  th {
+  thead th {
+    background: #f8fafc;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  tbody th {
     background: #f8fafc;
     position: sticky;
     left: 0;
@@ -350,6 +430,18 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  align-items: start;
+}
+
+.distribution-charts > mat-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.distribution-charts mat-card-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .distribution-chart {
@@ -397,8 +489,12 @@
 }
 
 .grid-table-wrapper {
+  width: 100%;
+  max-width: 100%;
   max-height: 450px;
   overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 }
 
 .data-grid-table {
@@ -410,7 +506,8 @@
   th, td {
     border-bottom: 1px solid #e2e8f0;
     padding: 6px 8px;
-    vertical-align: top;
+    vertical-align: middle;
+    max-width: 240px;
   }
 
   th {
@@ -424,16 +521,69 @@
 }
 
 .cell-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  position: relative;
+  display: block;
   min-width: 120px;
+  padding-right: 28px;
+
+  > span {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .cell-actions {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
   display: inline-flex;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-in-out;
+
+  button {
+    width: 22px;
+    height: 22px;
+    line-height: 22px;
+    padding: 0;
+  }
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    color: #475569;
+  }
+}
+
+.data-grid-table td:hover .cell-actions {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+:host ::ng-deep .grid-cell-menu .mat-mdc-menu-item {
+  min-height: 34px;
+}
+
+:host ::ng-deep .grid-cell-menu .mdc-list-item__primary-text {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+:host ::ng-deep .grid-cell-menu .mat-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
 }
 
 .overview-grid {
@@ -441,6 +591,21 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   padding: 10px 4px 0;
+  align-items: start;
+}
+
+.overview-card {
+  height: auto;
+  align-self: start;
+}
+
+.overview-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.overview-card li {
+  margin-bottom: 6px;
 }
 
 .overview-card h4 {
@@ -596,7 +761,7 @@
 
 @media (max-width: 1360px) {
   .explore-layout {
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 
   .details-panel {
@@ -605,6 +770,14 @@
 }
 
 @media (max-width: 980px) {
+  .breadcrumb {
+    align-items: flex-start;
+  }
+
+  .breadcrumb-separator {
+    display: none;
+  }
+
   .explore-layout {
     grid-template-columns: 1fr;
   }
@@ -618,6 +791,10 @@
   .explore-toolbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .saved-view-select {
+    width: min(320px, 100%);
   }
 
   .details-panel {
