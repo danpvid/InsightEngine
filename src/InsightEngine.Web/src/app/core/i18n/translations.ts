@@ -176,6 +176,11 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'explore.gridLoading': 'Carregando amostra de linhas...',
     'explore.gridFilterTo': 'Filtrar para este valor',
     'explore.gridExclude': 'Excluir este valor',
+    'explore.savedViews': 'Views salvas',
+    'explore.savedViewsNone': 'Nenhuma',
+    'explore.savedViewsSave': 'Salvar view',
+    'explore.savedViewsRename': 'Renomear',
+    'explore.savedViewsDelete': 'Excluir',
 
     'chartViewer.chart': 'Gráfico',
     'chartViewer.previous': 'Anterior',
@@ -519,6 +524,11 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'explore.gridLoading': 'Loading row sample...',
     'explore.gridFilterTo': 'Filter to this value',
     'explore.gridExclude': 'Exclude this value',
+    'explore.savedViews': 'Saved views',
+    'explore.savedViewsNone': 'None',
+    'explore.savedViewsSave': 'Save view',
+    'explore.savedViewsRename': 'Rename',
+    'explore.savedViewsDelete': 'Delete',
 
     'chartViewer.chart': 'Chart',
     'chartViewer.previous': 'Previous',

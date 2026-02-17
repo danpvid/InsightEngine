@@ -45,6 +45,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.saved-view-select {
+  width: 220px;
 }
 
 .explore-layout {

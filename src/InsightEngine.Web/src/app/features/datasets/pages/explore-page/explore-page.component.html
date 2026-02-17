@@ -24,6 +24,25 @@
     </div>
 
     <div class="toolbar-actions">
+      <mat-form-field appearance="outline" class="saved-view-select">
+        <mat-label>{{ 'explore.savedViews' | translate }}</mat-label>
+        <mat-select [(ngModel)]="selectedSavedViewId" (selectionChange)="onSavedViewSelected()">
+          <mat-option [value]="''">{{ 'explore.savedViewsNone' | translate }}</mat-option>
+          <mat-option *ngFor="let view of savedViews" [value]="view.id">{{ view.name }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+      <button mat-stroked-button color="primary" (click)="saveCurrentView()">
+        <mat-icon>save</mat-icon>
+        {{ 'explore.savedViewsSave' | translate }}
+      </button>
+      <button mat-stroked-button color="primary" (click)="renameSelectedView()" [disabled]="!selectedSavedViewId">
+        <mat-icon>drive_file_rename_outline</mat-icon>
+        {{ 'explore.savedViewsRename' | translate }}
+      </button>
+      <button mat-stroked-button color="warn" (click)="deleteSelectedView()" [disabled]="!selectedSavedViewId">
+        <mat-icon>delete</mat-icon>
+        {{ 'explore.savedViewsDelete' | translate }}
+      </button>
       <button mat-stroked-button color="primary" (click)="rebuildIndex()" [disabled]="rebuilding">
         <mat-icon>{{ rebuilding ? 'hourglass_top' : 'refresh' }}</mat-icon>
         {{ rebuilding ? ('explore.rebuilding' | translate) : ('explore.rebuild' | translate) }}

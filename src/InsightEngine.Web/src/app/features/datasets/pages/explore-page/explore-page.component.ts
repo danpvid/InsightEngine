@@ -23,6 +23,30 @@ import {
 } from '../../../../core/models/metadata-index.model';
 import { RawDatasetRow } from '../../../../core/models/dataset.model';
 
+interface ExploreSavedView {
+  id: string;
+  name: string;
+  createdAtUtc: string;
+  state: {
+    selectedTabIndex: number;
+    selectedFieldName: string;
+    selectedTypeFilters: string[];
+    fieldSearch: string;
+    activeFilters: string[];
+    pinnedFieldNames: string[];
+    correlationSearch: string;
+    correlationMethodFilter: string;
+    correlationStrengthFilter: string;
+    selectedDistributionFields: string[];
+    selectedDistributionDateField: string;
+    gridQuickFilter: string;
+    gridHiddenColumns: string[];
+    gridSortColumn: string;
+    gridSortDirection: 'asc' | 'desc';
+    gridBackendFilters: string[];
+  };
+}
+
 @Component({
   selector: 'app-explore-page',
   standalone: true,
@@ -66,6 +90,8 @@ export class ExplorePageComponent implements OnInit {
   gridBackendFilters: string[] = [];
   gridTotalRows: number = 0;
   gridPageSize: number = 200;
+  savedViews: ExploreSavedView[] = [];
+  selectedSavedViewId: string = '';
   activeFilters: string[] = [];
   pinnedFieldNames: string[] = [];
 
@@ -85,6 +111,7 @@ export class ExplorePageComponent implements OnInit {
   ngOnInit(): void {
     this.datasetId = this.route.snapshot.paramMap.get('datasetId') || '';
     this.loadDatasetName();
+    this.loadSavedViews();
     this.loadIndex();
   }
 
@@ -538,6 +565,68 @@ export class ExplorePageComponent implements OnInit {
     this.loadGridData();
   }
 
+  onSavedViewSelected(): void {
+    const view = this.savedViews.find(item => item.id === this.selectedSavedViewId);
+    if (!view) {
+      return;
+    }
+
+    this.applySavedView(view);
+    this.toast.success('Saved view loaded.');
+  }
+
+  saveCurrentView(): void {
+    const defaultName = `View ${this.savedViews.length + 1}`;
+    const typedName = (window.prompt('Saved view name', defaultName) || '').trim();
+    if (!typedName) {
+      return;
+    }
+
+    const savedView: ExploreSavedView = {
+      id: crypto.randomUUID(),
+      name: typedName,
+      createdAtUtc: new Date().toISOString(),
+      state: this.captureCurrentState()
+    };
+
+    this.savedViews = [savedView, ...this.savedViews];
+    this.selectedSavedViewId = savedView.id;
+    this.persistSavedViews();
+    this.toast.success('Saved view created.');
+  }
+
+  renameSelectedView(): void {
+    const view = this.savedViews.find(item => item.id === this.selectedSavedViewId);
+    if (!view) {
+      return;
+    }
+
+    const typedName = (window.prompt('Rename saved view', view.name) || '').trim();
+    if (!typedName) {
+      return;
+    }
+
+    this.savedViews = this.savedViews.map(item => item.id === view.id ? { ...item, name: typedName } : item);
+    this.persistSavedViews();
+    this.toast.success('Saved view renamed.');
+  }
+
+  deleteSelectedView(): void {
+    const view = this.savedViews.find(item => item.id === this.selectedSavedViewId);
+    if (!view) {
+      return;
+    }
+
+    if (!window.confirm(`Delete saved view "${view.name}"?`)) {
+      return;
+    }
+
+    this.savedViews = this.savedViews.filter(item => item.id !== view.id);
+    this.selectedSavedViewId = '';
+    this.persistSavedViews();
+    this.toast.success('Saved view deleted.');
+  }
+
   useCorrelationInChart(): void {
     const correlation = this.selectedCorrelation;
     if (!correlation) {
@@ -803,6 +892,82 @@ export class ExplorePageComponent implements OnInit {
 
   private normalizeStatus(status: string | undefined | null): string {
     return (status || '').toLowerCase();
+  }
+
+  private loadSavedViews(): void {
+    if (!this.datasetId) {
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(this.buildSavedViewsStorageKey());
+      if (!raw) {
+        this.savedViews = [];
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as ExploreSavedView[];
+      this.savedViews = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      this.savedViews = [];
+    }
+  }
+
+  private persistSavedViews(): void {
+    if (!this.datasetId) {
+      return;
+    }
+
+    localStorage.setItem(this.buildSavedViewsStorageKey(), JSON.stringify(this.savedViews));
+  }
+
+  private buildSavedViewsStorageKey(): string {
+    return `insightengine:explore:saved-views:${this.datasetId}`;
+  }
+
+  private captureCurrentState(): ExploreSavedView['state'] {
+    return {
+      selectedTabIndex: this.selectedTabIndex,
+      selectedFieldName: this.selectedFieldName,
+      selectedTypeFilters: [...this.selectedTypeFilters],
+      fieldSearch: this.fieldSearch,
+      activeFilters: [...this.activeFilters],
+      pinnedFieldNames: [...this.pinnedFieldNames],
+      correlationSearch: this.correlationSearch,
+      correlationMethodFilter: this.correlationMethodFilter,
+      correlationStrengthFilter: this.correlationStrengthFilter,
+      selectedDistributionFields: [...this.selectedDistributionFields],
+      selectedDistributionDateField: this.selectedDistributionDateField,
+      gridQuickFilter: this.gridQuickFilter,
+      gridHiddenColumns: [...this.gridHiddenColumns],
+      gridSortColumn: this.gridSortColumn,
+      gridSortDirection: this.gridSortDirection,
+      gridBackendFilters: [...this.gridBackendFilters]
+    };
+  }
+
+  private applySavedView(view: ExploreSavedView): void {
+    const state = view.state;
+    this.selectedTabIndex = state.selectedTabIndex;
+    this.selectedFieldName = state.selectedFieldName;
+    this.selectedTypeFilters = [...state.selectedTypeFilters];
+    this.fieldSearch = state.fieldSearch;
+    this.activeFilters = [...state.activeFilters];
+    this.pinnedFieldNames = [...state.pinnedFieldNames];
+    this.correlationSearch = state.correlationSearch;
+    this.correlationMethodFilter = state.correlationMethodFilter;
+    this.correlationStrengthFilter = state.correlationStrengthFilter;
+    this.selectedDistributionFields = [...state.selectedDistributionFields];
+    this.selectedDistributionDateField = state.selectedDistributionDateField;
+    this.gridQuickFilter = state.gridQuickFilter;
+    this.gridHiddenColumns = [...state.gridHiddenColumns];
+    this.gridSortColumn = state.gridSortColumn;
+    this.gridSortDirection = state.gridSortDirection;
+    this.gridBackendFilters = [...state.gridBackendFilters];
+
+    if (this.selectedTabIndex === 4) {
+      this.loadGridData();
+    }
   }
 
   buildCorrelationKey(edge: CorrelationEdge): string {
