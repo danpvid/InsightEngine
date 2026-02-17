@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text.RegularExpressions;
 using CsvHelper;
 using CsvHelper.Configuration;
@@ -103,12 +104,12 @@ FROM {sourceQuery} AS src;
                     continue;
                 }
 
-                totalCount = reader.IsDBNull(0) ? 0 : Convert.ToInt64(reader.GetValue(0));
-                nullCount = reader.IsDBNull(1) ? 0 : Convert.ToInt64(reader.GetValue(1));
-                distinctCount = reader.IsDBNull(2) ? 0 : Convert.ToInt64(reader.GetValue(2));
-                numericCount = reader.IsDBNull(3) ? 0 : Convert.ToInt64(reader.GetValue(3));
-                dateCount = reader.IsDBNull(4) ? 0 : Convert.ToInt64(reader.GetValue(4));
-                boolCount = reader.IsDBNull(5) ? 0 : Convert.ToInt64(reader.GetValue(5));
+                totalCount = reader.IsDBNull(0) ? 0 : ReadLong(reader.GetValue(0));
+                nullCount = reader.IsDBNull(1) ? 0 : ReadLong(reader.GetValue(1));
+                distinctCount = reader.IsDBNull(2) ? 0 : ReadLong(reader.GetValue(2));
+                numericCount = reader.IsDBNull(3) ? 0 : ReadLong(reader.GetValue(3));
+                dateCount = reader.IsDBNull(4) ? 0 : ReadLong(reader.GetValue(4));
+                boolCount = reader.IsDBNull(5) ? 0 : ReadLong(reader.GetValue(5));
             }
 
             var nonNullCount = Math.Max(totalCount - nullCount, 0);
@@ -197,7 +198,7 @@ FROM numeric_values;
             return null;
         }
 
-        var valueCount = reader.IsDBNull(0) ? 0L : Convert.ToInt64(reader.GetValue(0));
+        var valueCount = reader.IsDBNull(0) ? 0L : ReadLong(reader.GetValue(0));
         if (valueCount == 0)
         {
             return null;
@@ -299,7 +300,7 @@ ORDER BY bucket_index;
             {
                 LowerBound = Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture),
                 UpperBound = Convert.ToDouble(reader.GetValue(2), CultureInfo.InvariantCulture),
-                Count = reader.IsDBNull(3) ? 0 : Convert.ToInt64(reader.GetValue(3))
+                Count = reader.IsDBNull(3) ? 0 : ReadLong(reader.GetValue(3))
             });
         }
 
@@ -346,14 +347,14 @@ FROM parsed_dates;
                 return null;
             }
 
-            valueCount = reader.IsDBNull(0) ? 0 : Convert.ToInt64(reader.GetValue(0));
+            valueCount = reader.IsDBNull(0) ? 0 : ReadLong(reader.GetValue(0));
             if (valueCount == 0)
             {
                 return null;
             }
 
-            minDate = reader.IsDBNull(1) ? null : Convert.ToDateTime(reader.GetValue(1), CultureInfo.InvariantCulture);
-            maxDate = reader.IsDBNull(2) ? null : Convert.ToDateTime(reader.GetValue(2), CultureInfo.InvariantCulture);
+            minDate = reader.IsDBNull(1) ? null : ReadDateTime(reader.GetValue(1));
+            maxDate = reader.IsDBNull(2) ? null : ReadDateTime(reader.GetValue(2));
         }
 
         var coverage = new List<DateDensityBinIndex>();
@@ -388,9 +389,9 @@ LIMIT 240;
 
                 coverage.Add(new DateDensityBinIndex
                 {
-                    Start = Convert.ToDateTime(reader.GetValue(0), CultureInfo.InvariantCulture),
-                    End = Convert.ToDateTime(reader.GetValue(1), CultureInfo.InvariantCulture),
-                    Count = reader.IsDBNull(2) ? 0 : Convert.ToInt64(reader.GetValue(2))
+                    Start = ReadDateTime(reader.GetValue(0)),
+                    End = ReadDateTime(reader.GetValue(1)),
+                    Count = reader.IsDBNull(2) ? 0 : ReadLong(reader.GetValue(2))
                 });
             }
         }
@@ -435,9 +436,9 @@ LIMIT 20;
                     continue;
                 }
 
-                var previousDate = Convert.ToDateTime(reader.GetValue(0), CultureInfo.InvariantCulture);
-                var currentDate = Convert.ToDateTime(reader.GetValue(1), CultureInfo.InvariantCulture);
-                var missingDays = reader.IsDBNull(2) ? 0 : Convert.ToInt64(reader.GetValue(2));
+                var previousDate = ReadDateTime(reader.GetValue(0));
+                var currentDate = ReadDateTime(reader.GetValue(1));
+                var missingDays = reader.IsDBNull(2) ? 0 : ReadLong(reader.GetValue(2));
 
                 gaps.Add(new DateGapHintIndex
                 {
@@ -497,15 +498,15 @@ FROM {sourceQuery} AS src;
                 return null;
             }
 
-            valueCount = reader.IsDBNull(0) ? 0 : Convert.ToInt64(reader.GetValue(0));
+            valueCount = reader.IsDBNull(0) ? 0 : ReadLong(reader.GetValue(0));
             if (valueCount == 0)
             {
                 return null;
             }
 
             avgLength = reader.IsDBNull(1) ? 0 : Convert.ToDouble(reader.GetValue(1), CultureInfo.InvariantCulture);
-            minLength = reader.IsDBNull(2) ? 0 : Convert.ToInt32(reader.GetValue(2));
-            maxLength = reader.IsDBNull(3) ? 0 : Convert.ToInt32(reader.GetValue(3));
+            minLength = reader.IsDBNull(2) ? 0 : ReadInt(reader.GetValue(2));
+            maxLength = reader.IsDBNull(3) ? 0 : ReadInt(reader.GetValue(3));
         }
 
         var result = new StringStatsIndex
@@ -607,14 +608,14 @@ FROM {sourceQuery} AS src;
                 continue;
             }
 
-            var total = reader.IsDBNull(0) ? 0 : Convert.ToInt64(reader.GetValue(0));
+            var total = reader.IsDBNull(0) ? 0 : ReadLong(reader.GetValue(0));
             if (total == 0)
             {
                 continue;
             }
 
-            var nullCount = reader.IsDBNull(1) ? 0 : Convert.ToInt64(reader.GetValue(1));
-            var distinct = reader.IsDBNull(2) ? 0 : Convert.ToInt64(reader.GetValue(2));
+            var nullCount = reader.IsDBNull(1) ? 0 : ReadLong(reader.GetValue(1));
+            var distinct = reader.IsDBNull(2) ? 0 : ReadLong(reader.GetValue(2));
             var uniqueness = distinct / (double)total;
             var nullRate = nullCount / (double)total;
 
@@ -677,14 +678,14 @@ FROM {sourceQuery} AS src;
                     continue;
                 }
 
-                var total = reader.IsDBNull(0) ? 0 : Convert.ToInt64(reader.GetValue(0));
+                var total = reader.IsDBNull(0) ? 0 : ReadLong(reader.GetValue(0));
                 if (total == 0)
                 {
                     continue;
                 }
 
-                var nullCount = reader.IsDBNull(1) ? 0 : Convert.ToInt64(reader.GetValue(1));
-                var distinctPairs = reader.IsDBNull(2) ? 0 : Convert.ToInt64(reader.GetValue(2));
+                var nullCount = reader.IsDBNull(1) ? 0 : ReadLong(reader.GetValue(1));
+                var distinctPairs = reader.IsDBNull(2) ? 0 : ReadLong(reader.GetValue(2));
                 var uniqueness = distinctPairs / (double)total;
                 var nullRate = nullCount / (double)total;
 
@@ -788,7 +789,7 @@ WHERE {EscapeIdentifier(left)} IS NOT NULL AND {EscapeIdentifier(right)} IS NOT 
                     using var reader = command.ExecuteReader();
                     if (reader.Read())
                     {
-                        var sampleSize = reader.IsDBNull(1) ? 0 : Convert.ToInt64(reader.GetValue(1));
+                        var sampleSize = reader.IsDBNull(1) ? 0 : ReadLong(reader.GetValue(1));
                         if (!reader.IsDBNull(0) && sampleSize > 2)
                         {
                             var score = Convert.ToDouble(reader.GetValue(0), CultureInfo.InvariantCulture);
@@ -827,7 +828,7 @@ FROM ranked;
                     using var reader = command.ExecuteReader();
                     if (reader.Read())
                     {
-                        var sampleSize = reader.IsDBNull(1) ? 0 : Convert.ToInt64(reader.GetValue(1));
+                        var sampleSize = reader.IsDBNull(1) ? 0 : ReadLong(reader.GetValue(1));
                         if (!reader.IsDBNull(0) && sampleSize > 2)
                         {
                             var score = Convert.ToDouble(reader.GetValue(0), CultureInfo.InvariantCulture);
@@ -1063,6 +1064,44 @@ FROM ranked;
     private static string EscapeIdentifier(string identifier)
     {
         return $"\"{identifier.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
+
+    private static long ReadLong(object? value)
+    {
+        return value switch
+        {
+            null => 0,
+            DBNull => 0,
+            long typedLong => typedLong,
+            int typedInt => typedInt,
+            short typedShort => typedShort,
+            byte typedByte => typedByte,
+            BigInteger bigInteger => (long)bigInteger,
+            decimal typedDecimal => (long)typedDecimal,
+            double typedDouble => (long)typedDouble,
+            float typedFloat => (long)typedFloat,
+            string text when long.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => Convert.ToInt64(value, CultureInfo.InvariantCulture)
+        };
+    }
+
+    private static int ReadInt(object? value)
+    {
+        return (int)ReadLong(value);
+    }
+
+    private static DateTime ReadDateTime(object? value)
+    {
+        return value switch
+        {
+            null => throw new InvalidOperationException("Cannot read date/time from null value."),
+            DBNull => throw new InvalidOperationException("Cannot read date/time from DBNull."),
+            DateTime typedDateTime => typedDateTime,
+            DateOnly typedDateOnly => typedDateOnly.ToDateTime(TimeOnly.MinValue),
+            DateTimeOffset typedDateTimeOffset => typedDateTimeOffset.UtcDateTime,
+            string text when DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDateTime) => parsedDateTime,
+            _ => Convert.ToDateTime(value, CultureInfo.InvariantCulture)
+        };
     }
 
     private static DuckDBConnection CreateConnection()
