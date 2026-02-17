@@ -102,9 +102,40 @@ URLs padrao:
 1. Upload: `/datasets/new`
 2. Recommendations: `/datasets/{datasetId}/recommendations`
 3. Chart Viewer: `/datasets/{datasetId}/charts/{recId}`
-4. Exploracao: ajustar controles no painel lateral e compartilhar URL.
-5. Simulacao: aba de simulacao com comparativo baseline vs simulated.
-6. AI opt-in: Generate AI Summary, Explain chart, Ask question.
+4. Explore: `/datasets/{datasetId}/explore` (metadata-driven discovery).
+5. Exploracao: ajustar controles no painel lateral e compartilhar URL.
+6. Simulacao: aba de simulacao com comparativo baseline vs simulated.
+7. AI opt-in: Generate AI Summary, Explain chart, Ask question.
+
+## Metadata Index (Dataset Catalog)
+
+O InsightEngine agora possui um pipeline de indexacao de metadados para datasets tabulares (single-table), inspirado em catalog/explore workflows.
+
+### Capacidades do Explore
+- Field explorer com busca, filtro por tipo, null rate, distinct count e semantic tags.
+- Overview com qualidade do dataset, candidate keys, top fields e proximos passos.
+- Field details com histograma, percentis, top values, densidade temporal e acoes de drilldown.
+- Correlations com ranked edges e matrix-lite (top edges, sem NxN completo).
+- Data Grid com row sampling, filter pills, sort local e value drilldowns.
+- Saved views locais (localStorage) para persistir estado da exploracao.
+
+### Endpoints do Metadata Index
+- `POST /api/v1/datasets/{datasetId}/index:build`
+- `GET /api/v1/datasets/{datasetId}/index`
+- `GET /api/v1/datasets/{datasetId}/index/status`
+- `GET /api/v1/datasets/{datasetId}/rows?limit=...&offset=...&filter=column|op|value`
+- `GET /api/v1/datasets/{datasetId}/facets?field=...&top=20&filter=column|op|value`
+
+### Screenshot placeholders
+- `[Explore - Overview]`
+- `[Explore - Field Details]`
+- `[Explore - Correlations]`
+- `[Explore - Data Grid + Facets]`
+
+### Documentacao complementar
+- `docs/METADATA_INDEX_PLAN.md`
+- `docs/ARCHITECTURE_METADATA_INDEX.md`
+- `docs/QA_METADATA_INDEX.md`
 
 ## Configuracao
 
@@ -187,6 +218,11 @@ Principais endpoints:
 - `POST /api/v1/datasets` - upload CSV
 - `GET /api/v1/datasets/runtime-config` - limites runtime para frontend
 - `GET /api/v1/datasets/{id}/recommendations` - recomendacoes
+- `POST /api/v1/datasets/{id}/index:build` - constroi metadata index
+- `GET /api/v1/datasets/{id}/index` - retorna metadata index persistido
+- `GET /api/v1/datasets/{id}/index/status` - status da indexacao
+- `GET /api/v1/datasets/{id}/rows` - amostragem de linhas para data grid
+- `GET /api/v1/datasets/{id}/facets` - contagens top-N para facetas
 - `GET /api/v1/datasets/{id}/charts/{recommendationId}` - chart + insightSummary + meta
 - `POST /api/v1/datasets/{id}/charts/{recommendationId}/ai-summary` - resumo AI on-demand
 - `POST /api/v1/datasets/{id}/charts/{recommendationId}/explain` - explicacao estruturada
