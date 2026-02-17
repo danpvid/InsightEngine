@@ -15,6 +15,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
 import {
   ColumnIndex,
+  CorrelationEdge,
   DatasetIndex,
   DatasetIndexStatus,
   InferredType,
@@ -48,10 +49,16 @@ export class ExplorePageComponent implements OnInit {
   fieldSearch: string = '';
   selectedTypeFilters: string[] = [];
   selectedFieldName: string = '';
+  selectedCorrelationKey: string = '';
+  correlationSearch: string = '';
+  correlationMethodFilter: string = 'All';
+  correlationStrengthFilter: string = 'All';
   activeFilters: string[] = [];
   pinnedFieldNames: string[] = [];
 
   readonly availableTypeFilters: string[] = ['Number', 'Date', 'String', 'Category', 'Boolean'];
+  readonly correlationMethods: string[] = ['All', 'Pearson', 'Spearman', 'CramersV', 'EtaSquared', 'MutualInformation'];
+  readonly correlationStrengths: string[] = ['All', 'High', 'Medium', 'Low'];
 
   constructor(
     private route: ActivatedRoute,
@@ -119,6 +126,40 @@ export class ExplorePageComponent implements OnInit {
     return this.pinnedFieldNames
       .map(name => this.index!.columns.find(column => column.name === name) || null)
       .filter((column): column is ColumnIndex => column !== null);
+  }
+
+  get filteredCorrelationEdges(): CorrelationEdge[] {
+    if (!this.index) {
+      return [];
+    }
+
+    const search = this.correlationSearch.trim().toLowerCase();
+    return this.index.correlations.edges.filter(edge => {
+      const methodMatch = this.correlationMethodFilter === 'All' || edge.method === this.correlationMethodFilter;
+      const strengthMatch = this.correlationStrengthFilter === 'All' || edge.strength === this.correlationStrengthFilter;
+      const searchMatch = search.length === 0
+        || edge.leftColumn.toLowerCase().includes(search)
+        || edge.rightColumn.toLowerCase().includes(search);
+
+      return methodMatch && strengthMatch && searchMatch;
+    });
+  }
+
+  get selectedCorrelation(): CorrelationEdge | null {
+    if (!this.selectedCorrelationKey) {
+      return null;
+    }
+
+    return this.filteredCorrelationEdges.find(edge => this.buildCorrelationKey(edge) === this.selectedCorrelationKey) || null;
+  }
+
+  get matrixColumns(): string[] {
+    const ordered = this.filteredCorrelationEdges
+      .sort((left, right) => Math.abs(right.score) - Math.abs(left.score))
+      .slice(0, 60)
+      .flatMap(edge => [edge.leftColumn, edge.rightColumn]);
+
+    return [...new Set(ordered)].slice(0, 12);
   }
 
   get fieldHistogramOption(): EChartsOption | null {
@@ -290,6 +331,31 @@ export class ExplorePageComponent implements OnInit {
     }
   }
 
+  onSelectCorrelation(edge: CorrelationEdge): void {
+    this.selectedCorrelationKey = this.buildCorrelationKey(edge);
+  }
+
+  useCorrelationInChart(): void {
+    const correlation = this.selectedCorrelation;
+    if (!correlation) {
+      return;
+    }
+
+    this.router.navigate(
+      ['/', this.currentLanguage, 'datasets', this.datasetId, 'recommendations'],
+      { queryParams: { correlationPair: `${correlation.leftColumn},${correlation.rightColumn}` } }
+    );
+  }
+
+  addCorrelationComparison(): void {
+    const correlation = this.selectedCorrelation;
+    if (!correlation) {
+      return;
+    }
+
+    this.toast.info(`Comparison queued: ${correlation.leftColumn} vs ${correlation.rightColumn}`);
+  }
+
   pinSelectedField(): void {
     const field = this.selectedField;
     if (!field) {
@@ -390,6 +456,10 @@ export class ExplorePageComponent implements OnInit {
     return `${(value * 100).toFixed(2)}%`;
   }
 
+  formatCorrelationScore(value: number): string {
+    return value.toFixed(3);
+  }
+
   getTagReason(tag: string): string {
     const normalizedTag = tag.toLowerCase();
     if (normalizedTag === 'identifier') return 'explore.tagReasonIdentifier';
@@ -399,6 +469,36 @@ export class ExplorePageComponent implements OnInit {
     if (normalizedTag === 'category') return 'explore.tagReasonCategory';
     if (normalizedTag === 'freetext') return 'explore.tagReasonFreeText';
     return 'explore.tagReasonDefault';
+  }
+
+  getMatrixScore(row: string, column: string): number | null {
+    if (row === column) {
+      return 1;
+    }
+
+    const edge = this.filteredCorrelationEdges.find(item =>
+      (item.leftColumn === row && item.rightColumn === column)
+      || (item.leftColumn === column && item.rightColumn === row)
+    );
+
+    return edge ? edge.score : null;
+  }
+
+  getMatrixCellClass(score: number | null): string {
+    if (score == null) {
+      return 'matrix-empty';
+    }
+
+    const abs = Math.abs(score);
+    if (abs >= 0.7) {
+      return score >= 0 ? 'matrix-strong-positive' : 'matrix-strong-negative';
+    }
+
+    if (abs >= 0.3) {
+      return score >= 0 ? 'matrix-medium-positive' : 'matrix-medium-negative';
+    }
+
+    return 'matrix-weak';
   }
 
   getInferredTypeIcon(type: InferredType): string {
@@ -497,5 +597,9 @@ export class ExplorePageComponent implements OnInit {
 
   private normalizeStatus(status: string | undefined | null): string {
     return (status || '').toLowerCase();
+  }
+
+  buildCorrelationKey(edge: CorrelationEdge): string {
+    return `${edge.leftColumn}|${edge.rightColumn}|${edge.method}`;
   }
 }
