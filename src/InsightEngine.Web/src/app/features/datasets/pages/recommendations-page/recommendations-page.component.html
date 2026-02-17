@@ -17,6 +17,13 @@
     icon="auto_awesome">
   </app-page-header>
 
+  <div class="recommendations-actions">
+    <button mat-stroked-button color="primary" [routerLink]="exploreLink">
+      <mat-icon>travel_explore</mat-icon>
+      {{ 'recommendations.openExplore' | translate }}
+    </button>
+  </div>
+
   <mat-card class="dataset-info-card">
     <mat-card-content>
       <div class="dataset-name-section" *ngIf="datasetName">

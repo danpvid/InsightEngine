@@ -1,0 +1,27 @@
+<div class="container-wide" style="max-width:none;width:100%;">
+  <nav class="breadcrumb">
+    <a [routerLink]="['../recommendations']" class="breadcrumb-item">
+      <mat-icon>auto_awesome</mat-icon>
+      <span>{{ 'recommendations.breadcrumb' | translate }}</span>
+    </a>
+    <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
+    <span class="breadcrumb-item active">
+      <mat-icon>travel_explore</mat-icon>
+      <span>{{ 'explore.title' | translate }}</span>
+    </span>
+  </nav>
+
+  <app-page-header
+    [title]="'explore.title' | translate"
+    [subtitle]="('explore.subtitle' | translate) + ': ' + datasetId"
+    icon="travel_explore">
+  </app-page-header>
+
+  <mat-card>
+    <mat-card-content>
+      <p class="placeholder-text">
+        {{ 'explore.placeholder' | translate }}
+      </p>
+    </mat-card-content>
+  </mat-card>
+</div>

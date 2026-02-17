@@ -175,6 +175,10 @@
               <mat-icon>analytics</mat-icon>
               {{ 'upload.viewRecommendations' | translate }}
             </button>
+            <button mat-button color="accent" (click)="openExplore(dataset, $event)">
+              <mat-icon>travel_explore</mat-icon>
+              {{ 'upload.openExplore' | translate }}
+            </button>
             <button
               mat-button
               color="warn"

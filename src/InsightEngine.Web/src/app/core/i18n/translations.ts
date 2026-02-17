@@ -27,6 +27,7 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'upload.loadedDatasetsSubtitle': 'Acessar datasets enviados anteriormente',
     'upload.loadingDatasets': 'Carregando datasets...',
     'upload.viewRecommendations': 'Ver Recomendações',
+    'upload.openExplore': 'Explorar Dataset',
     'upload.noDatasets': 'Nenhum dataset carregado ainda',
     'upload.samplesTitle': 'Exemplos de Datasets',
     'upload.samplesSubtitle': 'Você pode testar a plataforma com nossos datasets de exemplo:',
@@ -80,6 +81,11 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'recommendations.uploadNewDataset': 'Enviar Novo Dataset',
     'recommendations.errorMissingDatasetId': 'Dataset ID não informado.',
     'recommendations.emptyInfo': 'Nenhuma recomendação encontrada para este dataset.',
+    'recommendations.openExplore': 'Abrir Explore',
+
+    'explore.title': 'Explore',
+    'explore.subtitle': 'Navegação exploratória por metadados',
+    'explore.placeholder': 'O dashboard de exploração será carregado aqui.',
 
     'chartViewer.chart': 'Gráfico',
     'chartViewer.previous': 'Anterior',
@@ -274,6 +280,7 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'upload.loadedDatasetsSubtitle': 'Open previously uploaded datasets',
     'upload.loadingDatasets': 'Loading datasets...',
     'upload.viewRecommendations': 'View Recommendations',
+    'upload.openExplore': 'Explore Dataset',
     'upload.noDatasets': 'No datasets uploaded yet',
     'upload.samplesTitle': 'Sample Datasets',
     'upload.samplesSubtitle': 'You can test the platform with our sample datasets:',
@@ -327,6 +334,11 @@ export const TRANSLATIONS: Record<LanguageCode, TranslationDictionary> = {
     'recommendations.uploadNewDataset': 'Upload New Dataset',
     'recommendations.errorMissingDatasetId': 'Dataset ID was not provided.',
     'recommendations.emptyInfo': 'No recommendations found for this dataset.',
+    'recommendations.openExplore': 'Open Explore',
+
+    'explore.title': 'Explore',
+    'explore.subtitle': 'Metadata-driven exploratory navigation',
+    'explore.placeholder': 'The explore dashboard will load here.',
 
     'chartViewer.chart': 'Chart',
     'chartViewer.previous': 'Previous',

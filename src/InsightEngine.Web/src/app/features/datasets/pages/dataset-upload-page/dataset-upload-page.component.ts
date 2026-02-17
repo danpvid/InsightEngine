@@ -250,6 +250,11 @@ export class DatasetUploadPageComponent implements OnInit {
     this.router.navigate(['/', this.currentLanguage, 'datasets', dataset.datasetId, 'recommendations']);
   }
 
+  openExplore(dataset: DataSetSummary, event?: Event): void {
+    event?.stopPropagation();
+    this.router.navigate(['/', this.currentLanguage, 'datasets', dataset.datasetId, 'explore']);
+  }
+
   deleteDataset(dataset: DataSetSummary, event?: Event): void {
     event?.stopPropagation();
     if (this.deletingDatasetId) {
