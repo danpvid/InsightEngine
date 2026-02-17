@@ -130,6 +130,7 @@ interface RawFieldMetric {
   styleUrls: ['./chart-viewer-page.component.scss']
 })
 export class ChartViewerPageComponent implements OnInit, OnDestroy {
+  readonly rawTopOthersToken: string = '__RAW_TOP_OTHERS__';
   datasetId: string = '';
   datasetName: string = '';
   recommendationId: string = '';
@@ -453,11 +454,38 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   get selectedRawTopValues(): RawDistinctValueStat[] {
-    if (this.rawFieldStats && this.rawFieldStats.column === this.selectedRawFieldName) {
-      return this.rawFieldStats.topValues || [];
+    const selectedField = this.selectedRawFieldMetric;
+    if (!selectedField) {
+      return [];
     }
 
-    return this.selectedRawFieldMetric?.topValuesProfile || [];
+    const column = selectedField.name;
+    const baseTopValues =
+      this.rawFieldStats && this.rawFieldStats.column === column
+        ? (this.rawFieldStats.topValues || [])
+        : (selectedField.topValuesProfile || []);
+    const topValues = this.withRawTopValueComplements(baseTopValues, column);
+    const activeRules = this.getRawTopValueRules(column);
+    if (activeRules.length === 0) {
+      return topValues;
+    }
+
+    const selectedValues = new Set(
+      activeRules.flatMap(rule =>
+        rule.operator === 'Eq'
+          ? [rule.value]
+          : this.splitCsvValues(rule.value)));
+
+    if (selectedValues.size === 0) {
+      return topValues;
+    }
+
+    const knownValues = new Set(topValues.map(item => item.value));
+    const missingSelected = Array.from(selectedValues.values())
+      .filter(value => !knownValues.has(value))
+      .map(value => ({ value, count: 0 }));
+
+    return [...missingSelected, ...topValues];
   }
 
   get selectedRawTopRanges(): RawRangeValueStat[] {
@@ -623,6 +651,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.chartLoadVersion++;
+    this.rawDataLoadVersion++;
+
     if (this.filterTimer) {
       window.clearTimeout(this.filterTimer);
     }
@@ -2354,55 +2385,30 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   isRawTopValueSelected(column: string, value: string): boolean {
     const normalizedValue = `${value ?? ''}`.trim();
-    if (!column || !normalizedValue) {
+    if (!column || !this.canToggleRawTopValue(normalizedValue)) {
       return false;
     }
 
-    return this.filterRules.some(rule => {
-      if (rule.column !== column) {
-        return false;
-      }
-
-      if (rule.operator === 'Eq') {
-        return rule.value === normalizedValue;
-      }
-
-      if (rule.operator === 'In') {
-        return this.splitCsvValues(rule.value).includes(normalizedValue);
-      }
-
-      return false;
-    });
+    return this.getRawTopValueRules(column).some(rule =>
+      rule.operator === 'Eq'
+        ? rule.value === normalizedValue
+        : this.splitCsvValues(rule.value).includes(normalizedValue));
   }
 
   toggleRawTopValueFilter(column: string, value: string): void {
     const normalizedValue = `${value ?? ''}`.trim();
-    if (!column || !normalizedValue) {
+    if (!column || !this.canToggleRawTopValue(normalizedValue)) {
       return;
     }
 
-    const targetRule = this.filterRules.find(rule =>
-      rule.column === column &&
-      (rule.operator === 'Eq' || rule.operator === 'In'));
-
-    if (!targetRule) {
-      this.filterRules.push({
-        column,
-        operator: 'In',
-        value: normalizedValue,
-        logicalOperator: 'And'
-      });
-      this.activeTab = 1;
-      this.filterPreviewPending = false;
-      this.reloadChartWithCurrentParameters(true);
-      return;
-    }
-
-    const values = targetRule.operator === 'Eq'
-      ? [targetRule.value]
-      : this.splitCsvValues(targetRule.value);
-
+    const rulesForColumn = this.getRawTopValueRules(column);
+    const targetRule = rulesForColumn[0];
+    const values = rulesForColumn.flatMap(rule =>
+      rule.operator === 'Eq'
+        ? [rule.value]
+        : this.splitCsvValues(rule.value));
     const selected = new Set(values);
+
     if (selected.has(normalizedValue)) {
       selected.delete(normalizedValue);
     } else {
@@ -2411,18 +2417,81 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
     const updatedValues = Array.from(selected.values());
     if (updatedValues.length === 0) {
-      this.filterRules = this.filterRules.filter(rule => rule !== targetRule);
+      this.filterRules = this.filterRules.filter(rule => !rulesForColumn.includes(rule));
+    } else if (!targetRule) {
+      this.filterRules.push({
+        column,
+        operator: updatedValues.length > 1 ? 'In' : 'Eq',
+        value: updatedValues.length > 1 ? updatedValues.join(',') : updatedValues[0],
+        logicalOperator: 'And'
+      });
     } else if (updatedValues.length === 1) {
       targetRule.operator = 'Eq';
       targetRule.value = updatedValues[0];
+      this.filterRules = this.filterRules.filter(rule => rule === targetRule || !rulesForColumn.includes(rule));
     } else {
       targetRule.operator = 'In';
       targetRule.value = updatedValues.join(',');
+      this.filterRules = this.filterRules.filter(rule => rule === targetRule || !rulesForColumn.includes(rule));
     }
 
     this.activeTab = 1;
     this.filterPreviewPending = false;
     this.reloadChartWithCurrentParameters(true);
+  }
+
+  private getRawTopValueRules(column: string): FilterRule[] {
+    return this.filterRules.filter(rule =>
+      rule.column === column &&
+      (rule.operator === 'Eq' || rule.operator === 'In'));
+  }
+
+  getFieldDistinctDisplayCount(field: RawFieldMetric): number {
+    if (this.rawFieldStats && this.rawFieldStats.column === field.name) {
+      return this.rawFieldStats.distinctCount;
+    }
+
+    return field.distinctCountProfile || field.distinctCountPage;
+  }
+
+  formatRawTopValueLabel(value: string): string {
+    if (value === this.rawTopOthersToken) {
+      return '(outros)';
+    }
+
+    return `${value ?? ''}`.trim() || '(vazio)';
+  }
+
+  canToggleRawTopValue(value: string): boolean {
+    const normalizedValue = `${value ?? ''}`.trim();
+    return normalizedValue.length > 0 && normalizedValue !== this.rawTopOthersToken;
+  }
+
+  private withRawTopValueComplements(
+    values: RawDistinctValueStat[],
+    column: string): RawDistinctValueStat[] {
+    if (!this.rawFieldStats || this.rawFieldStats.column !== column) {
+      return values;
+    }
+
+    const totalRows = Math.max(this.rawTotalRows || 0, 0);
+    if (totalRows === 0) {
+      return values;
+    }
+
+    const accountedRows = values.reduce((total, item) => total + Math.max(item.count || 0, 0), 0);
+    const remainingRows = Math.max(totalRows - accountedRows, 0);
+    if (remainingRows === 0) {
+      return values;
+    }
+
+    return [
+      ...values,
+      {
+        value: this.rawTopOthersToken,
+        count: remainingRows
+      }
+    ];
   }
 
   isRawTopRangeSelected(column: string, range: RawRangeValueStat): boolean {

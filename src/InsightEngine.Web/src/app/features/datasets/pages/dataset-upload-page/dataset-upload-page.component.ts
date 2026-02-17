@@ -1,6 +1,7 @@
 ﻿import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
 import { ToastService } from '../../../../core/services/toast.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
@@ -15,11 +16,20 @@ import { environment } from '../../../../../environments/environment';
 import { LanguageService } from '../../../../core/services/language.service';
 import { TranslatePipe } from '../../../../core/pipes/translate.pipe';
 
+type DatasetSortOption =
+  | 'createdDesc'
+  | 'createdAsc'
+  | 'nameAsc'
+  | 'nameDesc'
+  | 'sizeDesc'
+  | 'sizeAsc';
+
 @Component({
   selector: 'app-dataset-upload-page',
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     TranslatePipe,
     ...MATERIAL_MODULES,
     LoadingBarComponent,
@@ -36,6 +46,8 @@ export class DatasetUploadPageComponent implements OnInit {
 
   datasets: DataSetSummary[] = [];
   loadingDatasets: boolean = false;
+  selectedDatasetSort: DatasetSortOption = 'createdDesc';
+  deletingDatasetId: string | null = null;
 
   isDragging: boolean = false;
   uploadProgress: number = 0;
@@ -56,6 +68,25 @@ export class DatasetUploadPageComponent implements OnInit {
   ngOnInit(): void {
     this.loadRuntimeConfig();
     this.loadDatasets();
+  }
+
+  get sortedDatasets(): DataSetSummary[] {
+    const sorted = [...this.datasets];
+    switch (this.selectedDatasetSort) {
+      case 'createdAsc':
+        return sorted.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      case 'nameAsc':
+        return sorted.sort((a, b) => a.originalFileName.localeCompare(b.originalFileName));
+      case 'nameDesc':
+        return sorted.sort((a, b) => b.originalFileName.localeCompare(a.originalFileName));
+      case 'sizeDesc':
+        return sorted.sort((a, b) => b.fileSizeInBytes - a.fileSizeInBytes);
+      case 'sizeAsc':
+        return sorted.sort((a, b) => a.fileSizeInBytes - b.fileSizeInBytes);
+      case 'createdDesc':
+      default:
+        return sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
   }
 
   loadRuntimeConfig(): void {
@@ -217,6 +248,56 @@ export class DatasetUploadPageComponent implements OnInit {
 
   openDataset(dataset: DataSetSummary): void {
     this.router.navigate(['/', this.currentLanguage, 'datasets', dataset.datasetId, 'recommendations']);
+  }
+
+  deleteDataset(dataset: DataSetSummary, event?: Event): void {
+    event?.stopPropagation();
+    if (this.deletingDatasetId) {
+      return;
+    }
+
+    const warningStep = this.languageService.translate('upload.deleteConfirmStep1', {
+      fileName: dataset.originalFileName,
+      datasetId: dataset.datasetId
+    });
+
+    if (!window.confirm(warningStep)) {
+      return;
+    }
+
+    const confirmationKeyword = this.currentLanguage === 'pt-br' ? 'EXCLUIR' : 'DELETE';
+    const finalStep = this.languageService.translate('upload.deleteConfirmStep2', {
+      keyword: confirmationKeyword,
+      datasetId: dataset.datasetId
+    });
+    const typed = window.prompt(finalStep) || '';
+    if (typed.trim().toUpperCase() !== confirmationKeyword) {
+      this.toast.info(this.languageService.translate('upload.deleteCancelled'));
+      return;
+    }
+
+    this.deletingDatasetId = dataset.datasetId;
+    this.datasetApi.deleteDataset(dataset.datasetId).subscribe({
+      next: (response) => {
+        this.deletingDatasetId = null;
+
+        if (!response.success) {
+          this.toast.error(
+            response.errors?.[0]?.message ||
+            this.languageService.translate('upload.errorDatasetDeleteFailed'));
+          return;
+        }
+
+        this.datasets = this.datasets.filter(item => item.datasetId !== dataset.datasetId);
+        this.toast.success(this.languageService.translate('upload.successDatasetDeleted'));
+      },
+      error: (err) => {
+        this.deletingDatasetId = null;
+        this.toast.error(
+          HttpErrorUtil.extractErrorMessage(err) ||
+          this.languageService.translate('upload.errorDatasetDeleteFailed'));
+      }
+    });
   }
 
   formatFileSize(sizeInBytes: number): string {

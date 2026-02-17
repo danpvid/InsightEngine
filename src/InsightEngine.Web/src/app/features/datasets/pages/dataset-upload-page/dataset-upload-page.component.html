@@ -135,9 +135,23 @@
         <p>{{ 'upload.loadingDatasets' | translate }}</p>
       </div>
 
+      <div class="datasets-controls" *ngIf="!loadingDatasets && datasets.length > 0">
+        <mat-form-field appearance="outline" class="datasets-sort">
+          <mat-label>{{ 'upload.sortByLabel' | translate }}</mat-label>
+          <mat-select [(ngModel)]="selectedDatasetSort">
+            <mat-option value="createdDesc">{{ 'upload.sortCreatedDesc' | translate }}</mat-option>
+            <mat-option value="createdAsc">{{ 'upload.sortCreatedAsc' | translate }}</mat-option>
+            <mat-option value="nameAsc">{{ 'upload.sortNameAsc' | translate }}</mat-option>
+            <mat-option value="nameDesc">{{ 'upload.sortNameDesc' | translate }}</mat-option>
+            <mat-option value="sizeDesc">{{ 'upload.sortSizeDesc' | translate }}</mat-option>
+            <mat-option value="sizeAsc">{{ 'upload.sortSizeAsc' | translate }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+
       <div *ngIf="!loadingDatasets && datasets.length > 0" class="datasets-grid">
         <mat-card
-          *ngFor="let dataset of datasets"
+          *ngFor="let dataset of sortedDatasets"
           class="dataset-card"
           (click)="openDataset(dataset)">
           <mat-card-header>
@@ -160,6 +174,14 @@
             <button mat-button color="primary">
               <mat-icon>analytics</mat-icon>
               {{ 'upload.viewRecommendations' | translate }}
+            </button>
+            <button
+              mat-button
+              color="warn"
+              (click)="deleteDataset(dataset, $event)"
+              [disabled]="deletingDatasetId === dataset.datasetId">
+              <mat-icon>{{ deletingDatasetId === dataset.datasetId ? 'hourglass_top' : 'delete' }}</mat-icon>
+              {{ deletingDatasetId === dataset.datasetId ? ('upload.deletingDataset' | translate) : ('upload.deleteDataset' | translate) }}
             </button>
           </mat-card-actions>
         </mat-card>

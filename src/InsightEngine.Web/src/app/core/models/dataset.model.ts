@@ -15,6 +15,15 @@ export interface DataSetSummary {
   createdAt: string;
 }
 
+export interface DataSetDeletionResponse {
+  datasetId: string;
+  removedMetadataRecord: boolean;
+  deletedFile: boolean;
+  deletedLegacyArtifacts: boolean;
+  clearedMetadataCache: boolean;
+  clearedChartCache: boolean;
+}
+
 export interface DatasetProfile {
   datasetId: string;
   rowCount: number;

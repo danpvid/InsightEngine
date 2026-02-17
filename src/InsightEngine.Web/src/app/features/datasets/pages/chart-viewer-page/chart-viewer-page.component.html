@@ -1,11 +1,11 @@
 <div class="container-wide">
   <nav class="breadcrumb">
-    <a [routerLink]="newDatasetLink" mat-button>
+    <a mat-button [routerLink]="newDatasetLink">
       <mat-icon>upload_file</mat-icon>
       {{ 'common.datasets' | translate }}
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
-    <a [routerLink]="recommendationsLink" mat-button>
+    <a mat-button [routerLink]="recommendationsLink">
       <mat-icon>auto_awesome</mat-icon>
       {{ 'recommendations.breadcrumb' | translate }}
     </a>
@@ -707,7 +707,7 @@
                         [class.active]="selectedRawFieldMetric?.name === field.name"
                         (click)="selectRawField(field.name)">
                         <span>{{ field.name }}</span>
-                        <small>{{ field.inferredType }} - {{ field.distinctCountProfile || field.distinctCountPage }}</small>
+                        <small>{{ field.inferredType }} - {{ getFieldDistinctDisplayCount(field) }}</small>
                       </button>
                     </div>
                   </aside>
@@ -740,9 +740,10 @@
                           mat-stroked-button
                           color="primary"
                           *ngFor="let top of selectedRawTopValues"
+                          [disabled]="!canToggleRawTopValue(top.value)"
                           [class.active-filter]="isRawTopValueSelected(field.name, top.value)"
                           (click)="toggleRawTopValueFilter(field.name, top.value)">
-                          {{ top.value }}<ng-container *ngIf="top.count > 0"> ({{ top.count }})</ng-container>
+                          {{ formatRawTopValueLabel(top.value) }}<ng-container *ngIf="top.count > 0"> ({{ top.count }})</ng-container>
                         </button>
                       </div>
 

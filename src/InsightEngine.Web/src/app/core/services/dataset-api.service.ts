@@ -4,7 +4,13 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../environments/environment.development';
 import { ApiResponse } from '../models/api-response.model';
-import { UploadDatasetResponse, DataSetSummary, DatasetProfile, RawDatasetRowsResponse } from '../models/dataset.model';
+import {
+  UploadDatasetResponse,
+  DataSetSummary,
+  DatasetProfile,
+  RawDatasetRowsResponse,
+  DataSetDeletionResponse
+} from '../models/dataset.model';
 import { RecommendationsResponse } from '../models/recommendation.model';
 import {
   AskAnalysisPlanResponse,
@@ -38,6 +44,12 @@ export class DatasetApiService {
   listDatasets(): Observable<ApiResponse<DataSetSummary[]>> {
     return this.http.get<ApiResponse<DataSetSummary[]>>(
       `${this.baseUrl}/api/v1/datasets`
+    );
+  }
+
+  deleteDataset(datasetId: string): Observable<ApiResponse<DataSetDeletionResponse>> {
+    return this.http.delete<ApiResponse<DataSetDeletionResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}`
     );
   }
 
