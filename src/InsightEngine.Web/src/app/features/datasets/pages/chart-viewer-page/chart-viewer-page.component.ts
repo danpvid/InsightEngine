@@ -243,6 +243,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   readonly rawPageSizeOptions: number[] = [50, 100, 250, 500];
   rawSortColumn: string = '';
   rawSortDirection: 'asc' | 'desc' = 'asc';
+  rawColumnWidthMode: 'compact' | 'balanced' | 'expanded' = 'balanced';
   rawFieldMetrics: RawFieldMetric[] = [];
   rawFieldStats: RawFieldStats | null = null;
   rawTopValueStats: RawFieldStats | null = null;
@@ -256,6 +257,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   controlsOpen: boolean = true;
   isMobile: boolean = false;
+  showRawQuickFiltersAside: boolean = false;
 
   activeTab: number = 0;
   simulationLoading: boolean = false;
@@ -554,6 +556,26 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
   get recommendationsHref(): string {
     return `/${this.currentLanguage}/datasets/${this.datasetId}/recommendations`;
+  }
+
+  setRawColumnWidthMode(mode: 'compact' | 'balanced' | 'expanded'): void {
+    this.rawColumnWidthMode = mode;
+  }
+
+  isRawColumnWidthMode(mode: 'compact' | 'balanced' | 'expanded'): boolean {
+    return this.rawColumnWidthMode === mode;
+  }
+
+  get rawColumnMaxWidthPx(): number {
+    switch (this.rawColumnWidthMode) {
+      case 'compact':
+        return 120;
+      case 'expanded':
+        return 280;
+      case 'balanced':
+      default:
+        return 180;
+    }
   }
 
   @HostListener('window:resize')
@@ -946,6 +968,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   private updateLayout(): void {
     const wasMobile = this.isMobile;
     this.isMobile = window.innerWidth < 1200;
+    this.showRawQuickFiltersAside = window.innerWidth >= 1280;
 
     if (!this.isMobile) {
       this.controlsOpen = true;

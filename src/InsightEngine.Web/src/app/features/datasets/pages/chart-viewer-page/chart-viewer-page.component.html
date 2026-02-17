@@ -1,4 +1,4 @@
-<div class="container-wide">
+<div class="container-wide" style="max-width:none;width:100%;">
   <nav class="breadcrumb">
     <a mat-button [attr.href]="newDatasetHref">
       <mat-icon>upload_file</mat-icon>
@@ -676,6 +676,27 @@
                     <input matInput [(ngModel)]="rawDataSearch" (ngModelChange)="onRawSearchChange()" [placeholder]="'chartViewer.searchTablePlaceholder' | translate" />
                     <mat-icon matSuffix>search</mat-icon>
                   </mat-form-field>
+                  <div [ngStyle]="{ display: 'inline-flex', 'align-items': 'center', gap: '6px' }">
+                    <span [ngStyle]="{ 'font-size': '12px', color: '#475569' }">Colunas:</span>
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      [color]="isRawColumnWidthMode('compact') ? 'primary' : undefined"
+                      [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
+                      (click)="setRawColumnWidthMode('compact')">-</button>
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      [color]="isRawColumnWidthMode('balanced') ? 'primary' : undefined"
+                      [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
+                      (click)="setRawColumnWidthMode('balanced')">=</button>
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      [color]="isRawColumnWidthMode('expanded') ? 'primary' : undefined"
+                      [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
+                      (click)="setRawColumnWidthMode('expanded')">+</button>
+                  </div>
                   <span class="data-grid-count">
                     {{ 'chartViewer.gridCount' | translate:{ shown: rawDataRows.length, total: rawTotalRows, page: (rawPageIndex + 1), pages: (rawTotalPages || 1) } }}
                   </span>
@@ -735,69 +756,148 @@
                           <strong>{{ rawFieldStats?.column === field.name ? rawFieldStats?.distinctCount : (field.distinctCountProfile || field.distinctCountPage) }}</strong>
                         </div>
                         <div>
-                          <span>{{ 'chartViewer.pageDistinctValues' | translate }}</span>
-                          <strong>{{ field.distinctCountPage }}</strong>
-                        </div>
-                        <div>
                           <span>{{ 'chartViewer.pageNullRate' | translate }}</span>
                           <strong>{{ field.nullRatePage | percent:'1.0-1' }}</strong>
                         </div>
                       </div>
-
-                      <div class="raw-value-tags" *ngIf="selectedRawTopValues.length > 0">
-                        <span class="tag-label">{{ 'chartViewer.topValues' | translate }}</span>
-                        <button
-                          mat-stroked-button
-                          color="primary"
-                          *ngFor="let top of selectedRawTopValues"
-                          [disabled]="!canToggleRawTopValue(top.value)"
-                          [class.active-filter]="isRawTopValueSelected(field.name, top.value)"
-                          (click)="toggleRawTopValueFilter(field.name, top.value)">
-                          {{ formatRawTopValueLabel(top.value) }}<ng-container *ngIf="top.count > 0"> ({{ top.count }})</ng-container>
-                        </button>
-                      </div>
-
-                      <div class="raw-value-tags" *ngIf="selectedRawTopRanges.length > 0">
-                        <span class="tag-label">{{ 'chartViewer.topRanges' | translate }}</span>
-                        <button
-                          mat-stroked-button
-                          color="primary"
-                          *ngFor="let range of selectedRawTopRanges"
-                          [class.active-filter]="isRawTopRangeSelected(field.name, range)"
-                          (click)="toggleRawTopRangeFilter(field.name, range)">
-                          {{ range.label }} ({{ range.count }})
-                        </button>
-                      </div>
                     </div>
 
-                    <div class="data-grid-table-wrapper">
-                      <table
-                        mat-table
-                        [dataSource]="rawDataRows"
-                        class="data-grid-table"
-                        matSort
-                        matSortDisableClear
-                        [matSortActive]="rawSortColumn"
-                        [matSortDirection]="rawSortDirection"
-                        (matSortChange)="onRawSortChange($event)">
-                        <ng-container *ngFor="let column of rawDataColumns" [matColumnDef]="column">
-                          <th mat-header-cell *matHeaderCellDef [mat-sort-header]="column">{{ column }}</th>
-                          <td mat-cell *matCellDef="let row">{{ formatGridCell(row, column) }}</td>
+                    <div
+                      [ngStyle]="showRawQuickFiltersAside
+                        ? { display: 'grid', 'grid-template-columns': 'minmax(0, 1fr) minmax(240px, 300px)', gap: '12px', 'align-items': 'start' }
+                        : null">
+                      <div>
+                        <ng-container *ngIf="selectedRawFieldMetric as field">
+                          <div class="raw-value-tags" *ngIf="!showRawQuickFiltersAside && selectedRawTopValues.length > 0">
+                            <span class="tag-label">{{ 'chartViewer.topValues' | translate }}</span>
+                            <button
+                              mat-stroked-button
+                              color="primary"
+                              *ngFor="let top of selectedRawTopValues"
+                              [disabled]="!canToggleRawTopValue(top.value)"
+                              [class.active-filter]="isRawTopValueSelected(field.name, top.value)"
+                              (click)="toggleRawTopValueFilter(field.name, top.value)">
+                              {{ formatRawTopValueLabel(top.value) }}<ng-container *ngIf="top.count > 0"> ({{ top.count }})</ng-container>
+                            </button>
+                          </div>
+
+                          <div class="raw-value-tags" *ngIf="!showRawQuickFiltersAside && selectedRawTopRanges.length > 0">
+                            <span class="tag-label">{{ 'chartViewer.topRanges' | translate }}</span>
+                            <button
+                              mat-stroked-button
+                              color="primary"
+                              *ngFor="let range of selectedRawTopRanges"
+                              [class.active-filter]="isRawTopRangeSelected(field.name, range)"
+                              (click)="toggleRawTopRangeFilter(field.name, range)">
+                              {{ range.label }} ({{ range.count }})
+                            </button>
+                          </div>
                         </ng-container>
 
-                        <tr mat-header-row *matHeaderRowDef="rawDataColumns"></tr>
-                        <tr mat-row *matRowDef="let row; columns: rawDataColumns;"></tr>
-                      </table>
-                    </div>
+                        <div class="data-grid-table-wrapper">
+                          <table
+                            mat-table
+                            [dataSource]="rawDataRows"
+                            class="data-grid-table"
+                            [ngStyle]="{ width: 'max-content', 'min-width': '100%' }"
+                            matSort
+                            matSortDisableClear
+                            [matSortActive]="rawSortColumn"
+                            [matSortDirection]="rawSortDirection"
+                            (matSortChange)="onRawSortChange($event)">
+                            <ng-container *ngFor="let column of rawDataColumns" [matColumnDef]="column">
+                              <th mat-header-cell *matHeaderCellDef [mat-sort-header]="column" [ngStyle]="{ 'white-space': 'nowrap' }">
+                                <span
+                                  [attr.title]="column"
+                                  [ngStyle]="{
+                                    display: 'inline-block',
+                                    'max-width.px': rawColumnMaxWidthPx,
+                                    overflow: 'hidden',
+                                    'text-overflow': 'ellipsis',
+                                    'white-space': 'nowrap',
+                                    'vertical-align': 'top'
+                                  }">
+                                  {{ column }}
+                                </span>
+                              </th>
+                              <td mat-cell *matCellDef="let row" [ngStyle]="{ 'white-space': 'nowrap' }">
+                                <span
+                                  [attr.title]="formatGridCell(row, column)"
+                                  [ngStyle]="{
+                                    display: 'inline-block',
+                                    'max-width.px': rawColumnMaxWidthPx,
+                                    overflow: 'hidden',
+                                    'text-overflow': 'ellipsis',
+                                    'white-space': 'nowrap',
+                                    'vertical-align': 'top'
+                                  }">
+                                  {{ formatGridCell(row, column) }}
+                                </span>
+                              </td>
+                            </ng-container>
 
-                    <mat-paginator
-                      [length]="rawTotalRows"
-                      [pageSize]="rawPageSize"
-                      [pageSizeOptions]="rawPageSizeOptions"
-                      [pageIndex]="rawPageIndex"
-                      (page)="onRawPageChange($event)"
-                      showFirstLastButtons>
-                    </mat-paginator>
+                            <tr mat-header-row *matHeaderRowDef="rawDataColumns"></tr>
+                            <tr mat-row *matRowDef="let row; columns: rawDataColumns;"></tr>
+                          </table>
+                        </div>
+
+                        <mat-paginator
+                          [length]="rawTotalRows"
+                          [pageSize]="rawPageSize"
+                          [pageSizeOptions]="rawPageSizeOptions"
+                          [pageIndex]="rawPageIndex"
+                          (page)="onRawPageChange($event)"
+                          showFirstLastButtons>
+                        </mat-paginator>
+                      </div>
+
+                      <ng-container *ngIf="selectedRawFieldMetric as field">
+                        <aside
+                          *ngIf="showRawQuickFiltersAside"
+                          [ngStyle]="{ display: 'grid', gap: '8px', position: 'sticky', top: '8px', 'max-height': '520px', overflow: 'hidden' }">
+                          <div
+                            class="raw-value-tags"
+                            *ngIf="selectedRawTopValues.length > 0"
+                            [ngStyle]="{ display: 'grid', 'align-items': 'stretch', gap: '6px', 'margin-bottom': '0' }">
+                            <span class="tag-label" [ngStyle]="{ 'min-width': '0' }">
+                              {{ 'chartViewer.topValues' | translate }}
+                            </span>
+                            <div [ngStyle]="{ display: 'grid', gap: '6px', 'max-height': '198px', 'overflow-y': 'auto', 'padding-right': '2px' }">
+                              <button
+                                mat-stroked-button
+                                color="primary"
+                                *ngFor="let top of selectedRawTopValues"
+                                [disabled]="!canToggleRawTopValue(top.value)"
+                                [class.active-filter]="isRawTopValueSelected(field.name, top.value)"
+                                [ngStyle]="{ width: '100%', 'justify-content': 'flex-start' }"
+                                (click)="toggleRawTopValueFilter(field.name, top.value)">
+                                {{ formatRawTopValueLabel(top.value) }}<ng-container *ngIf="top.count > 0"> ({{ top.count }})</ng-container>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div
+                            class="raw-value-tags"
+                            *ngIf="selectedRawTopRanges.length > 0"
+                            [ngStyle]="{ display: 'grid', 'align-items': 'stretch', gap: '6px', 'margin-bottom': '0' }">
+                            <span class="tag-label" [ngStyle]="{ 'min-width': '0' }">
+                              {{ 'chartViewer.topRanges' | translate }}
+                            </span>
+                            <div [ngStyle]="{ display: 'grid', gap: '6px', 'max-height': '198px', 'overflow-y': 'auto', 'padding-right': '2px' }">
+                              <button
+                                mat-stroked-button
+                                color="primary"
+                                *ngFor="let range of selectedRawTopRanges"
+                                [class.active-filter]="isRawTopRangeSelected(field.name, range)"
+                                [ngStyle]="{ width: '100%', 'justify-content': 'flex-start' }"
+                                (click)="toggleRawTopRangeFilter(field.name, range)">
+                                {{ range.label }} ({{ range.count }})
+                              </button>
+                            </div>
+                          </div>
+                        </aside>
+                      </ng-container>
+                    </div>
                   </section>
                 </div>
 
