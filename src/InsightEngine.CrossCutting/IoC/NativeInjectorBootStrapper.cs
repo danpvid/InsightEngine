@@ -78,6 +78,7 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddScoped<ICsvProfiler, CsvProfiler>();
         services.AddScoped<IDuckDbMetadataAnalyzer, DuckDbMetadataAnalyzer>();
+        services.AddScoped<ISemanticTagger, InsightEngine.Domain.Services.SemanticTagger>();
         services.AddScoped<IChartExecutionService, ChartExecutionService>();
         services.AddScoped<IChartPercentileService, ChartPercentileService>();
         services.AddScoped<IScenarioSimulationService, ScenarioSimulationService>();
