@@ -413,7 +413,18 @@ OFFSET {offset};
             var requestedField = ResolveRequestedField(fieldStatsColumn, columns);
             if (!string.IsNullOrWhiteSpace(requestedField))
             {
-                fieldStats = BuildRawFieldStats(connection, escapedPath, whereClause, requestedField!);
+                try
+                {
+                    fieldStats = BuildRawFieldStats(connection, escapedPath, whereClause, requestedField!);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Raw field stats failed for dataset {DatasetId} and column {Column}. Returning rows without fieldStats.",
+                        id,
+                        requestedField);
+                }
             }
 
             var totalPages = rowCountTotal == 0
@@ -1720,7 +1731,21 @@ LIMIT {RawTopRangesLimit};
 
     private static bool TryParseFilterOperator(string input, out FilterOperator op)
     {
-        return Enum.TryParse(input, true, out op);
+        var normalized = input?.Trim() ?? string.Empty;
+
+        normalized = normalized switch
+        {
+            "==" => "Eq",
+            "!=" => "NotEq",
+            ">" => "Gt",
+            ">=" => "Gte",
+            "<" => "Lt",
+            "<=" => "Lte",
+            "Ln" => "In",
+            _ => normalized
+        };
+
+        return Enum.TryParse(normalized, true, out op);
     }
 
     private static bool TryParseFilterLogicalOperator(string input, out FilterLogicalOperator logicalOperator)

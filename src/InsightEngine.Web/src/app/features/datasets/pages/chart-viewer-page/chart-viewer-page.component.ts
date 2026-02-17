@@ -173,6 +173,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   private rawSearchTimer?: number;
   private zoomTimer?: number;
   private chartLoadVersion: number = 0;
+  private rawDataLoadVersion: number = 0;
   private baseChartOptionSnapshot: EChartsOption | null = null;
 
   recommendations: ChartRecommendation[] = [];
@@ -2503,6 +2504,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
     this.rawDataLoading = true;
     this.rawDataError = null;
+    const requestVersion = ++this.rawDataLoadVersion;
 
     const sort = this.rawSortColumn
       ? [`${this.rawSortColumn}|${this.rawSortDirection}`]
@@ -2524,6 +2526,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       fieldStatsColumn: requestedFieldStatsColumn
     }).subscribe({
       next: response => {
+        if (requestVersion !== this.rawDataLoadVersion) {
+          return;
+        }
+
         this.rawDataLoading = false;
 
         if (!response.success || !response.data) {
@@ -2566,7 +2572,15 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         this.refreshPointDataFromRawRows();
       },
       error: err => {
+        if (requestVersion !== this.rawDataLoadVersion) {
+          return;
+        }
+
         this.rawDataLoading = false;
+        if (HttpErrorUtil.isRequestAbort(err)) {
+          return;
+        }
+
         this.rawDataError = HttpErrorUtil.extractErrorMessage(err);
       }
     });
