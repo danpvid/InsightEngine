@@ -826,6 +826,16 @@
                       [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
                       (click)="setRawColumnWidthMode('expanded')">+</button>
                   </div>
+                  <!-- Column info: shown inline in toolbar when a field is selected -->
+                  <div class="data-grid-field-info" *ngIf="selectedRawFieldMetric as field">
+                    <span class="field-info-name">{{ field.name }}</span>
+                    <span class="field-info-sep">·</span>
+                    <span class="field-info-type">{{ rawFieldStats?.column === field.name ? rawFieldStats?.inferredType : field.inferredType }}</span>
+                    <span class="field-info-sep">·</span>
+                    <span>{{ 'chartViewer.distinctValues' | translate }}: <strong>{{ rawFieldStats?.column === field.name ? rawFieldStats?.distinctCount : (field.distinctCountProfile || field.distinctCountPage) }}</strong></span>
+                    <span class="field-info-sep">·</span>
+                    <span>{{ 'chartViewer.pageNullRate' | translate }}: <strong>{{ field.nullRatePage | percent:'1.0-1' }}</strong></span>
+                  </div>
                   <span class="data-grid-count">
                     {{ 'chartViewer.gridCount' | translate:{ shown: rawDataRows.length, total: rawTotalRows, page: (rawPageIndex + 1), pages: (rawTotalPages || 1) } }}
                   </span>
@@ -873,24 +883,6 @@
                   </aside>
 
                   <section class="raw-main-panel">
-                    <div class="raw-field-summary" *ngIf="selectedRawFieldMetric as field">
-                      <div class="raw-field-summary-header">
-                        <strong>{{ field.name }}</strong>
-                        <span>{{ rawFieldStats?.column === field.name ? rawFieldStats?.inferredType : field.inferredType }}</span>
-                      </div>
-
-                      <div class="raw-field-kpis">
-                        <div>
-                          <span>{{ 'chartViewer.distinctValues' | translate }}</span>
-                          <strong>{{ rawFieldStats?.column === field.name ? rawFieldStats?.distinctCount : (field.distinctCountProfile || field.distinctCountPage) }}</strong>
-                        </div>
-                        <div>
-                          <span>{{ 'chartViewer.pageNullRate' | translate }}</span>
-                          <strong>{{ field.nullRatePage | percent:'1.0-1' }}</strong>
-                        </div>
-                      </div>
-                    </div>
-
                     <div
                       [ngStyle]="showRawQuickFiltersAside
                         ? { display: 'grid', 'grid-template-columns': 'minmax(0, 1fr) minmax(240px, 300px)', gap: '12px', 'align-items': 'start' }

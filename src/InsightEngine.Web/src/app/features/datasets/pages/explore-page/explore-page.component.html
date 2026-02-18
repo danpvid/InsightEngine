@@ -299,19 +299,19 @@
             <mat-tab [label]="'explore.tabCorrelations' | translate">
               <div class="correlations-tab" *ngIf="index; else noCorrelations">
                 <section class="correlations-filters">
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="fill" subscriptSizing="dynamic">
                     <mat-label>{{ 'explore.correlationSearch' | translate }}</mat-label>
                     <input matInput [(ngModel)]="correlationSearch" />
                   </mat-form-field>
 
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="fill" subscriptSizing="dynamic">
                     <mat-label>{{ 'explore.correlationMethod' | translate }}</mat-label>
                     <mat-select [(ngModel)]="correlationMethodFilter">
                       <mat-option *ngFor="let method of correlationMethods" [value]="method">{{ method }}</mat-option>
                     </mat-select>
                   </mat-form-field>
 
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="fill" subscriptSizing="dynamic">
                     <mat-label>{{ 'explore.correlationStrength' | translate }}</mat-label>
                     <mat-select [(ngModel)]="correlationStrengthFilter">
                       <mat-option *ngFor="let strength of correlationStrengths" [value]="strength">{{ strength }}</mat-option>

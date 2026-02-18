@@ -14,7 +14,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
   styles: [`
     .loading-container {
       width: 100%;
-      margin: 16px 0;
+      margin: 2px 0;
     }
   `]
 })

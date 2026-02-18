@@ -419,7 +419,55 @@ mat-progress-spinner {
 
 /* data-grid-card styles extracted to global stylesheet (see src/styles.scss) to reduce component CSS size */
 
-/* ── Raw data layout: left fields-facet panel + main data table ── */
+/* ── Raw data toolbar: search + column-width buttons + field info inline ── */
+.data-grid-card .data-grid-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.data-grid-card .data-grid-field-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  flex-wrap: wrap;
+
+  .field-info-name {
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .field-info-type {
+    color: var(--primary);
+    font-size: 11px;
+  }
+
+  .field-info-sep {
+    color: var(--border);
+    user-select: none;
+  }
+
+  strong {
+    color: var(--text);
+  }
+}
+
+/* Active-filter selected state for top-value / top-range buttons */
+.data-grid-card .active-filter {
+  background: var(--chip-bg) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  font-weight: 600;
+}
 .data-grid-card .raw-data-layout {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);

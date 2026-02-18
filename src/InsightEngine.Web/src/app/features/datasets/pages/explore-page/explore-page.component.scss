@@ -425,34 +425,31 @@
   gap: 8px;
   margin-bottom: 10px;
 
-  /* Compact height for all filter fields */
+  /* fill appearance: height is trivially controlled by the container-height token */
   mat-form-field {
     --mat-form-field-container-height: var(--control-compact-height);
-    --mat-form-field-container-vertical-padding: var(--control-compact-vertical-padding);
-    --mdc-outlined-text-field-container-shape: 6px;
+    --mat-form-field-container-vertical-padding: 0px;
+    --mdc-filled-text-field-container-shape: 6px;
   }
 
   mat-form-field ::ng-deep .mat-mdc-text-field-wrapper {
-    height: var(--control-compact-height);
-  }
-
-  mat-form-field ::ng-deep .mat-mdc-form-field-flex {
-    height: var(--control-compact-height);
-    align-items: center;
+    padding: 0 8px;
   }
 
   mat-form-field ::ng-deep .mat-mdc-form-field-infix {
-    height: var(--control-compact-height);
     padding-top: 0;
     padding-bottom: 0;
     min-height: unset;
-    display: flex;
-    align-items: center;
   }
 
-  mat-form-field ::ng-deep .mat-mdc-floating-label {
-    top: 50%;
-    transform: translateY(-50%);
+  mat-form-field ::ng-deep .mdc-line-ripple {
+    display: none;
+  }
+
+  mat-form-field ::ng-deep .mat-mdc-text-field-wrapper.mdc-text-field--filled {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
   }
 }
 
