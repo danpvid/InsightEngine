@@ -1,10 +1,12 @@
-﻿import { Component, OnInit } from '@angular/core';
+﻿import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgxEchartsModule } from 'ngx-echarts';
 import { EChartsOption } from 'echarts';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
+import { ThemeService } from '../../../../core/theme/theme.service';
+import { Subscription } from 'rxjs';
 import { ToastService } from '../../../../core/services/toast.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
 import { MATERIAL_MODULES } from '../../../../shared/material/material.imports';
@@ -35,7 +37,7 @@ import { TranslatePipe } from '../../../../core/pipes/translate.pipe';
   templateUrl: './recommendations-page.component.html',
   styleUrls: ['./recommendations-page.component.scss']
 })
-export class RecommendationsPageComponent implements OnInit {
+export class RecommendationsPageComponent implements OnInit, OnDestroy {
   datasetId: string = '';
   datasetName: string = '';
   recommendations: ChartRecommendation[] = [];
@@ -48,13 +50,15 @@ export class RecommendationsPageComponent implements OnInit {
   chartTypes: string[] = ['All', 'Line', 'Bar', 'Scatter', 'Histogram'];
 
   private previewOptionCache: Record<string, EChartsOption> = {};
+  private themeSubscription?: Subscription;
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private datasetApi: DatasetApiService,
     private toast: ToastService,
-    private languageService: LanguageService
+    private languageService: LanguageService,
+    private themeService: ThemeService
   ) {}
 
   get currentLanguage(): string {
@@ -92,6 +96,12 @@ export class RecommendationsPageComponent implements OnInit {
 
     this.loadDatasetName();
     this.loadRecommendations();
+
+    // Rebuild preview chart options when app theme changes so previews pick up new CSS tokens
+    this.themeSubscription = this.themeService.theme$.subscribe(() => {
+      this.previewOptionCache = {};
+      this.applyFilters();
+    });
   }
 
   private loadDatasetName(): void {
@@ -366,6 +376,10 @@ export class RecommendationsPageComponent implements OnInit {
     navigator.clipboard.writeText(this.datasetId).then(() => {
       this.toast.success(this.languageService.translate('common.copied'));
     });
+  }
+
+  ngOnDestroy(): void {
+    this.themeSubscription?.unsubscribe();
   }
 }
 

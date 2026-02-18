@@ -372,22 +372,23 @@
 }
 
 .matrix-strong-positive {
-  background: rgba(34,197,94,0.12); /* subtle tint that reads on both themes */
+  /* use theme token so dark/light can differ for accessibility */
+  background: var(--matrix-strong-positive-bg);
   color: var(--text);
 }
 
 .matrix-medium-positive {
-  background: rgba(132,204,22,0.08);
+  background: var(--matrix-medium-positive-bg);
   color: var(--text);
 }
 
 .matrix-strong-negative {
-  background: rgba(244,63,94,0.10);
+  background: var(--matrix-strong-negative-bg);
   color: var(--text);
 }
 
 .matrix-medium-negative {
-  background: rgba(255,183,77,0.08);
+  background: var(--matrix-medium-negative-bg);
   color: var(--text);
 }
 
