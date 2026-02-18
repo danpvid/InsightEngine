@@ -274,7 +274,7 @@ export class ExplorePageComponent implements OnInit {
           type: 'bar',
           data: histogram.map(bin => bin.count),
           itemStyle: {
-            color: '#2563eb'
+            color: (getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#2563eb').trim()
           }
         }
       ]
@@ -312,8 +312,8 @@ export class ExplorePageComponent implements OnInit {
           data: coverage.map(bin => bin.count),
           smooth: true,
           symbolSize: 6,
-          lineStyle: { width: 2, color: '#0d9488' },
-          itemStyle: { color: '#0d9488' }
+          lineStyle: { width: 2, color: (getComputedStyle(document.documentElement).getPropertyValue('--success') || '#0d9488').trim() },
+          itemStyle: { color: (getComputedStyle(document.documentElement).getPropertyValue('--success') || '#0d9488').trim() }
         }
       ]
     };
@@ -1035,7 +1035,7 @@ export class ExplorePageComponent implements OnInit {
           barMaxWidth: 20,
           data: validBins.map(bin => Number(bin.count) || 0),
           itemStyle: {
-            color: '#1d4ed8'
+            color: (getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#1d4ed8').trim()
           }
         }
       ]
@@ -1101,13 +1101,13 @@ export class ExplorePageComponent implements OnInit {
           data: field.dateStats.coverage.map(item => item.count),
           smooth: true,
           areaStyle: {
-            color: 'rgba(59, 130, 246, 0.12)'
+            color: this.hexToRgba((getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#2563eb').trim(), 0.12)
           },
           lineStyle: {
-            color: '#2563eb'
+            color: (getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#2563eb').trim()
           },
           itemStyle: {
-            color: '#2563eb'
+            color: (getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#2563eb').trim()
           }
         }
       ]
@@ -1130,6 +1130,17 @@ export class ExplorePageComponent implements OnInit {
     }
 
     return date.toLocaleDateString();
+  }
+
+  /* Utility: convert hex color to rgba string (used to apply alpha to theme tokens) */
+  private hexToRgba(hex: string, alpha: number): string {
+    const value = (hex || '').trim().replace('#', '');
+    const hexFull = value.length === 3 ? value.split('').map(c => c + c).join('') : value;
+    const intVal = parseInt(hexFull, 16);
+    const r = (intVal >> 16) & 255;
+    const g = (intVal >> 8) & 255;
+    const b = intVal & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
   private extractHistogramBins(field: ColumnIndex): Array<{ lowerBound: number; upperBound: number; count: number }> {

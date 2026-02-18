@@ -440,7 +440,7 @@ mat-progress-spinner {
   padding: 4px 8px;
   border-radius: 6px;
   background: rgba(15, 23, 42, 0.74);
-  color: #fff;
+  color: var(--on-dark);
   font-size: 12px;
   display: inline-flex;
   align-items: center;
@@ -473,7 +473,7 @@ mat-progress-spinner {
       display: flex;
       align-items: center;
       gap: 8px;
-      color: #1a237e;
+      color: var(--text);
     }
   }
 
@@ -537,13 +537,13 @@ mat-progress-spinner {
 
   .controls-info {
     padding: 10px 12px;
-    background-color: #e3f2fd;
+    background-color: var(--chip-bg);
     display: flex;
     gap: 12px;
     align-items: flex-start;
 
     mat-icon {
-      color: #1976d2;
+      color: var(--primary);
       font-size: 20px;
       width: 20px;
       height: 20px;
@@ -553,7 +553,7 @@ mat-progress-spinner {
     p {
       margin: 0;
       font-size: 12px;
-      color: #1565c0;
+      color: var(--primary);
       line-height: 1.5;
     }
   }

@@ -270,8 +270,8 @@ export class RecommendationsPageComponent implements OnInit {
           data: [14, 18, 16, 22, 20, 26, 24],
           showSymbol: false,
           smooth: true,
-          lineStyle: { width: 3, color: '#3f51b5' },
-          areaStyle: { color: 'rgba(63, 81, 181, 0.15)' }
+          lineStyle: { width: 3, color: (getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#3f51b5').trim() },
+          areaStyle: { color: this.hexToRgba((getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#3f51b5').trim(), 0.15) }
         }]
       },
       Bar: {
@@ -282,7 +282,7 @@ export class RecommendationsPageComponent implements OnInit {
           barWidth: '48%',
           itemStyle: {
             borderRadius: [4, 4, 0, 0],
-            color: '#ff7043'
+            color: (getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#ff7043').trim()
           }
         }]
       },
@@ -301,7 +301,7 @@ export class RecommendationsPageComponent implements OnInit {
             [28, 31]
           ],
           symbolSize: 8,
-          itemStyle: { color: '#26a69a' }
+          itemStyle: { color: (getComputedStyle(document.documentElement).getPropertyValue('--success') || '#26a69a').trim() }
         }]
       },
       Histogram: {
@@ -312,7 +312,7 @@ export class RecommendationsPageComponent implements OnInit {
           barWidth: '90%',
           itemStyle: {
             borderRadius: [2, 2, 0, 0],
-            color: '#7e57c2'
+            color: (getComputedStyle(document.documentElement).getPropertyValue('--primary-2') || '#7e57c2').trim()
           }
         }]
       }
@@ -341,6 +341,17 @@ export class RecommendationsPageComponent implements OnInit {
     }
 
     return leftIndex - rightIndex;
+  }
+
+  /* Utility: convert hex color to rgba string (used to apply alpha to theme tokens) */
+  private hexToRgba(hex: string, alpha: number): string {
+    const value = (hex || '').trim().replace('#', '');
+    const hexFull = value.length === 3 ? value.split('').map(c => c + c).join('') : value;
+    const intVal = parseInt(hexFull, 16);
+    const r = (intVal >> 16) & 255;
+    const g = (intVal >> 8) & 255;
+    const b = intVal & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
   onChartTypeChange(): void {

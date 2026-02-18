@@ -2436,7 +2436,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
           type: chartType,
           data: simulated,
           smooth: chartType === 'line',
-          itemStyle: { color: '#2563eb' }
+          itemStyle: { color: (getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#2563eb').trim() }
         }
       ]
     };
@@ -4646,14 +4646,14 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         {
           type: 'scatter',
           symbolSize: 8,
-          itemStyle: { color: '#4f46e5', opacity: 0.72 },
+          itemStyle: { color: (getComputedStyle(document.documentElement).getPropertyValue('--primary') || '#4f46e5').trim(), opacity: 0.72 },
           data: scatterSeriesData
         },
         {
           type: 'line',
           name: 'Ideal fit',
           symbol: 'none',
-          lineStyle: { color: '#16a34a', width: 1.5, type: 'dashed' },
+          lineStyle: { color: (getComputedStyle(document.documentElement).getPropertyValue('--success') || '#16a34a').trim(), width: 1.5, type: 'dashed' },
           data: [
             [minValue, minValue],
             [maxValue, maxValue]

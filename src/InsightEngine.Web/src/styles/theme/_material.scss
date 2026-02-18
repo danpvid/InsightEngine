@@ -31,7 +31,23 @@ $dark-theme: mat.define-dark-theme((
   density: 0,
 ));
 
+/* Legacy Material theme: keep native "legacy" look (indigo primary to match tokens) */
+$legacy-primary: mat.define-palette(mat.$indigo-palette, 600);
+$legacy-theme: mat.define-light-theme((
+  color: (
+    primary: $legacy-primary,
+    accent: $ae-accent,
+    warn: $ae-warn,
+  ),
+  typography: mat.define-typography-config(),
+  density: 0,
+));
+
 /* Emit Material component theming inside the theme classes so switching the root class changes Material styles too. */
+.theme-legacy {
+  @include mat.all-component-themes($legacy-theme);
+}
+
 .theme-light {
   @include mat.all-component-themes($light-theme);
 }

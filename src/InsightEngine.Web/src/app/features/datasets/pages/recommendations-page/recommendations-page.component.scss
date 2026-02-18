@@ -125,7 +125,7 @@
     gap: 12px;
 
     mat-icon {
-      color: #3f51b5;
+      color: var(--primary);
     }
 
     mat-form-field {
@@ -247,10 +247,10 @@
   gap: 8px;
   margin: 16px 0 0 0;
   padding: 12px;
-  background-color: #e3f2fd;
+  background-color: var(--chip-bg);
   border-radius: 4px;
   font-size: 13px;
-  color: #1565c0;
+  color: var(--primary);
   line-height: 1.5;
 
   mat-icon {
@@ -265,13 +265,13 @@
   margin-top: 12px;
   padding: 10px 12px;
   border-radius: 6px;
-  background: #fff8e1;
-  border: 1px solid #ffe082;
+  background: var(--chip-bg);
+  border: 1px solid var(--warn);
 
   .criteria-title {
     font-size: 12px;
     font-weight: 600;
-    color: #7c5a00;
+    color: var(--text);
     margin-bottom: 6px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
@@ -280,7 +280,7 @@
   ul {
     margin: 0;
     padding-left: 18px;
-    color: #5d4300;
+    color: var(--text-2);
 
     li {
       margin-bottom: 4px;
@@ -298,7 +298,7 @@
     font-size: 80px;
     width: 80px;
     height: 80px;
-    color: #bdbdbd;
+    color: var(--muted);
     margin-bottom: 24px;
   }
 

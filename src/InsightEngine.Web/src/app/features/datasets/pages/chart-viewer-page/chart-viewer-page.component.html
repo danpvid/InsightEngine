@@ -861,14 +861,14 @@
                         mat-stroked-button
                         *ngFor="let field of filteredRawFieldMetrics"
                         [class.active]="selectedRawFieldMetric?.name === field.name"
-                        [style.border-color]="selectedRawFieldMetric?.name === field.name ? null : (isFieldFiltered(field.name) ? '#93c5fd' : null)"
-                        [style.background]="selectedRawFieldMetric?.name === field.name ? null : (isFieldFiltered(field.name) ? '#f8fbff' : null)"
+                        [style.border-color]="selectedRawFieldMetric?.name === field.name ? null : (isFieldFiltered(field.name) ? 'var(--primary-2)' : null)"
+                        [style.background]="selectedRawFieldMetric?.name === field.name ? null : (isFieldFiltered(field.name) ? 'var(--chip-bg)' : null)"
                         (click)="selectRawField(field.name)">
                         <span class="field-label" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
                           <span class="field-name">{{ field.name }}</span>
                           <mat-icon
                             class="field-filter-icon"
-                            style="font-size:14px;width:14px;height:14px;color:#1d4ed8;"
+                            style="font-size:14px;width:14px;height:14px;color:var(--primary);"
                             *ngIf="isFieldFiltered(field.name)">
                             filter_alt
                           </mat-icon>

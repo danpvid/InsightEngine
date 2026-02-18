@@ -57,7 +57,7 @@ h2 { font-size: 16px; font-weight: 500; color: var(--text-2); }
 /* Buttons */
 .mat-flat-button.mat-primary, .mat-raised-button.mat-primary {
   background-color: var(--primary) !important;
-  color: #fff !important;
+  color: var(--on-primary) !important;
   box-shadow: none !important;
 }
 .mat-flat-button.mat-primary:hover, .mat-raised-button.mat-primary:hover {

@@ -33,6 +33,7 @@
   --primary-2: #5c6bc0;
 
   --danger: #c62828;
+  --danger-bg: #ffebee;
   --success: #2e7d32;
   --warn: #f6a11a;
 
@@ -42,6 +43,9 @@
   /* skeleton gradient for light theme */
   --skeleton-gradient: linear-gradient(90deg, #e2e8f0 25%, #eef2f7 50%, #f8fafc 75%);
   --focus: rgba(63,81,181,0.12);
+  /* text color used on strong/colored backgrounds (primary / dark overlays) */
+  --on-primary: #fff;
+  --on-dark: #fff;
 }
 
 /* Light theme — Postman-like warm/light surfaces */
@@ -60,6 +64,7 @@
   --primary-2: #ff8a42;     /* hover/active */
 
   --danger: #e53935;
+  --danger-bg: #ffebee;
   --success: #2e7d32;
   --warn: #f6a11a;
 
@@ -87,6 +92,7 @@
   --primary-2: #ff8a42;
 
   --danger: #ff6b6b;
+  --danger-bg: rgba(255,107,107,0.06);
   --success: #66d187;
   --warn: #ffb86b;
 

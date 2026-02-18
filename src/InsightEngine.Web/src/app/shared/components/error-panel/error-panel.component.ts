@@ -29,7 +29,7 @@ import { ApiError } from '../../../core/models/api-response.model';
   `,
   styles: [`
     .error-card {
-      background-color: #ffebee;
+      background-color: var(--danger-bg);
       margin: 16px 0;
     }
 

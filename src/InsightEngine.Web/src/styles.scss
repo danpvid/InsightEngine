@@ -91,14 +91,14 @@ mat-card {
 @keyframes skeleton-pulse { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 /* Shared small meta/info card styling (extracted from chart viewer) */
-.meta-item { display:flex; align-items:center; gap:12px; padding:10px 12px; background-color:#f5f5f5; border-radius:8px; transition:background-color .12s; }
-.meta-item:hover { background-color:#eeeeee; }
-.meta-item mat-icon { color: #3f51b5; font-size:32px; width:32px; height:32px; }
+.meta-item { display:flex; align-items:center; gap:12px; padding:10px 12px; background-color: var(--surface-2); border-radius:8px; transition:background-color .12s; }
+.meta-item:hover { background-color: var(--hover-bg); }
+.meta-item mat-icon { color: var(--primary); font-size:32px; width:32px; height:32px; }
 
 /* Chart tips / success callout (kept global so component CSS shrinks) */
-.chart-tips mat-card { background-color: #e8f5e9; }
-.chart-tips .tips-header { color: #2e7d32; }
-.chart-tips ul { color: #1b5e20; }
+.chart-tips mat-card { background-color: var(--chip-bg); }
+.chart-tips .tips-header { color: var(--success); }
+.chart-tips ul { color: var(--success); }
 
 /* Extracted shared blocks from Chart Viewer to reduce per-component CSS size */
 .controls-card, .data-grid-card, .simulation-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
@@ -108,7 +108,7 @@ mat-card {
 
 /* Chart-card / drilldown (extracted) */
 .chart-card { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; }
-.chart-card .cached-badge { display:inline-flex; align-items:center; gap:4px; padding:4px 12px; border-radius:16px; font-size:12px; font-weight:600; background: linear-gradient(135deg,#ffd700 0%,#ffed4e 100%); color:#1a237e; }
+.chart-card .cached-badge { display:inline-flex; align-items:center; gap:4px; padding:4px 12px; border-radius:16px; font-size:12px; font-weight:600; background: linear-gradient(135deg,#ffd700 0%,#ffed4e 100%); color: var(--primary); }
 .chart-card .drilldown-panel, .chart-card .drilldown-breadcrumb { padding: 8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border); }
 .chart-card .drilldown-breadcrumb .breadcrumb-step { padding: 0 6px; line-height: 24px; font-size: 12px; }
 
