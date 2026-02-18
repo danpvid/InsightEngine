@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { PageEvent } from '@angular/material/paginator';
 import { finalize } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
 import { NgxEchartsModule } from 'ngx-echarts';
@@ -95,7 +96,9 @@ export class ExplorePageComponent implements OnInit {
   gridSortDirection: 'asc' | 'desc' = 'asc';
   gridBackendFilters: string[] = [];
   gridTotalRows: number = 0;
+  gridPageIndex: number = 0;
   gridPageSize: number = 200;
+  readonly gridPageSizeOptions: number[] = [50, 100, 200, 500];
   gridCellActionContext: { column: string; value: string } | null = null;
   savedViews: ExploreSavedView[] = [];
   selectedSavedViewId: string = '';
@@ -475,7 +478,7 @@ export class ExplorePageComponent implements OnInit {
 
     this.gridLoading = true;
     this.datasetApi.getRawRows(this.datasetId, {
-      page: 1,
+      page: this.gridPageIndex + 1,
       pageSize: this.gridPageSize,
       filters: this.gridBackendFilters
     }).pipe(
@@ -494,11 +497,23 @@ export class ExplorePageComponent implements OnInit {
         this.gridRows = response.data.rows || [];
         this.gridColumns = response.data.columns || [];
         this.gridTotalRows = response.data.rowCountTotal || 0;
+
+        const totalPages = Math.max(1, Math.ceil(this.gridTotalRows / this.gridPageSize));
+        if (this.gridPageIndex >= totalPages) {
+          this.gridPageIndex = Math.max(0, totalPages - 1);
+        }
       },
       error: err => {
         this.toast.error(HttpErrorUtil.extractErrorMessage(err));
       }
     });
+  }
+
+  onGridPageChange(event: PageEvent): void {
+    const pageSizeChanged = this.gridPageSize !== event.pageSize;
+    this.gridPageSize = event.pageSize;
+    this.gridPageIndex = pageSizeChanged ? 0 : event.pageIndex;
+    this.loadGridData();
   }
 
   toggleGridColumn(column: string): void {
@@ -566,11 +581,13 @@ export class ExplorePageComponent implements OnInit {
     }
 
     this.gridBackendFilters = [...this.gridBackendFilters, token];
+    this.gridPageIndex = 0;
     this.loadGridData();
   }
 
   removeGridFilter(token: string): void {
     this.gridBackendFilters = this.gridBackendFilters.filter(item => item !== token);
+    this.gridPageIndex = 0;
     this.loadGridData();
   }
 

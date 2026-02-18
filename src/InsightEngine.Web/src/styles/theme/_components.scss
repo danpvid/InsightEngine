@@ -88,6 +88,38 @@ h2 { font-size: 16px; font-weight: 500; color: var(--text-2); }
   box-shadow: 0 0 0 4px var(--focus);
 }
 
+/* Reusable compact control pattern (same visual family used in chart Controls panel) */
+.app-compact-control {
+  display: grid;
+  gap: 2px;
+  min-width: 116px;
+}
+
+.app-compact-control-label {
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.1;
+}
+
+.app-compact-control-field {
+  width: 112px;
+  margin-bottom: 0;
+  --mat-form-field-container-height: var(--control-height);
+  --mat-form-field-container-vertical-padding: 8px;
+}
+
+.app-compact-control-field .mat-mdc-form-field-subscript-wrapper {
+  display: none;
+}
+
+.app-compact-control-field .mat-mdc-input-element,
+.app-compact-control-field .mat-mdc-select-value-text,
+.app-compact-control-field .mat-mdc-select-placeholder,
+.app-compact-control-field .mat-mdc-floating-label {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 /* Chips / badges */
 .mat-chip {
   background: var(--chip-bg);

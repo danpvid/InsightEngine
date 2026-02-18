@@ -64,41 +64,19 @@
   border: 1px solid var(--border);
 }
 
-/* saved-view select: fill appearance so height is trivial to constrain */
-.explore-toolbar .saved-view-select {
-  width: 160px;
-  min-width: 140px;
-  font-size: 12px;
-  --mat-form-field-container-height: var(--control-compact-height);
-  --mat-form-field-container-vertical-padding: 0px;
-  --mdc-filled-text-field-container-shape: 6px;
+.explore-toolbar .saved-view-control {
+  .app-compact-control-field {
+    width: 160px;
+    min-width: 140px;
 
-  ::ng-deep .mat-mdc-text-field-wrapper.mdc-text-field--filled {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    height: var(--control-compact-height);
-    padding: 0 8px;
-  }
+    ::ng-deep .mat-mdc-text-field-wrapper {
+      height: 32px;
+    }
 
-  ::ng-deep .mat-mdc-form-field-infix {
-    padding-top: 0;
-    padding-bottom: 0;
-    min-height: unset;
-  }
-
-  ::ng-deep .mdc-line-ripple {
-    display: none;
-  }
-
-  ::ng-deep .mat-mdc-form-field-subscript-wrapper {
-    display: none;
-  }
-
-  ::ng-deep .mat-mdc-select-value-text,
-  ::ng-deep .mat-mdc-select-placeholder,
-  ::ng-deep .mat-mdc-floating-label {
-    font-size: 12px;
+    ::ng-deep .mat-mdc-form-field-infix {
+      padding-top: 5px;
+      padding-bottom: 5px;
+    }
   }
 }
 .explore-toolbar .toolbar-actions button {
@@ -149,43 +127,78 @@
   flex-wrap: wrap;
 }
 
-.saved-view-select {
-  width: 160px;
-}
-
 .explore-layout {
   display: grid;
-  /* narrower left panel for denser field list */
-  grid-template-columns: 240px minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   gap: 12px;
   align-items: start;
 }
 
-.fields-sidebar,
 .main-panels,
 .details-panel {
   min-width: 0;
 }
 
-.fields-sidebar mat-card,
 .main-panels mat-card,
 .details-panel mat-card {
   overflow: hidden;
-}
-/* make left-panel card denser */
-.fields-sidebar mat-card {
-  padding: 8px;
 }
 
 .main-panels :is(mat-card-content, .mat-mdc-tab-group, .mat-mdc-tab-body-wrapper, .mat-mdc-tab-body, .mat-mdc-tab-body-content) {
   min-width: 0;
 }
 
-.sidebar-header {
+.field-item-tags mat-chip {
+  font-size: 11px;
+  padding: 2px 6px;
+  height: 20px;
+  min-height: 20px;
+  line-height: 18px;
+  border-radius: 6px;
+}
+
+.field-item-progress {
+  height: 4px;
+  background: var(--border);
+  border-radius: 999px;
+  margin: 8px 0 4px;
+}
+
+.field-item-progress-bar {
+  height: 100%;
+  background: var(--warn);
+  border-radius: 999px;
+} 
+
+.tab-placeholder {
+  min-height: 360px;
+  padding: 12px 4px;
+  color: var(--text-2);
+} 
+
+.field-tab {
+  padding: 10px 4px 0;
+}
+
+.field-workbench {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.field-browser-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--surface-2);
+}
+
+.field-browser-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  margin-bottom: 8px;
 
   h3 {
     margin: 0;
@@ -199,59 +212,25 @@
   }
 }
 
-.sidebar-search {
-  width: 100%;
-  margin-bottom: 10px;
-  --mat-form-field-container-height: var(--control-compact-height);
-  --mat-form-field-container-vertical-padding: 0px;
-  --mdc-filled-text-field-container-shape: 6px;
-  font-size: 12px;
+.field-browser-search-control {
+  margin-bottom: 8px;
 
-  ::ng-deep .mat-mdc-text-field-wrapper.mdc-text-field--filled {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    height: var(--control-compact-height);
-  }
-
-  ::ng-deep .mat-mdc-form-field-infix {
-    padding-top: 0;
-    padding-bottom: 0;
-    min-height: unset;
-  }
-
-  ::ng-deep .mdc-line-ripple {
-    display: none;
-  }
-
-  ::ng-deep .mat-mdc-form-field-subscript-wrapper {
-    display: none;
-  }
-
-  ::ng-deep .mat-icon {
-    color: var(--text-2);
-    font-size: 16px;
-    width: 16px;
-    height: 16px;
-  }
-
-  ::ng-deep .mat-mdc-input-element,
-  ::ng-deep .mat-mdc-floating-label {
-    font-size: 12px;
+  .field-browser-search-field {
+    width: 100%;
   }
 }
 
-.type-filters {
+.field-type-pills {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 10px;
 
   button {
-    height: 30px;
+    height: 28px;
     padding: 0 10px;
     min-width: unset;
-    line-height: 28px;
+    line-height: 26px;
     font-size: 11px;
   }
 
@@ -262,19 +241,19 @@
   }
 }
 
-.field-list {
+.field-browser-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: calc(100vh - 300px);
+  gap: 8px;
+  max-height: calc(100vh - 360px);
   overflow: auto;
 }
 
-.field-row {
+.field-browser-item {
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--surface);
   text-align: left;
   cursor: pointer;
   display: flex;
@@ -287,86 +266,52 @@
     border-color: var(--primary);
   }
 
-  mat-icon {
-    font-size: 16px;
-    width: 16px;
-    height: 16px;
-    color: var(--primary);
-    flex-shrink: 0;
-  }
-
   &.selected {
     border-color: var(--primary);
     background: var(--chip-bg);
     box-shadow: 0 2px 8px rgba(2,6,23,0.08);
 
-    .field-name {
+    .field-item-name {
       color: var(--primary);
     }
   }
 }
 
-.field-main { gap: 6px; }
-.field-name { font-size: 13px; font-weight: 700; color: var(--text); }
-.field-meta { color: var(--text-2); font-size: 11px; }
-.tags mat-chip {
-  font-size: 11px;
-  padding: 2px 6px;
-  height: 20px;
-  min-height: 20px;
-  line-height: 18px;
-  border-radius: 6px;
-}
-
-.field-main {
+.field-item-main {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
-.field-labels {
+.field-item-main mat-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.field-item-text {
   min-width: 0;
 }
 
-.field-name {
+.field-item-name {
   font-weight: 700;
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text);
 }
 
-.field-meta {
+.field-item-meta {
   color: var(--text-2);
   font-size: 11px;
   display: flex;
   gap: 6px;
-} 
-
-.null-rate {
-  height: 4px;
-  background: var(--border);
-  border-radius: 999px;
-  margin: 8px 0 4px;
 }
 
-.null-rate-bar {
-  height: 100%;
-  background: var(--warn);
-  border-radius: 999px;
-} 
-
-.tags {
-  margin-top: 6px;
-}
-
-.tab-placeholder {
-  min-height: 360px;
-  padding: 12px 4px;
-  color: var(--text-2);
-} 
-
-.field-tab {
-  padding: 10px 4px 0;
+.field-content {
+  min-width: 0;
 }
 
 .field-actions {
@@ -439,39 +384,13 @@
   gap: 8px;
   margin-bottom: 10px;
 
-  ::ng-deep mat-form-field {
-    --mat-form-field-container-height: var(--control-compact-height);
-    --mat-form-field-container-vertical-padding: 0px;
-    --mdc-filled-text-field-container-shape: 6px;
-    font-size: 12px;
-  }
+  .app-compact-control {
+    min-width: 0;
 
-  ::ng-deep .mat-mdc-text-field-wrapper.mdc-text-field--filled {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    height: var(--control-compact-height);
-  }
-
-  ::ng-deep .mat-mdc-form-field-infix {
-    padding-top: 0;
-    padding-bottom: 0;
-    min-height: unset;
-  }
-
-  ::ng-deep .mdc-line-ripple {
-    display: none;
-  }
-
-  ::ng-deep .mat-mdc-form-field-subscript-wrapper {
-    display: none;
-  }
-
-  ::ng-deep .mat-mdc-input-element,
-  ::ng-deep .mat-mdc-select-value-text,
-  ::ng-deep .mat-mdc-select-placeholder,
-  ::ng-deep .mat-mdc-floating-label {
-    font-size: 12px;
+    .app-compact-control-field {
+      width: 100%;
+      min-width: 0;
+    }
   }
 }
 
@@ -604,6 +523,10 @@
 .distribution-date-select {
   width: 100%;
 }
+
+.distribution-date-select ::ng-deep .mat-mdc-text-field-wrapper {
+  width: 100%;
+}
 .correlations-filters .mdc-text-field--filled .mdc-floating-label {
   font-size: 12px;
 }
@@ -639,36 +562,14 @@
   grid-template-columns: 1fr 1fr auto;
   gap: 8px;
   align-items: start;
+}
 
-  /* Compact height for quick-filter field */
-  mat-form-field {
-    --mat-form-field-container-height: var(--control-compact-height);
-    --mat-form-field-container-vertical-padding: var(--control-compact-vertical-padding);
-    --mdc-outlined-text-field-container-shape: 6px;
-  }
+.grid-quick-filter-field {
+  width: 100%;
+}
 
-  mat-form-field ::ng-deep .mat-mdc-text-field-wrapper {
-    height: var(--control-compact-height);
-  }
-
-  mat-form-field ::ng-deep .mat-mdc-form-field-flex {
-    height: var(--control-compact-height);
-    align-items: center;
-  }
-
-  mat-form-field ::ng-deep .mat-mdc-form-field-infix {
-    height: var(--control-compact-height);
-    padding-top: 0;
-    padding-bottom: 0;
-    min-height: unset;
-    display: flex;
-    align-items: center;
-  }
-
-  mat-form-field ::ng-deep .mat-mdc-floating-label {
-    top: 50%;
-    transform: translateY(-50%);
-  }
+.grid-tab mat-paginator {
+  margin-top: 8px;
 }
 
 .grid-columns-toggle {
@@ -722,6 +623,12 @@
   min-width: 100%;
   font-size: 12px;
 
+  .data-grid-table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+  }
+
   th, td {
     border-bottom: 1px solid var(--border);
     padding: 6px 8px;
@@ -741,22 +648,23 @@
 
 /* Sort icon layout: keep column name inline with a small, fixed sort arrow */
 .grid-th {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  white-space: nowrap;
 }
 
 .grid-th-label {
-  flex: 1 1 auto;
+  display: inline-block;
+  max-width: calc(100% - 16px);
   overflow: hidden;
   text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .grid-sort-icon {
   font-size: 12px !important;
   width: 12px !important;
   height: 12px !important;
-  flex-shrink: 0;
+  margin-left: 4px;
+  vertical-align: middle;
   color: var(--primary);
 }
 
@@ -974,11 +882,15 @@
 
 @media (max-width: 1360px) {
   .explore-layout {
-    grid-template-columns: 240px minmax(0, 1fr);
+    grid-template-columns: 1fr;
   }
 
   .details-panel {
-    grid-column: 1 / span 2;
+    grid-column: auto;
+  }
+
+  .field-workbench {
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 }
 
@@ -1006,7 +918,7 @@
     align-items: flex-start;
   }
 
-  .saved-view-select {
+  .saved-view-control .app-compact-control-field {
     width: min(320px, 100%);
   }
 
@@ -1020,6 +932,14 @@
 
   .field-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .field-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .field-browser-list {
+    max-height: 360px;
   }
 
   .correlations-filters {

@@ -181,7 +181,7 @@ Arquivo principal: `src/InsightEngine.API/appsettings.json`.
     "EnableCaching": true,
     "LocalHttp": {
       "BaseUrl": "http://localhost:11434",
-      "Model": "llama3"
+      "Model": "llama3.2"
     },
     "DeepInsights": {
       "EvidenceVersion": "v1",
@@ -209,7 +209,8 @@ Provider options:
 Exemplo local com Ollama:
 ```bash
 ollama serve
-ollama pull llama3
+ollama pull llama3.2
+# ou: ollama pull gemma3
 ```
 
 ## API Overview
@@ -278,7 +279,7 @@ Principais endpoints:
     },
     "meta": {
       "provider": "LocalHttp",
-      "model": "llama3",
+      "model": "llama3.2",
       "durationMs": 842,
       "cacheHit": false
     }
@@ -298,7 +299,7 @@ Principais endpoints:
     },
     "meta": {
       "provider": "LocalHttp",
-      "model": "llama3",
+      "model": "llama3.2",
       "durationMs": 1240,
       "cacheHit": false,
       "validationStatus": "ok"

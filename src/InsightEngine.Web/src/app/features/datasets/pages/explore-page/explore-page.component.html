@@ -18,13 +18,15 @@
     </div>
 
     <div class="toolbar-actions">
-      <mat-form-field appearance="fill" subscriptSizing="dynamic" floatLabel="never" class="saved-view-select">
-        <mat-label>{{ 'explore.savedViews' | translate }}</mat-label>
-        <mat-select [(ngModel)]="selectedSavedViewId" (selectionChange)="onSavedViewSelected()">
-          <mat-option [value]="''">{{ 'explore.savedViewsNone' | translate }}</mat-option>
-          <mat-option *ngFor="let view of savedViews" [value]="view.id">{{ view.name }}</mat-option>
-        </mat-select>
-      </mat-form-field>
+      <div class="saved-view-control app-compact-control">
+        <mat-form-field appearance="outline" class="app-compact-control-field">
+          <mat-label>{{ 'explore.savedViews' | translate }}</mat-label>
+          <mat-select [(ngModel)]="selectedSavedViewId" (selectionChange)="onSavedViewSelected()">
+            <mat-option [value]="''">{{ 'explore.savedViewsNone' | translate }}</mat-option>
+            <mat-option *ngFor="let view of savedViews" [value]="view.id">{{ view.name }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
       <button mat-stroked-button color="primary" (click)="saveCurrentView()">
         <mat-icon>save</mat-icon>
         {{ 'explore.savedViewsSave' | translate }}
@@ -49,61 +51,6 @@
   </section>
 
   <section class="explore-layout" *ngIf="!loadingIndex && hasIndexData; else nonReadyState">
-    <aside class="fields-sidebar">
-      <mat-card>
-        <mat-card-content>
-          <div class="sidebar-header">
-            <h3>{{ 'explore.fields' | translate }}</h3>
-            <span>{{ displayedFields.length }}</span>
-          </div>
-
-          <mat-form-field appearance="fill" subscriptSizing="dynamic" floatLabel="never" class="sidebar-search">
-            <mat-label>{{ 'explore.searchFields' | translate }}</mat-label>
-            <input matInput [(ngModel)]="fieldSearch" />
-            <mat-icon matSuffix>search</mat-icon>
-          </mat-form-field>
-
-          <div class="type-filters">
-            <button
-              mat-stroked-button
-              *ngFor="let type of availableTypeFilters"
-              (click)="onToggleTypeFilter(type)"
-              [class.active]="selectedTypeFilters.includes(type)">
-              {{ type }}
-            </button>
-          </div>
-
-          <div class="field-list">
-            <button
-              class="field-row"
-              *ngFor="let column of displayedFields"
-              [class.selected]="column.name === selectedFieldName"
-              (click)="onSelectField(column)">
-              <div class="field-main">
-                <mat-icon>{{ getInferredTypeIcon(column.inferredType) }}</mat-icon>
-                <div class="field-labels">
-                  <div class="field-name">{{ column.name }}</div>
-                  <div class="field-meta">
-                    <span>{{ column.inferredType }}</span>
-                    <span>•</span>
-                    <span>{{ column.distinctCount }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="null-rate">
-                <div class="null-rate-bar" [style.width]="getNullRateWidth(column)"></div>
-              </div>
-              <div class="tags" *ngIf="column.semanticTags.length > 0">
-                <mat-chip-set>
-                  <mat-chip *ngFor="let tag of column.semanticTags | slice:0:2">{{ tag }}</mat-chip>
-                </mat-chip-set>
-              </div>
-            </button>
-          </div>
-        </mat-card-content>
-      </mat-card>
-    </aside>
-
     <section class="main-panels">
       <mat-card>
         <mat-card-content>
@@ -193,35 +140,90 @@
               </ng-template>
             </mat-tab>
             <mat-tab [label]="'explore.tabField' | translate">
-              <div class="field-tab" *ngIf="selectedField as field; else noField">
-                <section class="field-actions">
-                  <button mat-stroked-button color="primary" (click)="useFieldInChart()">
-                    <mat-icon>bar_chart</mat-icon>
-                    {{ 'explore.fieldUseInChart' | translate }}
-                  </button>
-                  <button mat-stroked-button color="primary" (click)="addFieldFilter()">
-                    <mat-icon>filter_alt</mat-icon>
-                    {{ 'explore.fieldAddFilter' | translate }}
-                  </button>
-                  <button mat-flat-button color="primary" (click)="pinSelectedField()">
-                    <mat-icon>push_pin</mat-icon>
-                    {{ 'explore.fieldPinPanel' | translate }}
-                  </button>
-                </section>
+              <div class="field-tab">
+                <section class="field-workbench">
+                  <aside class="field-browser-card">
+                    <div class="field-browser-head">
+                      <h3>{{ 'explore.fields' | translate }}</h3>
+                      <span>{{ displayedFields.length }}</span>
+                    </div>
 
-                <section class="active-filters" *ngIf="activeFilters.length > 0">
-                  <h4>{{ 'explore.queryFilters' | translate }}</h4>
-                  <mat-chip-set>
-                    <mat-chip *ngFor="let filter of activeFilters" [removable]="true" (removed)="removeFilter(filter)">
-                      {{ filter }}
-                      <button matChipRemove aria-label="remove filter">
-                        <mat-icon>cancel</mat-icon>
+                    <div class="app-compact-control field-browser-search-control">
+                      <mat-form-field appearance="outline" class="app-compact-control-field field-browser-search-field">
+                        <mat-label>{{ 'explore.searchFields' | translate }}</mat-label>
+                        <input matInput [(ngModel)]="fieldSearch" />
+                        <mat-icon matSuffix>search</mat-icon>
+                      </mat-form-field>
+                    </div>
+
+                    <div class="field-type-pills">
+                      <button
+                        mat-stroked-button
+                        *ngFor="let type of availableTypeFilters"
+                        (click)="onToggleTypeFilter(type)"
+                        [class.active]="selectedTypeFilters.includes(type)">
+                        {{ type }}
                       </button>
-                    </mat-chip>
-                  </mat-chip-set>
-                </section>
+                    </div>
 
-                <section class="field-summary-grid">
+                    <div class="field-browser-list">
+                      <button
+                        class="field-browser-item"
+                        *ngFor="let column of displayedFields"
+                        [class.selected]="column.name === selectedFieldName"
+                        (click)="onSelectField(column)">
+                        <div class="field-item-main">
+                          <mat-icon>{{ getInferredTypeIcon(column.inferredType) }}</mat-icon>
+                          <div class="field-item-text">
+                            <div class="field-item-name">{{ column.name }}</div>
+                            <div class="field-item-meta">
+                              <span>{{ column.inferredType }}</span>
+                              <span>•</span>
+                              <span>{{ column.distinctCount }}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="field-item-progress">
+                          <div class="field-item-progress-bar" [style.width]="getNullRateWidth(column)"></div>
+                        </div>
+                        <div class="field-item-tags" *ngIf="column.semanticTags.length > 0">
+                          <mat-chip-set>
+                            <mat-chip *ngFor="let tag of column.semanticTags | slice:0:2">{{ tag }}</mat-chip>
+                          </mat-chip-set>
+                        </div>
+                      </button>
+                    </div>
+                  </aside>
+
+                  <div class="field-content" *ngIf="selectedField as field; else noFieldSelected">
+                    <section class="field-actions">
+                      <button mat-stroked-button color="primary" (click)="useFieldInChart()">
+                        <mat-icon>bar_chart</mat-icon>
+                        {{ 'explore.fieldUseInChart' | translate }}
+                      </button>
+                      <button mat-stroked-button color="primary" (click)="addFieldFilter()">
+                        <mat-icon>filter_alt</mat-icon>
+                        {{ 'explore.fieldAddFilter' | translate }}
+                      </button>
+                      <button mat-flat-button color="primary" (click)="pinSelectedField()">
+                        <mat-icon>push_pin</mat-icon>
+                        {{ 'explore.fieldPinPanel' | translate }}
+                      </button>
+                    </section>
+
+                    <section class="active-filters" *ngIf="activeFilters.length > 0">
+                      <h4>{{ 'explore.queryFilters' | translate }}</h4>
+                      <mat-chip-set>
+                        <mat-chip *ngFor="let filter of activeFilters" [removable]="true" (removed)="removeFilter(filter)">
+                          {{ filter }}
+                          <button matChipRemove aria-label="remove filter">
+                            <mat-icon>cancel</mat-icon>
+                          </button>
+                        </mat-chip>
+                      </mat-chip-set>
+                    </section>
+
+                    <section class="field-summary-grid">
                   <mat-card>
                     <mat-card-header>
                       <mat-card-title>{{ 'explore.fieldSummaryTitle' | translate }}</mat-card-title>
@@ -280,43 +282,51 @@
                   </mat-card>
                 </section>
 
-                <section class="pinned-section" *ngIf="pinnedFields.length > 0">
-                  <h4>{{ 'explore.pinnedTitle' | translate }}</h4>
-                  <mat-chip-set>
-                    <mat-chip *ngFor="let pinned of pinnedFields" [removable]="true" (removed)="unpinField(pinned.name)">
-                      {{ pinned.name }}
-                      <button matChipRemove aria-label="remove pinned field">
-                        <mat-icon>cancel</mat-icon>
-                      </button>
-                    </mat-chip>
-                  </mat-chip-set>
+                    <section class="pinned-section" *ngIf="pinnedFields.length > 0">
+                      <h4>{{ 'explore.pinnedTitle' | translate }}</h4>
+                      <mat-chip-set>
+                        <mat-chip *ngFor="let pinned of pinnedFields" [removable]="true" (removed)="unpinField(pinned.name)">
+                          {{ pinned.name }}
+                          <button matChipRemove aria-label="remove pinned field">
+                            <mat-icon>cancel</mat-icon>
+                          </button>
+                        </mat-chip>
+                      </mat-chip-set>
+                    </section>
+                  </div>
                 </section>
               </div>
-              <ng-template #noField>
-                <div class="tab-placeholder">{{ 'explore.fieldPlaceholder' | translate }}</div>
+              <ng-template #noFieldSelected>
+                <div class="tab-placeholder">{{ 'explore.selectFieldHint' | translate }}</div>
               </ng-template>
             </mat-tab>
             <mat-tab [label]="'explore.tabCorrelations' | translate">
               <div class="correlations-tab" *ngIf="index; else noCorrelations">
                 <section class="correlations-filters">
-                  <mat-form-field appearance="fill" subscriptSizing="dynamic" floatLabel="never">
-                    <mat-label>{{ 'explore.correlationSearch' | translate }}</mat-label>
-                    <input matInput [(ngModel)]="correlationSearch" />
-                  </mat-form-field>
+                  <div class="app-compact-control">
+                    <mat-form-field appearance="outline" class="app-compact-control-field">
+                      <mat-label>{{ 'explore.correlationSearch' | translate }}</mat-label>
+                      <input matInput [(ngModel)]="correlationSearch" />
+                    </mat-form-field>
+                  </div>
 
-                  <mat-form-field appearance="fill" subscriptSizing="dynamic" floatLabel="never">
-                    <mat-label>{{ 'explore.correlationMethod' | translate }}</mat-label>
-                    <mat-select [(ngModel)]="correlationMethodFilter">
-                      <mat-option *ngFor="let method of correlationMethods" [value]="method">{{ method }}</mat-option>
-                    </mat-select>
-                  </mat-form-field>
+                  <div class="app-compact-control">
+                    <mat-form-field appearance="outline" class="app-compact-control-field">
+                      <mat-label>{{ 'explore.correlationMethod' | translate }}</mat-label>
+                      <mat-select [(ngModel)]="correlationMethodFilter">
+                        <mat-option *ngFor="let method of correlationMethods" [value]="method">{{ method }}</mat-option>
+                      </mat-select>
+                    </mat-form-field>
+                  </div>
 
-                  <mat-form-field appearance="fill" subscriptSizing="dynamic" floatLabel="never">
-                    <mat-label>{{ 'explore.correlationStrength' | translate }}</mat-label>
-                    <mat-select [(ngModel)]="correlationStrengthFilter">
-                      <mat-option *ngFor="let strength of correlationStrengths" [value]="strength">{{ strength }}</mat-option>
-                    </mat-select>
-                  </mat-form-field>
+                  <div class="app-compact-control">
+                    <mat-form-field appearance="outline" class="app-compact-control-field">
+                      <mat-label>{{ 'explore.correlationStrength' | translate }}</mat-label>
+                      <mat-select [(ngModel)]="correlationStrengthFilter">
+                        <mat-option *ngFor="let strength of correlationStrengths" [value]="strength">{{ strength }}</mat-option>
+                      </mat-select>
+                    </mat-form-field>
+                  </div>
                 </section>
 
                 <section class="correlations-grid">
@@ -451,7 +461,7 @@
                       <mat-card-title>{{ 'explore.distributionDateTitle' | translate }}</mat-card-title>
                     </mat-card-header>
                     <mat-card-content>
-                      <mat-form-field appearance="outline" class="distribution-date-select">
+                      <mat-form-field appearance="outline" class="app-compact-control-field distribution-date-select">
                         <mat-label>{{ 'explore.distributionDateSelect' | translate }}</mat-label>
                         <mat-select [(ngModel)]="selectedDistributionDateField" (selectionChange)="onDistributionDateFieldChange()">
                           <mat-option [value]="''">None</mat-option>
@@ -499,7 +509,7 @@
             <mat-tab [label]="'explore.tabGrid' | translate">
               <div class="grid-tab">
                 <section class="grid-controls">
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="outline" class="app-compact-control-field grid-quick-filter-field">
                     <mat-label>{{ 'explore.gridQuickFilter' | translate }}</mat-label>
                     <input matInput [(ngModel)]="gridQuickFilter" />
                   </mat-form-field>
@@ -569,6 +579,15 @@
                     </tbody>
                   </table>
                 </section>
+
+                <mat-paginator
+                  [length]="gridTotalRows"
+                  [pageSize]="gridPageSize"
+                  [pageSizeOptions]="gridPageSizeOptions"
+                  [pageIndex]="gridPageIndex"
+                  (page)="onGridPageChange($event)"
+                  showFirstLastButtons>
+                </mat-paginator>
               </div>
               <ng-template #gridLoadingState>
                 <div class="loading-card">

@@ -800,11 +800,13 @@
 
               <mat-card-content>
                 <div class="data-grid-toolbar">
-                  <mat-form-field appearance="fill" subscriptSizing="dynamic" class="data-grid-search">
-                    <mat-label>{{ 'chartViewer.searchTable' | translate }}</mat-label>
-                    <input matInput [(ngModel)]="rawDataSearch" (ngModelChange)="onRawSearchChange()" [placeholder]="'chartViewer.searchTablePlaceholder' | translate" />
-                    <mat-icon matSuffix>search</mat-icon>
-                  </mat-form-field>
+                  <div class="app-compact-control">
+                    <mat-form-field appearance="fill" subscriptSizing="dynamic" class="app-compact-control-field data-grid-search">
+                      <mat-label>{{ 'chartViewer.searchTable' | translate }}</mat-label>
+                      <input matInput aria-label="Buscar linhas" [(ngModel)]="rawDataSearch" (ngModelChange)="onRawSearchChange()" [placeholder]="'chartViewer.searchTablePlaceholder' | translate" />
+                      <mat-icon matSuffix>search</mat-icon>
+                    </mat-form-field>
+                  </div>
                   <div [ngStyle]="{ display: 'inline-flex', 'align-items': 'center', gap: '6px' }">
                     <span [ngStyle]="{ 'font-size': '12px', color: 'var(--text-2)' }">Colunas:</span>
                     <button
@@ -851,14 +853,17 @@
                       <span>{{ rawFieldMetrics.length }}</span>
                     </div>
 
-                    <mat-form-field appearance="outline" class="raw-fields-search">
-                      <mat-label>{{ 'chartViewer.searchField' | translate }}</mat-label>
-                      <input
-                        matInput
-                        [(ngModel)]="rawFieldSearch"
-                        [placeholder]="'chartViewer.searchFieldPlaceholder' | translate" />
-                      <mat-icon matSuffix>search</mat-icon>
-                    </mat-form-field>
+                    <div class="app-compact-control">
+                      <mat-form-field appearance="outline" class="app-compact-control-field raw-fields-search">
+                        <mat-label>{{ 'chartViewer.searchField' | translate }}</mat-label>
+                        <input
+                          matInput
+                          aria-label="Buscar colunas"
+                          [(ngModel)]="rawFieldSearch"
+                          [placeholder]="'chartViewer.searchFieldPlaceholder' | translate" />
+                        <mat-icon matSuffix>search</mat-icon>
+                      </mat-form-field>
+                    </div>
 
                     <div class="raw-fields-list">
                       <button
