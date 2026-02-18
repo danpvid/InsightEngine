@@ -419,7 +419,202 @@ mat-progress-spinner {
 
 /* data-grid-card styles extracted to global stylesheet (see src/styles.scss) to reduce component CSS size */
 
+/* ── Raw data layout: left fields-facet panel + main data table ── */
+.data-grid-card .raw-data-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 10px;
+}
+
+.data-grid-card .raw-fields-panel {
+  position: sticky;
+  top: 10px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.data-grid-card .raw-fields-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  h4 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  span {
+    font-size: 12px;
+    color: var(--text-2);
+  }
+}
+
+.data-grid-card .raw-fields-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  button {
+    width: 100%;
+    text-align: left;
+    justify-content: flex-start;
+    padding: 4px 8px;
+    font-size: 12px;
+    height: auto;
+    min-height: var(--control-compact-height);
+    line-height: 1.3;
+  }
+
+  .field-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .field-meta {
+    font-size: 11px;
+    color: var(--text-2);
+    display: block;
+  }
+}
+
+.data-grid-card .raw-fields-search {
+  width: 100%;
+  --mat-form-field-container-height: var(--control-compact-height);
+  --mat-form-field-container-vertical-padding: var(--control-compact-vertical-padding);
+}
+
+.data-grid-card .raw-main-panel {
+  min-width: 0;
+}
+
 /* simulation-card styles extracted to global stylesheet (see src/styles.scss) to reduce component CSS size */
+
+/* ── Formula panel: expand/collapse section inside formula-card ── */
+.formula-card .formula-panel {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.formula-card .formula-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+
+  mat-form-field {
+    flex: 1 1 160px;
+    max-width: 280px;
+  }
+
+  mat-slide-toggle {
+    white-space: nowrap;
+    align-self: center;
+  }
+
+  button {
+    align-self: flex-end;
+  }
+}
+
+.formula-card .formula-topk {
+  width: 100px;
+  flex: 0 0 100px;
+}
+
+.formula-card .formula-disclaimer {
+  margin: 0;
+}
+
+.formula-card .formula-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.formula-card .formula-meta-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.formula-card .formula-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.formula-candidate-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+
+  &.selected {
+    border-color: var(--primary);
+    background: var(--chip-bg);
+  }
+}
+
+.formula-candidate-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.formula-equation {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.formula-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.formula-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.formula-validation-chart {
+  h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .chart {
+    height: 300px;
+  }
+}
 
 .chart-wrapper {
   width: 100%;

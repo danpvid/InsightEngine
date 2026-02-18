@@ -88,9 +88,15 @@
   align-items: center;
   min-height: unset;
 }
-.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-floating-label {
+/* label centered when not floating */
+.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-floating-label:not(.mdc-floating-label--float-above) {
   top: 50%;
   transform: translateY(-50%);
+}
+/* label floated above when filled / focused — normal notch behaviour */
+.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-floating-label.mdc-floating-label--float-above {
+  top: 0;
+  transform: translateY(-130%) scale(0.75);
 }
 .explore-toolbar .saved-view-select ::ng-deep .mdc-notched-outline__notch {
   max-width: calc(100% - 2 * var(--space-1));
