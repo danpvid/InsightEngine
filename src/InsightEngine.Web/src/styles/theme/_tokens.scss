@@ -15,6 +15,14 @@
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 24px;
+
+  /* Control sizing (semantic):
+     - --control-height: default control height (keep existing default)
+     - --control-compact-height: compact variant used by sidebars/toolbars
+     - --control-compact-vertical-padding: vertical padding for compact controls */
+  --control-height: 38px;
+  --control-compact-height: 34px;
+  --control-compact-vertical-padding: 6px;    
 }
 
 /* Legacy theme — preserve old app look (available as "Legacy" option) */

@@ -19,7 +19,7 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
-  padding: 10px 14px;
+  padding: 0;
   background-color: var(--surface-2);
   border-radius: 8px;
   flex-wrap: wrap;
@@ -29,7 +29,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: var(--control-compact-height);
   padding: 0 8px;
   border-radius: 6px;
   color: var(--primary);
@@ -70,14 +70,17 @@
   min-width: 140px;
 }
 .explore-toolbar .saved-view-select ::ng-deep .mat-mdc-form-field-infix {
-  height: 38px;
+  /* compact visual to match adjacent buttons */
+  height: var(--control-compact-height);
   padding-top: 0;
   padding-bottom: 0;
   display: flex;
   align-items: center;
 }
 .explore-toolbar .toolbar-actions button {
-  height: 38px;
+  height: var(--control-compact-height);
+  padding: 0 10px;
+  min-height: var(--control-compact-height);
 }
 
 .status-chip {
@@ -123,12 +126,13 @@
 }
 
 .saved-view-select {
-  width: 220px;
+  width: 160px;
 }
 
 .explore-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 280px;
+  /* narrower left panel for denser field list */
+  grid-template-columns: 240px minmax(0, 1fr) 280px;
   gap: 12px;
   align-items: start;
 }
@@ -143,6 +147,10 @@
 .main-panels mat-card,
 .details-panel mat-card {
   overflow: hidden;
+}
+/* make left-panel card denser */
+.fields-sidebar mat-card {
+  padding: 8px;
 }
 
 .main-panels :is(mat-card-content, .mat-mdc-tab-group, .mat-mdc-tab-body-wrapper, .mat-mdc-tab-body, .mat-mdc-tab-body-content) {
@@ -170,6 +178,23 @@
 .sidebar-search {
   width: 100%;
 }
+/* Compact Postman-like input for field search */
+.sidebar-search ::ng-deep .mat-mdc-form-field-infix {
+  height: var(--control-compact-height);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--surface);
+}
+.sidebar-search input.mat-mdc-input-element {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.sidebar-search mat-icon.mat-icon {
+  color: var(--text-2);
+  font-size: 16px;
+}
 
 .type-filters {
   display: flex;
@@ -195,7 +220,7 @@
 .field-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   max-height: calc(100vh - 300px);
   overflow: auto;
 }
@@ -203,13 +228,13 @@
 .field-row {
   border: 1px solid var(--border);
   border-radius: 6px; /* slightly tighter */
-  padding: 6px; /* compact */
+  padding: 4px; /* tighter */
   background: var(--surface);
   text-align: left;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   transition: background-color 0.15s, box-shadow 0.15s;
 
   mat-icon {
@@ -225,14 +250,21 @@
   }
 }
 
-.field-main { gap: 8px; }
+.field-main { gap: 6px; }
 .field-name { font-size: 13px; font-weight: 700; color: var(--text); }
 .field-meta { color: var(--text-2); font-size: 11px; }
-.tags mat-chip { font-size: 11px; padding: 2px 6px; }
+.tags mat-chip {
+  font-size: 11px;
+  padding: 2px 6px;
+  height: 20px;
+  min-height: 20px;
+  line-height: 18px;
+  border-radius: 6px;
+}
 
 .field-main {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .field-labels {
@@ -571,7 +603,7 @@
 }
 
 :host ::ng-deep .grid-cell-menu .mat-mdc-menu-item {
-  min-height: 34px;
+  min-height: var(--control-compact-height);
 }
 
 :host ::ng-deep .grid-cell-menu .mdc-list-item__primary-text {
@@ -727,7 +759,7 @@
 
 @media (max-width: 1360px) {
   .explore-layout {
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: 240px minmax(0, 1fr);
   }
 
   .details-panel {
