@@ -95,6 +95,19 @@ h2 { font-size: 16px; font-weight: 500; color: var(--text-2); }
   border-radius: var(--radius-sm);
 }
 
+/* MDC chips — global compact font size */
+.mat-mdc-chip,
+.mat-mdc-chip .mdc-evolution-chip__text-label,
+.mat-mdc-chip .mat-mdc-chip-action-label {
+  font-size: 11px !important;
+}
+
+/* mat-option — global compact font size */
+.mat-mdc-option,
+.mat-mdc-option .mdc-list-item__primary-text {
+  font-size: 12px !important;
+}
+
 /* Tables */
 .mat-table {
   background: transparent;
