@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { finalize } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 import { NgxEchartsModule } from 'ngx-echarts';
 import { EChartsOption } from 'echarts';
 import { MATERIAL_MODULES } from '../../../../shared/material/material.imports';
@@ -12,6 +13,7 @@ import { MetadataIndexApiService } from '../../../../core/services/metadata-inde
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
 import { ToastService } from '../../../../core/services/toast.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { ThemeService } from '../../../../core/theme/theme.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
 import { ChartRecommendation } from '../../../../core/models/recommendation.model';
 import {
@@ -104,13 +106,16 @@ export class ExplorePageComponent implements OnInit {
   readonly correlationMethods: string[] = ['All', 'Pearson', 'Spearman', 'CramersV', 'EtaSquared', 'MutualInformation'];
   readonly correlationStrengths: string[] = ['All', 'High', 'Medium', 'Low'];
 
+  private themeSubscription?: Subscription;
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private metadataIndexApi: MetadataIndexApiService,
     private datasetApi: DatasetApiService,
     private toast: ToastService,
-    private languageService: LanguageService
+    private languageService: LanguageService,
+    private themeService: ThemeService
   ) {}
 
   ngOnInit(): void {
@@ -118,6 +123,15 @@ export class ExplorePageComponent implements OnInit {
     this.loadDatasetName();
     this.loadSavedViews();
     this.loadIndex();
+
+    // Rebuild small preview chart options when app theme changes
+    this.themeSubscription = this.themeService.theme$.subscribe(() => this.rebuildDistributionCharts());
+  }
+
+  ngOnDestroy(): void {
+    if (this.themeSubscription) {
+      this.themeSubscription.unsubscribe();
+    }
   }
 
   get newDatasetLink(): string[] {

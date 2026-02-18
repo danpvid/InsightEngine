@@ -4,12 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgxEchartsModule } from 'ngx-echarts';
 import { ECharts, EChartsOption } from 'echarts';
-import { catchError, forkJoin, map, of } from 'rxjs';
+import { catchError, forkJoin, map, of, Subscription } from 'rxjs';
 import { PageEvent } from '@angular/material/paginator';
 import { Sort } from '@angular/material/sort';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
 import { ToastService } from '../../../../core/services/toast.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { ThemeService } from '../../../../core/theme/theme.service';
 import { TranslatePipe } from '../../../../core/pipes/translate.pipe';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
 import { MATERIAL_MODULES } from '../../../../shared/material/material.imports';
@@ -185,6 +186,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   private chartLoadVersion: number = 0;
   private rawDataLoadVersion: number = 0;
   private baseChartOptionSnapshot: EChartsOption | null = null;
+  private themeSubscription?: Subscription;
 
   recommendations: ChartRecommendation[] = [];
   currentRecommendation: ChartRecommendation | null = null;
@@ -627,7 +629,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     private router: Router,
     private datasetApi: DatasetApiService,
     private toast: ToastService,
-    private languageService: LanguageService
+    private languageService: LanguageService,
+    private themeService: ThemeService
   ) {}
 
   get currentLanguage(): string {
@@ -824,6 +827,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
     if (this.simulationEchartsInstance) {
       this.simulationEchartsInstance.off('click');
+    }
+
+    if (this.themeSubscription) {
+      this.themeSubscription.unsubscribe();
     }
   }
 
@@ -1440,6 +1447,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }).then(() => {
       this.loadChart(this.buildLoadOptionsFromState());
       this.loadRawDataRows(true);
+    });
+
+    // Re-apply chart options when the app theme changes so echarts instances pick up CSS token updates
+    this.themeSubscription = this.themeService.theme$.subscribe(() => {
+      this.refreshEchartsTheme();
     });
   }
 
@@ -3510,6 +3522,24 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     } catch (e) {
       // non-fatal — chart will keep original colors
       // console.debug('applyThemeToEchartsOption failed', e);
+    }
+  }
+
+  private refreshEchartsTheme(): void {
+    try {
+      if (this.chartOption && this.echartsInstance) {
+        const mutable = JSON.parse(JSON.stringify(this.chartOption)) as EChartsOption;
+        this.applyThemeToEchartsOption(mutable as Record<string, unknown>);
+        this.echartsInstance.setOption(mutable, true);
+      }
+
+      if (this.simulationChartOption && this.simulationEchartsInstance) {
+        const mutableSim = JSON.parse(JSON.stringify(this.simulationChartOption)) as EChartsOption;
+        this.applyThemeToEchartsOption(mutableSim as Record<string, unknown>);
+        this.simulationEchartsInstance.setOption(mutableSim, true);
+      }
+    } catch (e) {
+      // non-fatal
     }
   }
 
