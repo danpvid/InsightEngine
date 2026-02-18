@@ -57,7 +57,7 @@
             <span>{{ displayedFields.length }}</span>
           </div>
 
-          <mat-form-field appearance="outline" class="sidebar-search">
+          <mat-form-field appearance="fill" subscriptSizing="dynamic" class="sidebar-search">
             <mat-label>{{ 'explore.searchFields' | translate }}</mat-label>
             <input matInput [(ngModel)]="fieldSearch" />
             <mat-icon matSuffix>search</mat-icon>

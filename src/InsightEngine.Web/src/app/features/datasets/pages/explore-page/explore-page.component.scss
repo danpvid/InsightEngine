@@ -192,39 +192,37 @@
 .sidebar-search {
   width: 100%;
   margin-bottom: 10px;
-  /* Full MDC compact height chain for sidebar search field */
   --mat-form-field-container-height: var(--control-compact-height);
-  --mat-form-field-container-vertical-padding: var(--control-compact-vertical-padding);
-  --mdc-outlined-text-field-container-shape: 6px;
-}
-/* Compact Postman-like input for field search */
-.sidebar-search ::ng-deep .mat-mdc-text-field-wrapper {
-  height: var(--control-compact-height);
-}
-.sidebar-search ::ng-deep .mat-mdc-form-field-flex {
-  height: var(--control-compact-height);
-  align-items: center;
-}
-.sidebar-search ::ng-deep .mat-mdc-form-field-infix {
-  height: var(--control-compact-height);
-  display: flex;
-  align-items: center;
-  padding-top: 0;
-  padding-bottom: 0;
-  min-height: unset;
-}
-.sidebar-search ::ng-deep .mat-mdc-floating-label {
-  top: 50%;
-  transform: translateY(-50%);
-}
-.sidebar-search input.mat-mdc-input-element {
-  font-size: 12px;
-}
-.sidebar-search ::ng-deep .mat-icon {
-  color: var(--text-2);
-  font-size: 16px;
-  width: 16px;
-  height: 16px;
+  --mat-form-field-container-vertical-padding: 0px;
+  --mdc-filled-text-field-container-shape: 6px;
+
+  ::ng-deep .mat-mdc-text-field-wrapper.mdc-text-field--filled {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    height: var(--control-compact-height);
+  }
+
+  ::ng-deep .mat-mdc-form-field-infix {
+    padding-top: 0;
+    padding-bottom: 0;
+    min-height: unset;
+  }
+
+  ::ng-deep .mdc-line-ripple {
+    display: none;
+  }
+
+  ::ng-deep .mat-mdc-form-field-subscript-wrapper {
+    display: none;
+  }
+
+  ::ng-deep .mat-icon {
+    color: var(--text-2);
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
 }
 
 .type-filters {
@@ -425,31 +423,31 @@
   gap: 8px;
   margin-bottom: 10px;
 
-  /* fill appearance: height is trivially controlled by the container-height token */
-  mat-form-field {
+  ::ng-deep mat-form-field {
     --mat-form-field-container-height: var(--control-compact-height);
     --mat-form-field-container-vertical-padding: 0px;
     --mdc-filled-text-field-container-shape: 6px;
   }
 
-  mat-form-field ::ng-deep .mat-mdc-text-field-wrapper {
-    padding: 0 8px;
+  ::ng-deep .mat-mdc-text-field-wrapper.mdc-text-field--filled {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    height: var(--control-compact-height);
   }
 
-  mat-form-field ::ng-deep .mat-mdc-form-field-infix {
+  ::ng-deep .mat-mdc-form-field-infix {
     padding-top: 0;
     padding-bottom: 0;
     min-height: unset;
   }
 
-  mat-form-field ::ng-deep .mdc-line-ripple {
+  ::ng-deep .mdc-line-ripple {
     display: none;
   }
 
-  mat-form-field ::ng-deep .mat-mdc-text-field-wrapper.mdc-text-field--filled {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+  ::ng-deep .mat-mdc-form-field-subscript-wrapper {
+    display: none;
   }
 }
 
