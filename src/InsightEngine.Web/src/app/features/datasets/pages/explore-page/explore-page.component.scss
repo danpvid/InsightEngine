@@ -64,42 +64,32 @@
   border: 1px solid var(--border);
 }
 
-/* make the saved-view selector match the height of the buttons — full MDC height chain */
+/* saved-view select: fill appearance so height is trivial to constrain */
 .explore-toolbar .saved-view-select {
   width: 160px;
   min-width: 140px;
-  /* MDC custom properties to force compact height */
+  /* fill appearance uses these two tokens cleanly */
   --mat-form-field-container-height: var(--control-compact-height);
-  --mat-form-field-container-vertical-padding: var(--control-compact-vertical-padding);
-  --mdc-outlined-text-field-container-shape: 6px;
+  --mat-form-field-container-vertical-padding: 0px;
+  --mdc-filled-text-field-container-shape: 6px;
 }
 .explore-toolbar .saved-view-select ::ng-deep .mat-mdc-text-field-wrapper {
-  height: var(--control-compact-height);
-}
-.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-form-field-flex {
-  height: var(--control-compact-height);
-  align-items: center;
+  padding: 0 8px;
 }
 .explore-toolbar .saved-view-select ::ng-deep .mat-mdc-form-field-infix {
-  height: var(--control-compact-height);
   padding-top: 0;
   padding-bottom: 0;
-  display: flex;
-  align-items: center;
   min-height: unset;
 }
-/* label centered when not floating */
-.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-floating-label:not(.mdc-floating-label--float-above) {
-  top: 50%;
-  transform: translateY(-50%);
+/* hide the ripple underline that fill adds */
+.explore-toolbar .saved-view-select ::ng-deep .mdc-line-ripple {
+  display: none;
 }
-/* label floated above when filled / focused — normal notch behaviour */
-.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-floating-label.mdc-floating-label--float-above {
-  top: 0;
-  transform: translateY(-130%) scale(0.75);
-}
-.explore-toolbar .saved-view-select ::ng-deep .mdc-notched-outline__notch {
-  max-width: calc(100% - 2 * var(--space-1));
+/* de-emphasise the fill background so it blends with the toolbar */
+.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-text-field-wrapper.mdc-text-field--filled {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 .explore-toolbar .toolbar-actions button {
   height: var(--control-compact-height);

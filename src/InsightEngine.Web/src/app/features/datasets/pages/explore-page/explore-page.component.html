@@ -18,7 +18,7 @@
     </div>
 
     <div class="toolbar-actions">
-      <mat-form-field appearance="outline" class="saved-view-select">
+      <mat-form-field appearance="fill" subscriptSizing="dynamic" class="saved-view-select">
         <mat-label>{{ 'explore.savedViews' | translate }}</mat-label>
         <mat-select [(ngModel)]="selectedSavedViewId" (selectionChange)="onSavedViewSelected()">
           <mat-option [value]="''">{{ 'explore.savedViewsNone' | translate }}</mat-option>
