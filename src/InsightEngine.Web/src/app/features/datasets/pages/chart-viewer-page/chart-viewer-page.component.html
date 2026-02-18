@@ -800,7 +800,7 @@
 
               <mat-card-content>
                 <div class="data-grid-toolbar">
-                  <mat-form-field appearance="outline">
+                  <mat-form-field appearance="fill" subscriptSizing="dynamic" class="data-grid-search">
                     <mat-label>{{ 'chartViewer.searchTable' | translate }}</mat-label>
                     <input matInput [(ngModel)]="rawDataSearch" (ngModelChange)="onRawSearchChange()" [placeholder]="'chartViewer.searchTablePlaceholder' | translate" />
                     <mat-icon matSuffix>search</mat-icon>
