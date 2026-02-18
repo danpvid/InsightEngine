@@ -11,12 +11,6 @@
     </span>
   </nav>
 
-  <app-page-header
-    [title]="'explore.title' | translate"
-    [subtitle]="datasetName ? datasetName + ' (' + datasetId + ')' : datasetId"
-    icon="travel_explore">
-  </app-page-header>
-
   <section class="explore-toolbar">
     <div class="status-chip" [ngClass]="statusClass">
       <mat-icon>dns</mat-icon>
@@ -326,40 +320,8 @@
                 </section>
 
                 <section class="correlations-grid">
-                  <mat-card>
-                    <mat-card-header>
-                      <mat-card-title>{{ 'explore.correlationRankedTitle' | translate }}</mat-card-title>
-                    </mat-card-header>
-                    <mat-card-content>
-                      <div class="table-wrapper">
-                        <table class="edge-table">
-                          <thead>
-                            <tr>
-                              <th>{{ 'explore.correlationLeft' | translate }}</th>
-                              <th>{{ 'explore.correlationRight' | translate }}</th>
-                              <th>{{ 'explore.correlationMethod' | translate }}</th>
-                              <th>{{ 'explore.correlationScore' | translate }}</th>
-                              <th>{{ 'explore.correlationStrength' | translate }}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr
-                              *ngFor="let edge of filteredCorrelationEdges | slice:0:120"
-                              [class.selected]="buildCorrelationKey(edge) === selectedCorrelationKey"
-                              (click)="onSelectCorrelation(edge)">
-                              <td>{{ edge.leftColumn }}</td>
-                              <td>{{ edge.rightColumn }}</td>
-                              <td>{{ edge.method }}</td>
-                              <td>{{ formatCorrelationScore(edge.score) }}</td>
-                              <td>{{ edge.strength }}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </mat-card-content>
-                  </mat-card>
-
-                  <mat-card>
+                  <!-- Matrix: full width on top -->
+                  <mat-card class="correlations-matrix-card">
                     <mat-card-header>
                       <mat-card-title>{{ 'explore.correlationMatrixTitle' | translate }}</mat-card-title>
                     </mat-card-header>
@@ -391,39 +353,73 @@
                       </ng-template>
                     </mat-card-content>
                   </mat-card>
-                </section>
 
-                <section class="correlation-details" *ngIf="selectedCorrelation as correlation">
-                  <mat-card>
-                    <mat-card-header>
-                      <mat-card-title>{{ 'explore.correlationDetailsTitle' | translate }}</mat-card-title>
-                    </mat-card-header>
-                    <mat-card-content>
-                      <p>
-                        {{ correlation.leftColumn }} ↔ {{ correlation.rightColumn }}
-                        ({{ correlation.method }}) = <strong>{{ formatCorrelationScore(correlation.score) }}</strong>
-                      </p>
-                      <p class="muted">{{ 'explore.correlationDetailsHint' | translate }}</p>
-                      <div class="details-row">
-                        <span>{{ 'explore.correlationSample' | translate }}</span>
-                        <strong>{{ correlation.sampleSize }}</strong>
-                      </div>
-                      <div class="details-row">
-                        <span>{{ 'explore.correlationConfidence' | translate }}</span>
-                        <strong>{{ correlation.confidence }}</strong>
-                      </div>
-                      <div class="correlation-actions">
-                        <button mat-stroked-button color="primary" (click)="useCorrelationInChart()">
-                          <mat-icon>scatter_plot</mat-icon>
-                          {{ 'explore.correlationBuildScatter' | translate }}
-                        </button>
-                        <button mat-stroked-button color="primary" (click)="addCorrelationComparison()">
-                          <mat-icon>compare_arrows</mat-icon>
-                          {{ 'explore.correlationAddComparison' | translate }}
-                        </button>
-                      </div>
-                    </mat-card-content>
-                  </mat-card>
+                  <!-- Bottom row: ranked edges (left) + details (right) -->
+                  <div class="correlations-bottom">
+                    <mat-card class="correlations-ranked-card">
+                      <mat-card-header>
+                        <mat-card-title>{{ 'explore.correlationRankedTitle' | translate }}</mat-card-title>
+                      </mat-card-header>
+                      <mat-card-content>
+                        <div class="table-wrapper">
+                          <table class="edge-table">
+                            <thead>
+                              <tr>
+                                <th>{{ 'explore.correlationLeft' | translate }}</th>
+                                <th>{{ 'explore.correlationRight' | translate }}</th>
+                                <th>{{ 'explore.correlationMethod' | translate }}</th>
+                                <th>{{ 'explore.correlationScore' | translate }}</th>
+                                <th>{{ 'explore.correlationStrength' | translate }}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr
+                                *ngFor="let edge of filteredCorrelationEdges | slice:0:120"
+                                [class.selected]="buildCorrelationKey(edge) === selectedCorrelationKey"
+                                (click)="onSelectCorrelation(edge)">
+                                <td>{{ edge.leftColumn }}</td>
+                                <td>{{ edge.rightColumn }}</td>
+                                <td>{{ edge.method }}</td>
+                                <td>{{ formatCorrelationScore(edge.score) }}</td>
+                                <td>{{ edge.strength }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </mat-card-content>
+                    </mat-card>
+
+                    <mat-card class="correlations-details-card" *ngIf="selectedCorrelation as correlation">
+                      <mat-card-header>
+                        <mat-card-title>{{ 'explore.correlationDetailsTitle' | translate }}</mat-card-title>
+                      </mat-card-header>
+                      <mat-card-content>
+                        <p>
+                          {{ correlation.leftColumn }} ↔ {{ correlation.rightColumn }}
+                          ({{ correlation.method }}) = <strong>{{ formatCorrelationScore(correlation.score) }}</strong>
+                        </p>
+                        <p class="muted">{{ 'explore.correlationDetailsHint' | translate }}</p>
+                        <div class="details-row">
+                          <span>{{ 'explore.correlationSample' | translate }}</span>
+                          <strong>{{ correlation.sampleSize }}</strong>
+                        </div>
+                        <div class="details-row">
+                          <span>{{ 'explore.correlationConfidence' | translate }}</span>
+                          <strong>{{ correlation.confidence }}</strong>
+                        </div>
+                        <div class="correlation-actions">
+                          <button mat-stroked-button color="primary" (click)="useCorrelationInChart()">
+                            <mat-icon>scatter_plot</mat-icon>
+                            {{ 'explore.correlationBuildScatter' | translate }}
+                          </button>
+                          <button mat-stroked-button color="primary" (click)="addCorrelationComparison()">
+                            <mat-icon>compare_arrows</mat-icon>
+                            {{ 'explore.correlationAddComparison' | translate }}
+                          </button>
+                        </div>
+                      </mat-card-content>
+                    </mat-card>
+                  </div>
                 </section>
               </div>
               <ng-template #noCorrelations>
@@ -545,9 +541,9 @@
                   <table class="data-grid-table" *ngIf="visibleGridColumns.length > 0; else noGridColumns">
                     <thead>
                       <tr>
-                        <th *ngFor="let column of visibleGridColumns" (click)="sortGridBy(column)">
-                          {{ column }}
-                          <mat-icon *ngIf="gridSortColumn === column">
+                        <th *ngFor="let column of visibleGridColumns" (click)="sortGridBy(column)" class="grid-th">
+                          <span class="grid-th-label">{{ column }}</span>
+                          <mat-icon class="grid-sort-icon" *ngIf="gridSortColumn === column">
                             {{ gridSortDirection === 'asc' ? 'north' : 'south' }}
                           </mat-icon>
                         </th>

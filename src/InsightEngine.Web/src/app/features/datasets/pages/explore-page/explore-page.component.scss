@@ -64,18 +64,36 @@
   border: 1px solid var(--border);
 }
 
-/* make the saved-view selector match the height of the buttons and be more compact */
+/* make the saved-view selector match the height of the buttons — full MDC height chain */
 .explore-toolbar .saved-view-select {
   width: 160px;
   min-width: 140px;
+  /* MDC custom properties to force compact height */
+  --mat-form-field-container-height: var(--control-compact-height);
+  --mat-form-field-container-vertical-padding: var(--control-compact-vertical-padding);
+  --mdc-outlined-text-field-container-shape: 6px;
+}
+.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-text-field-wrapper {
+  height: var(--control-compact-height);
+}
+.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-form-field-flex {
+  height: var(--control-compact-height);
+  align-items: center;
 }
 .explore-toolbar .saved-view-select ::ng-deep .mat-mdc-form-field-infix {
-  /* compact visual to match adjacent buttons */
   height: var(--control-compact-height);
   padding-top: 0;
   padding-bottom: 0;
   display: flex;
   align-items: center;
+  min-height: unset;
+}
+.explore-toolbar .saved-view-select ::ng-deep .mat-mdc-floating-label {
+  top: 50%;
+  transform: translateY(-50%);
+}
+.explore-toolbar .saved-view-select ::ng-deep .mdc-notched-outline__notch {
+  max-width: calc(100% - 2 * var(--space-1));
 }
 .explore-toolbar .toolbar-actions button {
   height: var(--control-compact-height);
@@ -177,23 +195,40 @@
 
 .sidebar-search {
   width: 100%;
+  margin-bottom: 10px;
+  /* Full MDC compact height chain for sidebar search field */
+  --mat-form-field-container-height: var(--control-compact-height);
+  --mat-form-field-container-vertical-padding: var(--control-compact-vertical-padding);
+  --mdc-outlined-text-field-container-shape: 6px;
 }
 /* Compact Postman-like input for field search */
+.sidebar-search ::ng-deep .mat-mdc-text-field-wrapper {
+  height: var(--control-compact-height);
+}
+.sidebar-search ::ng-deep .mat-mdc-form-field-flex {
+  height: var(--control-compact-height);
+  align-items: center;
+}
 .sidebar-search ::ng-deep .mat-mdc-form-field-infix {
   height: var(--control-compact-height);
   display: flex;
   align-items: center;
-  padding: 0 8px;
-  border-radius: 8px;
-  background: var(--surface);
+  padding-top: 0;
+  padding-bottom: 0;
+  min-height: unset;
+}
+.sidebar-search ::ng-deep .mat-mdc-floating-label {
+  top: 50%;
+  transform: translateY(-50%);
 }
 .sidebar-search input.mat-mdc-input-element {
-  padding: 6px 8px;
-  font-size: 13px;
+  font-size: 12px;
 }
-.sidebar-search mat-icon.mat-icon {
+.sidebar-search ::ng-deep .mat-icon {
   color: var(--text-2);
   font-size: 16px;
+  width: 16px;
+  height: 16px;
 }
 
 .type-filters {
@@ -227,26 +262,37 @@
 
 .field-row {
   border: 1px solid var(--border);
-  border-radius: 6px; /* slightly tighter */
-  padding: 4px; /* tighter */
-  background: var(--surface);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--surface-2);
   text-align: left;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  transition: background-color 0.15s, box-shadow 0.15s;
+  gap: 2px;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+
+  &:hover {
+    background: var(--hover-bg);
+    border-color: var(--primary);
+  }
 
   mat-icon {
-    font-size: 18px;
-    width: 18px;
-    height: 18px;
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    color: var(--primary);
+    flex-shrink: 0;
   }
 
   &.selected {
     border-color: var(--primary);
-    background: var(--surface-2);
-    box-shadow: 0 6px 18px rgba(2,6,23,0.06);
+    background: var(--chip-bg);
+    box-shadow: 0 2px 8px rgba(2,6,23,0.08);
+
+    .field-name {
+      color: var(--primary);
+    }
   }
 }
 
@@ -382,15 +428,92 @@
   grid-template-columns: 1.5fr 1fr 1fr;
   gap: 8px;
   margin-bottom: 10px;
+
+  /* Compact height for all filter fields */
+  mat-form-field {
+    --mat-form-field-container-height: var(--control-compact-height);
+    --mat-form-field-container-vertical-padding: var(--control-compact-vertical-padding);
+    --mdc-outlined-text-field-container-shape: 6px;
+  }
+
+  mat-form-field ::ng-deep .mat-mdc-text-field-wrapper {
+    height: var(--control-compact-height);
+  }
+
+  mat-form-field ::ng-deep .mat-mdc-form-field-flex {
+    height: var(--control-compact-height);
+    align-items: center;
+  }
+
+  mat-form-field ::ng-deep .mat-mdc-form-field-infix {
+    height: var(--control-compact-height);
+    padding-top: 0;
+    padding-bottom: 0;
+    min-height: unset;
+    display: flex;
+    align-items: center;
+  }
+
+  mat-form-field ::ng-deep .mat-mdc-floating-label {
+    top: 50%;
+    transform: translateY(-50%);
+  }
 }
 
+/* Correlations layout: matrix full-width on top, ranked + details side by side below */
 .correlations-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
+.correlations-matrix-card {
+  width: 100%;
+}
+
+.correlations-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 12px;
+  align-items: start;
+}
+
+.correlations-ranked-card {
+  min-width: 0;
+}
+
+.correlations-details-card {
+  min-width: 0;
+}
+
 /* table-wrapper / edge-table styles moved to global stylesheet (see src/styles.scss) to keep component CSS under budget */
+/* Ranked edges table: scrollable, row states */
+.correlations-ranked-card .table-wrapper {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.correlations-ranked-card .edge-table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.12s;
+
+  &:hover {
+    background: var(--hover-bg);
+  }
+
+  &.selected {
+    background: var(--chip-bg);
+    border-left: 3px solid var(--primary);
+
+    td {
+      color: var(--primary);
+      font-weight: 600;
+    }
+  }
+}
 .matrix-wrapper {
   width: 100%;
   max-width: 100%;
@@ -427,10 +550,6 @@
 .matrix-weak {
   background: var(--surface-2);
   color: var(--text-2);
-}
-
-.correlation-details {
-  margin-top: 12px;
 }
 
 .correlation-actions {
@@ -494,20 +613,63 @@
   grid-template-columns: 1fr 1fr auto;
   gap: 8px;
   align-items: start;
+
+  /* Compact height for quick-filter field */
+  mat-form-field {
+    --mat-form-field-container-height: var(--control-compact-height);
+    --mat-form-field-container-vertical-padding: var(--control-compact-vertical-padding);
+    --mdc-outlined-text-field-container-shape: 6px;
+  }
+
+  mat-form-field ::ng-deep .mat-mdc-text-field-wrapper {
+    height: var(--control-compact-height);
+  }
+
+  mat-form-field ::ng-deep .mat-mdc-form-field-flex {
+    height: var(--control-compact-height);
+    align-items: center;
+  }
+
+  mat-form-field ::ng-deep .mat-mdc-form-field-infix {
+    height: var(--control-compact-height);
+    padding-top: 0;
+    padding-bottom: 0;
+    min-height: unset;
+    display: flex;
+    align-items: center;
+  }
+
+  mat-form-field ::ng-deep .mat-mdc-floating-label {
+    top: 50%;
+    transform: translateY(-50%);
+  }
 }
 
 .grid-columns-toggle {
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px;
-  min-height: 56px;
+  padding: 6px 8px;
+  min-height: var(--control-compact-height);
 
   .label {
     display: block;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-2);
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
+}
+
+/* Compact chips for the visible-columns toggle */
+.grid-columns-toggle ::ng-deep .mat-mdc-chip {
+  height: 22px;
+  min-height: 22px;
+  font-size: 11px;
+  padding: 0 8px;
+  border-radius: 4px;
+}
+
+.grid-columns-toggle ::ng-deep .mat-mdc-chip .mdc-evolution-chip__text-label {
+  font-size: 11px;
 }
 
 .grid-column-hidden {
@@ -549,6 +711,27 @@
     cursor: pointer;
     white-space: nowrap;
   }
+}
+
+/* Sort icon layout: keep column name inline with a small, fixed sort arrow */
+.grid-th {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.grid-th-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid-sort-icon {
+  font-size: 12px !important;
+  width: 12px !important;
+  height: 12px !important;
+  flex-shrink: 0;
+  color: var(--primary);
 }
 
 .cell-content {
@@ -603,24 +786,29 @@
 }
 
 :host ::ng-deep .grid-cell-menu .mat-mdc-menu-item {
-  min-height: var(--control-compact-height);
+  min-height: 32px;
+  height: 32px;
+  padding: 0 12px;
+  line-height: 32px;
 }
 
 :host ::ng-deep .grid-cell-menu .mdc-list-item__primary-text {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.2;
 }
 
 :host ::ng-deep .grid-cell-menu .mat-icon {
-  font-size: 16px;
-  width: 16px;
-  height: 16px;
+  font-size: 14px;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
 }
 
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  column-gap: 12px;
+  row-gap: 12px;
   padding: 10px 4px 0;
   align-items: start;
 }
@@ -628,6 +816,7 @@
 .overview-card {
   height: auto;
   align-self: start;
+  margin-bottom: 0 !important; /* prevent extra spacing inside the overview grid */
 }
 
 .overview-card ul {
@@ -811,7 +1000,7 @@
     grid-template-columns: 1fr;
   }
 
-  .correlations-grid {
+  .correlations-bottom {
     grid-template-columns: 1fr;
   }
 

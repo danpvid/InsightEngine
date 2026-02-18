@@ -11,12 +11,6 @@
     </span>
   </nav>
 
-  <app-page-header
-    [title]="'recommendations.title' | translate"
-    [subtitle]="datasetName ? (('recommendations.datasetLabel' | translate) + ': ' + datasetName + ' (' + datasetId + ')') : (('recommendations.datasetLabel' | translate) + ': ' + datasetId)"
-    icon="auto_awesome">
-  </app-page-header>
-
   <div class="recommendations-actions">
     <button mat-stroked-button color="primary" [routerLink]="exploreLink">
       <mat-icon>travel_explore</mat-icon>
