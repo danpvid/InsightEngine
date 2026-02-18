@@ -323,12 +323,15 @@
       align-items: center;
       gap: 8px;
       color: var(--text-2);
+
+      mat-icon {
         width: 18px;
         height: 18px;
         color: #5c6bc0;
       }
     }
   }
+
 
   .dataset-actions {
     padding: 8px 16px;

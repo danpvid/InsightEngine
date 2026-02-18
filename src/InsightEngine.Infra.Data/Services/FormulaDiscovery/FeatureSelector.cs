@@ -38,6 +38,12 @@ public sealed class FeatureSelector
                 continue;
             }
 
+            if (column.NullRate >= 0.95d)
+            {
+                excluded.Add($"{column.Name}: high null rate");
+                continue;
+            }
+
             if (LooksLikeIdentifier(column, rowCount))
             {
                 excluded.Add($"{column.Name}: looks like identifier/high-cardinality key");

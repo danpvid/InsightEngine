@@ -79,3 +79,43 @@ mat-card {
   height: 520px;
   margin: 16px 0;
 }
+
+/* Shared skeleton / shimmer utilities (moved from component styles to keep per-component CSS small) */
+.skeleton-wrapper { width: 100%; }
+.skeleton-line { height: 10px; border-radius: 999px; background: var(--skeleton-gradient); background-size: 200% 100%; animation: skeleton-pulse 1.4s infinite; margin-bottom: 10px; }
+.skeleton-long { width: 82%; }
+.skeleton-medium { width: 62%; }
+.skeleton-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.skeleton-box { height: 140px; border-radius: 10px; background: var(--skeleton-gradient); background-size: 200% 100%; animation: skeleton-pulse 1.4s infinite; }
+
+@keyframes skeleton-pulse { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* Shared small meta/info card styling (extracted from chart viewer) */
+.meta-item { display:flex; align-items:center; gap:12px; padding:10px 12px; background-color:#f5f5f5; border-radius:8px; transition:background-color .12s; }
+.meta-item:hover { background-color:#eeeeee; }
+.meta-item mat-icon { color: #3f51b5; font-size:32px; width:32px; height:32px; }
+
+/* Chart tips / success callout (kept global so component CSS shrinks) */
+.chart-tips mat-card { background-color: #e8f5e9; }
+.chart-tips .tips-header { color: #2e7d32; }
+.chart-tips ul { color: #1b5e20; }
+
+/* Extracted shared blocks from Chart Viewer to reduce per-component CSS size */
+.controls-card, .data-grid-card, .simulation-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.controls-card .controls-section, .simulation-card .simulation-ops-header { padding: 8px 0; }
+.data-grid-card .data-grid-table-wrapper { overflow: auto; max-height: 460px; border: 1px solid var(--border); border-radius: 8px; }
+.simulation-card .simulation-operation { padding: 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
+
+/* Chart-card / drilldown (extracted) */
+.chart-card { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; }
+.chart-card .cached-badge { display:inline-flex; align-items:center; gap:4px; padding:4px 12px; border-radius:16px; font-size:12px; font-weight:600; background: linear-gradient(135deg,#ffd700 0%,#ffed4e 100%); color:#1a237e; }
+.chart-card .drilldown-panel, .chart-card .drilldown-breadcrumb { padding: 8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border); }
+.chart-card .drilldown-breadcrumb .breadcrumb-step { padding: 0 6px; line-height: 24px; font-size: 12px; }
+
+/* Extracted table/matrix styles used by Explore so component CSS stays below budget */
+.matrix-table { border-collapse: collapse; min-width: 520px; font-size: 11px; }
+.matrix-table th, .matrix-table td { border: 1px solid var(--border); padding: 5px; text-align: center; min-width: 56px; color: var(--text); }
+.matrix-table thead th { background: var(--surface-2); position: sticky; top: 0; z-index: 2; color: var(--text-2); }
+.table-wrapper { width: 100%; max-width: 100%; overflow: auto; }
+
+

@@ -23,84 +23,9 @@ import { MatCardModule } from '@angular/material/card';
     </mat-card>
   `,
   styles: [`
-    .skeleton-card {
-      animation: pulse 1.5s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% {
-        opacity: 1;
-      }
-      50% {
-        opacity: 0.6;
-      }
-    }
-
-    .skeleton-avatar {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background: var(--skeleton-gradient);
-      background-size: 200% 100%;
-      animation: shimmer 2s infinite;
-    }
-
-    .skeleton-header {
-      flex: 1;
-      margin-left: 16px;
-    }
-
-    .skeleton-title {
-      height: 20px;
-      width: 60%;
-      background: var(--skeleton-gradient);
-      background-size: 200% 100%;
-      animation: shimmer 2s infinite;
-      border-radius: 4px;
-      margin-bottom: 8px;
-    }
-
-    .skeleton-subtitle {
-      height: 14px;
-      width: 80%;
-      background: var(--skeleton-gradient);
-      background-size: 200% 100%;
-      animation: shimmer 2s infinite;
-      border-radius: 4px;
-    }
-
-    .skeleton-badge {
-      height: 24px;
-      width: 80px;
-      background: var(--skeleton-gradient);
-      background-size: 200% 100%;
-      animation: shimmer 2s infinite;
-      border-radius: 12px;
-      margin: 16px 0;
-    }
-
-    .skeleton-line {
-      height: 14px;
-      width: 100%;
-      background: var(--skeleton-gradient);
-      background-size: 200% 100%;
-      animation: shimmer 2s infinite;
-      border-radius: 4px;
-      margin-bottom: 8px;
-    }
-
-    .skeleton-line.short {
-      width: 70%;
-    }
-
-    @keyframes shimmer {
-      0% {
-        background-position: -200% 0;
-      }
-      100% {
-        background-position: 200% 0;
-      }
-    }
+    /* Minimal local rules; shared skeleton styles live in global stylesheet */
+    .skeleton-card { animation: pulse 1.5s ease-in-out infinite; }
+    .skeleton-header { flex: 1; margin-left: 16px; }
   `]
 })
 export class SkeletonCardComponent {

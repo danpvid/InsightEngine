@@ -358,70 +358,14 @@
   gap: 12px;
 }
 
-.table-wrapper {
-  width: 100%;
-  max-width: 100%;
-  max-height: 360px;
-  overflow: auto;
-}
-
-.edge-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-
-  th, td {
-    border-bottom: 1px solid var(--border);
-    padding: 6px 8px;
-    text-align: left;
-    white-space: nowrap;
-  }
-
-  tr {
-    cursor: pointer;
-  }
-
-  tr.selected {
-    background: #eff6ff;
-  }
-}
-
+/* table-wrapper / edge-table styles moved to global stylesheet (see src/styles.scss) to keep component CSS under budget */
 .matrix-wrapper {
   width: 100%;
   max-width: 100%;
   overflow: auto;
 }
 
-.matrix-table {
-  border-collapse: collapse;
-  min-width: 520px;
-  font-size: 11px;
-
-  th, td {
-    border: 1px solid var(--border);
-    padding: 5px;
-    text-align: center;
-    min-width: 56px;
-    color: var(--text); /* ensure numbers/labels follow current theme for contrast */
-  }
-
-  thead th {
-    background: var(--surface-2);
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    color: var(--text-2);
-  }
-
-  tbody th {
-    background: var(--surface-2);
-    position: sticky;
-    left: 0;
-    z-index: 1;
-    color: var(--text-2);
-  }
-}
-
+/* matrix-table moved to global stylesheet (see src/styles.scss) to reduce per-component CSS */
 .matrix-empty {
   background: var(--surface-2);
   color: var(--text-2);
@@ -769,40 +713,7 @@
   }
 }
 
-.skeleton-wrapper {
-  width: 100%;
-}
 
-.skeleton-line {
-  height: 10px;
-  border-radius: 999px;
-  background: var(--skeleton-gradient);
-  background-size: 200% 100%;
-  animation: skeleton-pulse 1.4s infinite;
-  margin-bottom: 10px;
-}
-
-.skeleton-long {
-  width: 82%;
-}
-
-.skeleton-medium {
-  width: 62%;
-}
-
-.skeleton-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.skeleton-box {
-  height: 140px;
-  border-radius: 10px;
-  background: var(--skeleton-gradient);
-  background-size: 200% 100%;
-  animation: skeleton-pulse 1.4s infinite;
-}
 
 @keyframes skeleton-pulse {
   from {
