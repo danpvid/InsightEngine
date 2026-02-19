@@ -106,7 +106,7 @@ public class GetDataSetFormulaDiscoveryQueryHandler : IRequestHandler<GetDataSet
     private static string ResolveTargetColumn(string? requestedTarget, IReadOnlyCollection<ColumnIndex> columns)
     {
         var numericColumns = columns
-            .Where(column => column.InferredType == InferredType.Number)
+            .Where(column => column.InferredType.IsNumericLike())
             .ToList();
 
         if (numericColumns.Count == 0)

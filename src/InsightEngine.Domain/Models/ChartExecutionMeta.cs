@@ -49,4 +49,10 @@ public class ChartExecutionMeta
     /// Active chart view metadata (base or percentile).
     /// </summary>
     public ChartViewMeta? View { get; set; }
+
+    public string? TargetColumn { get; set; }
+
+    public int IgnoredColumnsCount { get; set; }
+
+    public bool ConfirmedSchema { get; set; }
 }

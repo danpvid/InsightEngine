@@ -1,4 +1,5 @@
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Services;
@@ -15,6 +16,7 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
     private readonly IDataSetRepository _dataSetRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICsvProfiler _csvProfiler;
+    private readonly IDataSetSchemaStore _schemaStore;
     private readonly RecommendationEngine _recommendationEngine;
     private readonly ILogger<GetDataSetRecommendationsQueryHandler> _logger;
 
@@ -22,12 +24,14 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
         IDataSetRepository dataSetRepository,
         IUnitOfWork unitOfWork,
         ICsvProfiler csvProfiler,
+        IDataSetSchemaStore schemaStore,
         RecommendationEngine recommendationEngine,
         ILogger<GetDataSetRecommendationsQueryHandler> logger)
     {
         _dataSetRepository = dataSetRepository;
         _unitOfWork = unitOfWork;
         _csvProfiler = csvProfiler;
+        _schemaStore = schemaStore;
         _recommendationEngine = recommendationEngine;
         _logger = logger;
     }
@@ -62,6 +66,8 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
 
             // Generate profile first
             var profile = await _csvProfiler.ProfileAsync(request.DatasetId, csvPath);
+            var schema = await _schemaStore.LoadAsync(request.DatasetId, cancellationToken);
+            profile = DatasetSchemaProfileMapper.ApplySchema(profile, schema);
 
             // Generate recommendations
             var recommendations = _recommendationEngine.Generate(profile);

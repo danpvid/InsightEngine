@@ -1,5 +1,6 @@
 using DuckDB.NET.Data;
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
@@ -55,7 +56,7 @@ public class ScenarioSimulationService : IScenarioSimulationService
             return Result.Failure<ScenarioSimulationResponse>($"Invalid targetMetric '{request.TargetMetric}'.");
         }
 
-        if (metricColumn.InferredType != Domain.Enums.InferredType.Number)
+        if (!metricColumn.InferredType.IsNumericLike())
         {
             return Result.Failure<ScenarioSimulationResponse>($"Invalid targetMetric '{metricColumn.Name}': metric must be numeric.");
         }

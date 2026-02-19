@@ -722,7 +722,7 @@ FROM {sourceQuery} AS src;
         CancellationToken cancellationToken = default)
     {
         var numericColumns = columns
-            .Where(c => c.InferredType == InferredType.Number)
+            .Where(c => c.InferredType.IsNumericLike())
             .OrderByDescending(c => c.DistinctCount)
             .ThenBy(c => c.NullRate)
             .Select(c => c.Name)
@@ -977,7 +977,7 @@ FROM ranked;
 
         if (numericRatio >= TypeInferenceThreshold)
         {
-            return InferredType.Number;
+            return InferredType.Decimal;
         }
 
         var categoryThreshold = Math.Max(20, totalCount * 0.05);

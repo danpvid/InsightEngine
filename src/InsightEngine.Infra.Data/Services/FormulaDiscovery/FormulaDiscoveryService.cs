@@ -85,7 +85,7 @@ public sealed class FormulaDiscoveryService : IFormulaDiscoveryService
             throw new InvalidOperationException($"Target column '{targetColumn}' was not found.");
         }
 
-        if (target.InferredType != InferredType.Number)
+        if (!target.InferredType.IsNumericLike())
         {
             throw new InvalidOperationException($"Target column '{targetColumn}' must be numeric.");
         }

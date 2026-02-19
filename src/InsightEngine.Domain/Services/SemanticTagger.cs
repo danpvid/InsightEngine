@@ -78,7 +78,7 @@ public class SemanticTagger : ISemanticTagger
             tags.Add("freeText");
         }
 
-        if (column.InferredType == InferredType.Number && !tags.Contains("identifier") && !tags.Contains("rate"))
+        if (column.InferredType.IsNumericLike() && !tags.Contains("identifier") && !tags.Contains("rate"))
         {
             tags.Add("measure");
         }
@@ -116,7 +116,7 @@ public class SemanticTagger : ISemanticTagger
 
     private static bool IsAmount(string normalizedName, ColumnIndex column)
     {
-        if (column.InferredType != InferredType.Number)
+        if (!column.InferredType.IsNumericLike())
         {
             return false;
         }
@@ -133,7 +133,7 @@ public class SemanticTagger : ISemanticTagger
 
     private static bool IsRate(string normalizedName, ColumnIndex column)
     {
-        if (column.InferredType != InferredType.Number)
+        if (!column.InferredType.IsNumericLike())
         {
             return false;
         }

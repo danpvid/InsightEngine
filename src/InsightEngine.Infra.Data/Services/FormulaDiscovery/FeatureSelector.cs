@@ -32,7 +32,7 @@ public sealed class FeatureSelector
                 continue;
             }
 
-            if (column.InferredType != InferredType.Number)
+            if (!column.InferredType.IsNumericLike())
             {
                 excluded.Add($"{column.Name}: non-numeric inferred type");
                 continue;

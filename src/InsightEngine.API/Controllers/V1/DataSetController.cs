@@ -308,10 +308,18 @@ public class DataSetController : BaseController
                     datasetId = profile.DatasetId,
                     rowCount = profile.RowCount,
                     sampleSize = profile.SampleSize,
+                    targetColumn = profile.TargetColumn,
+                    ignoredColumns = profile.IgnoredColumns,
+                    schemaConfirmed = profile.SchemaConfirmed,
                     columns = profile.Columns.Select(c => new
                     {
                         name = c.Name,
                         inferredType = c.InferredType.ToString(),
+                        confirmedType = (c.ConfirmedType ?? c.InferredType).NormalizeLegacy().ToString(),
+                        isIgnored = c.IsIgnored,
+                        isTarget = c.IsTarget,
+                        currencyCode = c.CurrencyCode,
+                        hasPercentSign = c.HasPercentSign,
                         nullRate = Math.Round(c.NullRate, 4),
                         distinctCount = c.DistinctCount,
                         topValues = c.TopValues,
@@ -1167,7 +1175,10 @@ OFFSET {offset};
                     QueryHash = domainResponse.QueryHash,
                     CacheHit = domainResponse.CacheHit,
                     Percentiles = domainResponse.Percentiles,
-                    View = domainResponse.View
+                    View = domainResponse.View,
+                    TargetColumn = domainResponse.TargetColumn,
+                    IgnoredColumnsCount = domainResponse.IgnoredColumnsCount,
+                    ConfirmedSchema = domainResponse.SchemaConfirmed
                 },
                 DebugSql = _environment.IsDevelopment() ? domainResponse.ExecutionResult.GeneratedSql : null
             };

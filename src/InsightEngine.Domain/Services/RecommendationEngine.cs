@@ -191,7 +191,7 @@ public class RecommendationEngine
             {
                 role.Role = AxisRole.Id;
             }
-            else if (column.InferredType == InferredType.Number)
+            else if (column.InferredType.IsNumericLike())
             {
                 role.Role = AxisRole.Measure;
             }

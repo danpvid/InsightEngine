@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Settings;
@@ -170,7 +171,12 @@ public class LLMContextBuilder : ILLMContextBuilder
             .Select(column => new Dictionary<string, object?>
             {
                 ["name"] = column.Name,
-                ["type"] = column.InferredType.ToString()
+                ["type"] = (column.ConfirmedType ?? column.InferredType).NormalizeLegacy().ToString(),
+                ["inferredType"] = column.InferredType.NormalizeLegacy().ToString(),
+                ["isIgnored"] = column.IsIgnored,
+                ["isTarget"] = column.IsTarget,
+                ["currencyCode"] = column.CurrencyCode,
+                ["hasPercentSign"] = column.HasPercentSign
             })
             .ToList();
 
@@ -193,7 +199,10 @@ public class LLMContextBuilder : ILLMContextBuilder
             {
                 ["datasetId"] = profile.DatasetId,
                 ["rowCount"] = profile.RowCount,
-                ["sampleSize"] = profile.SampleSize
+                ["sampleSize"] = profile.SampleSize,
+                ["targetColumn"] = profile.TargetColumn,
+                ["ignoredColumns"] = profile.IgnoredColumns,
+                ["schemaConfirmed"] = profile.SchemaConfirmed
             },
             ["schema"] = schema,
             ["profiles"] = profiles

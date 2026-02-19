@@ -1,4 +1,5 @@
 ﻿using InsightEngine.Domain.Enums;
+using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models.MetadataIndex;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,7 @@ public class IndexingEngine : IIndexingEngine
 
     private readonly IDataSetRepository _dataSetRepository;
     private readonly ICsvProfiler _csvProfiler;
+    private readonly IDataSetSchemaStore _schemaStore;
     private readonly IDuckDbMetadataAnalyzer _metadataAnalyzer;
     private readonly ISemanticTagger _semanticTagger;
     private readonly IIndexStore _indexStore;
@@ -19,6 +21,7 @@ public class IndexingEngine : IIndexingEngine
     public IndexingEngine(
         IDataSetRepository dataSetRepository,
         ICsvProfiler csvProfiler,
+        IDataSetSchemaStore schemaStore,
         IDuckDbMetadataAnalyzer metadataAnalyzer,
         ISemanticTagger semanticTagger,
         IIndexStore indexStore,
@@ -26,6 +29,7 @@ public class IndexingEngine : IIndexingEngine
     {
         _dataSetRepository = dataSetRepository;
         _csvProfiler = csvProfiler;
+        _schemaStore = schemaStore;
         _metadataAnalyzer = metadataAnalyzer;
         _semanticTagger = semanticTagger;
         _indexStore = indexStore;
@@ -61,6 +65,8 @@ public class IndexingEngine : IIndexingEngine
         try
         {
             var profile = await _csvProfiler.ProfileAsync(datasetId, dataSet.StoredPath, cancellationToken);
+            var schema = await _schemaStore.LoadAsync(datasetId, cancellationToken);
+            profile = DatasetSchemaProfileMapper.ApplySchema(profile, schema);
 
             var columns = await _metadataAnalyzer.ComputeColumnProfilesAsync(
                 dataSet.StoredPath,
@@ -69,13 +75,30 @@ public class IndexingEngine : IIndexingEngine
                 boundedOptions.SampleRows,
                 cancellationToken);
 
+            if (profile.Columns.Count > 0)
+            {
+                var profileByName = profile.Columns.ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
+                columns = columns
+                    .Where(column => profileByName.ContainsKey(column.Name))
+                    .Select(column =>
+                    {
+                        var mapped = profileByName[column.Name];
+                        column.InferredType = (mapped.ConfirmedType ?? mapped.InferredType).NormalizeLegacy();
+                        return column;
+                    })
+                    .ToList();
+            }
+
             foreach (var column in columns)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 switch (column.InferredType)
                 {
-                    case InferredType.Number:
+                    case InferredType.Integer:
+                    case InferredType.Decimal:
+                    case InferredType.Percentage:
+                    case InferredType.Money:
                         column.NumericStats = await _metadataAnalyzer.ComputeNumericStatsAsync(
                             dataSet.StoredPath,
                             column.Name,
@@ -128,6 +151,9 @@ public class IndexingEngine : IIndexingEngine
                 DatasetId = datasetId,
                 BuiltAtUtc = DateTime.UtcNow,
                 Version = IndexVersion,
+                SchemaConfirmed = schema?.SchemaConfirmed ?? false,
+                TargetColumn = schema?.TargetColumn,
+                IgnoredColumnsCount = profile.IgnoredColumns.Count,
                 RowCount = profile.RowCount,
                 ColumnCount = columns.Count,
                 Quality = quality,
@@ -249,7 +275,7 @@ public class IndexingEngine : IIndexingEngine
     {
         return new GlobalStatsIndex
         {
-            NumericColumnCount = columns.LongCount(column => column.InferredType == InferredType.Number),
+            NumericColumnCount = columns.LongCount(column => column.InferredType.IsNumericLike()),
             DateColumnCount = columns.LongCount(column => column.InferredType == InferredType.Date),
             CategoryColumnCount = columns.LongCount(column => column.InferredType == InferredType.Category),
             StringColumnCount = columns.LongCount(column => column.InferredType == InferredType.String),

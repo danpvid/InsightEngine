@@ -20,6 +20,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
     private readonly IDataSetRepository _dataSetRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICsvProfiler _csvProfiler;
+    private readonly IDataSetSchemaStore _schemaStore;
     private readonly IChartExecutionService _chartExecutionService;
     private readonly IChartPercentileService _chartPercentileService;
     private readonly IChartQueryCache _chartQueryCache;
@@ -29,6 +30,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         IDataSetRepository dataSetRepository,
         IUnitOfWork unitOfWork,
         ICsvProfiler csvProfiler,
+        IDataSetSchemaStore schemaStore,
         IChartExecutionService chartExecutionService,
         IChartPercentileService chartPercentileService,
         IChartQueryCache chartQueryCache,
@@ -37,6 +39,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         _dataSetRepository = dataSetRepository;
         _unitOfWork = unitOfWork;
         _csvProfiler = csvProfiler;
+        _schemaStore = schemaStore;
         _chartExecutionService = chartExecutionService;
         _chartPercentileService = chartPercentileService;
         _chartQueryCache = chartQueryCache;
@@ -72,6 +75,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
 
             // 2. Generate profile (required for recommendations)
             var profile = await _csvProfiler.ProfileAsync(request.DatasetId, csvPath, cancellationToken);
+            var schema = await _schemaStore.LoadAsync(request.DatasetId, cancellationToken);
+            profile = DatasetSchemaProfileMapper.ApplySchema(profile, schema);
 
             // 3. Gerar recommendations (on-demand, sem persistência - MVP pattern)
             var engine = new Services.RecommendationEngine();
@@ -103,7 +108,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 else
                 {
                     resolvedXColumn = xProfile.Name;
-                    if (recommendation.Query.X.Role == AxisRole.Measure && xProfile.InferredType != InferredType.Number)
+                    if (recommendation.Query.X.Role == AxisRole.Measure && !xProfile.InferredType.IsNumericLike())
                     {
                         return Result.Failure<ChartExecutionResponse>(
                             $"XColumn '{resolvedXColumn}' must be numeric.");
@@ -121,7 +126,7 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 else
                 {
                     resolvedYColumn = yProfile.Name;
-                    if (yProfile.InferredType != InferredType.Number)
+                    if (!yProfile.InferredType.IsNumericLike())
                     {
                         return Result.Failure<ChartExecutionResponse>(
                             $"YColumn '{resolvedYColumn}' must be numeric.");
@@ -315,7 +320,10 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 View = viewMeta,
                 TotalExecutionMs = sw.ElapsedMilliseconds,
                 QueryHash = queryHash,
-                CacheHit = false
+                CacheHit = false,
+                TargetColumn = schema?.TargetColumn,
+                IgnoredColumnsCount = schema?.Columns.Count(column => column.IsIgnored) ?? 0,
+                SchemaConfirmed = schema?.SchemaConfirmed ?? false
             };
 
             await _chartQueryCache.SetAsync(

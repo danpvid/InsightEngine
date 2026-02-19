@@ -14,4 +14,7 @@ public class ChartExecutionResponse
     public long TotalExecutionMs { get; set; }
     public string QueryHash { get; set; } = string.Empty;
     public bool CacheHit { get; set; }
+    public string? TargetColumn { get; set; }
+    public int IgnoredColumnsCount { get; set; }
+    public bool SchemaConfirmed { get; set; }
 }

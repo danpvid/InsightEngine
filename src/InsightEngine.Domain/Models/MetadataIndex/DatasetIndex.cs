@@ -9,6 +9,9 @@ public class DatasetIndex
     public Guid DatasetId { get; set; }
     public DateTime BuiltAtUtc { get; set; }
     public string Version { get; set; } = "1.0";
+    public bool SchemaConfirmed { get; set; }
+    public string? TargetColumn { get; set; }
+    public int IgnoredColumnsCount { get; set; }
     public long RowCount { get; set; }
     public int ColumnCount { get; set; }
     public DatasetQualityIndex Quality { get; set; } = new();

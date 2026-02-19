@@ -58,6 +58,6 @@ public class GetDataSetFormulaDiscoveryQueryValidator : AbstractValidator<GetDat
         var target = index.Columns.FirstOrDefault(column =>
             string.Equals(column.Name, query.Target, StringComparison.OrdinalIgnoreCase));
 
-        return target != null && target.InferredType == InferredType.Number;
+        return target != null && target.InferredType.IsNumericLike();
     }
 }

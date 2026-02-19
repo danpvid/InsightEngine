@@ -1,4 +1,5 @@
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.ValueObjects;
 using MediatR;
@@ -14,17 +15,20 @@ public class GetDataSetProfileQueryHandler : IRequestHandler<GetDataSetProfileQu
     private readonly IDataSetRepository _dataSetRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICsvProfiler _csvProfiler;
+    private readonly IDataSetSchemaStore _schemaStore;
     private readonly ILogger<GetDataSetProfileQueryHandler> _logger;
 
     public GetDataSetProfileQueryHandler(
         IDataSetRepository dataSetRepository,
         IUnitOfWork unitOfWork,
         ICsvProfiler csvProfiler,
+        IDataSetSchemaStore schemaStore,
         ILogger<GetDataSetProfileQueryHandler> logger)
     {
         _dataSetRepository = dataSetRepository;
         _unitOfWork = unitOfWork;
         _csvProfiler = csvProfiler;
+        _schemaStore = schemaStore;
         _logger = logger;
     }
 
@@ -55,6 +59,8 @@ public class GetDataSetProfileQueryHandler : IRequestHandler<GetDataSetProfileQu
 
             // Generate profile
             var profile = await _csvProfiler.ProfileAsync(request.DatasetId, dataSet.StoredPath);
+            var schema = await _schemaStore.LoadAsync(request.DatasetId, cancellationToken);
+            profile = DatasetSchemaProfileMapper.ApplySchema(profile, schema);
             dataSet.UpdateProfile(
                 profile.RowCount,
                 $"Rows: {profile.RowCount}, Columns: {profile.Columns.Count}");
