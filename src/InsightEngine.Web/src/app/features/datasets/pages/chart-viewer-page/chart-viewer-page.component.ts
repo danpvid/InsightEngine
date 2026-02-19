@@ -18,6 +18,7 @@ import { LoadingBarComponent } from '../../../../shared/components/loading-bar/l
 import { ErrorPanelComponent } from '../../../../shared/components/error-panel/error-panel.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import {
+  AxisPolicy,
   AskAnalysisPlanResponse,
   AiGenerationMeta,
   AiInsightSummary,
@@ -31,6 +32,7 @@ import {
   InsightPackAskResponse,
   InsightSummary,
   PercentileKind,
+  SeriesAxisAssignment,
   ScenarioDeltaPoint,
   ScenarioFilterRequest,
   ScenarioOperationRequest,
@@ -236,6 +238,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   selectedTimeBin: string = 'Month';
   selectedMetric: string = '';
   selectedMetricsY: string[] = [];
+  separateYAxes: boolean = false;
+  metricAxisOverride: Record<string, 0 | 1> = {};
   metricToAdd: string = '';
   selectedXAxis: string = '';
   selectedGroupBy: string = '';
@@ -489,6 +493,23 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       this.supportsMetricBuilderControl &&
       !this.selectedMetricsY.includes(this.metricToAdd) &&
       this.selectedMetricsY.length < 4;
+  }
+
+  get effectiveAxisPolicy(): AxisPolicy {
+    return this.chartMeta?.axisPolicy || {
+      defaultMode: 'SingleAxisBySemanticType',
+      maxAxes: 2,
+      suggestSeparateAxesWhenScaleRatioAbove: 50,
+      allowPerSeriesAxisOverride: true
+    };
+  }
+
+  get canUseAxisSplit(): boolean {
+    return this.supportsMultiMetricControl && this.effectiveAxisPolicy.maxAxes > 1;
+  }
+
+  get showPerSeriesAxisOverride(): boolean {
+    return this.canUseAxisSplit && this.effectiveAxisPolicy.maxAxes === 2 && this.selectedMetricsY.length > 1;
   }
 
   get filteredPointDataRows(): ChartTableRow[] {
@@ -1010,6 +1031,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
 
         if (response.success && response.data) {
           this.chartMeta = response.data.meta || null;
+          this.initializeAxisControlsFromMeta();
           this.insightSummary = response.data.insightSummary || null;
           const viewMeta = this.chartMeta?.view;
           if (viewMeta?.kind === 'Percentile') {
@@ -1669,6 +1691,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     if (checked) {
       if (!this.selectedMetricsY.includes(metric)) {
         this.selectedMetricsY = [...this.selectedMetricsY, metric];
+        this.ensureMetricAxisDefault(metric);
       }
     } else {
       if (!this.selectedMetricsY.includes(metric) || this.selectedMetricsY.length <= 1) {
@@ -1676,6 +1699,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       }
 
       this.selectedMetricsY = this.selectedMetricsY.filter(item => item !== metric);
+      delete this.metricAxisOverride[metric];
     }
 
     this.selectedMetric = this.selectedMetricsY[0] || metric;
@@ -1714,6 +1738,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     this.selectedMetricsY = [...this.selectedMetricsY, this.metricToAdd];
+    this.ensureMetricAxisDefault(this.metricToAdd);
     this.metricToAdd = '';
     this.reloadChartWithCurrentParameters();
   }
@@ -1724,6 +1749,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     this.selectedMetricsY = this.selectedMetricsY.filter(item => item !== metric);
+    delete this.metricAxisOverride[metric];
 
     if (this.selectedMetric === metric) {
       this.selectedMetric = this.selectedMetricsY[0] || '';
@@ -1734,6 +1760,24 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     this.reloadChartWithCurrentParameters();
+  }
+
+  onSeparateYAxisToggle(): void {
+    if (!this.canUseAxisSplit) {
+      this.separateYAxes = false;
+      return;
+    }
+
+    if (this.separateYAxes) {
+      this.applyRecommendedAxisOverrides();
+    }
+
+    this.reloadChartWithCurrentParameters(true);
+  }
+
+  onMetricAxisOverrideChange(metric: string, axisIndex: 0 | 1): void {
+    this.metricAxisOverride[metric] = axisIndex;
+    this.reloadChartWithCurrentParameters(true);
   }
 
   applyPercentileView(kind: PercentileKind): void {
@@ -3511,8 +3555,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       primaryMetric,
       ...additional.map(item => item.metric)
     ]);
-    const yAxisByMetric = new Map<string, number>();
-    metricOrder.forEach((metric, index) => yAxisByMetric.set(metric, index));
+    const axisByMetric = new Map<string, 0 | 1>();
+    metricOrder.forEach(metric => axisByMetric.set(metric, this.resolveMetricAxisIndex(metric, primaryMetric)));
 
     for (const series of baseSeries) {
       const namedSeries = { ...series };
@@ -3520,7 +3564,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       namedSeries['name'] = this.selectedMetricsY.length > 1
         ? `${primaryMetric} - ${originalName}`
         : originalName;
-      namedSeries['yAxisIndex'] = yAxisByMetric.get(primaryMetric) ?? 0;
+      namedSeries['yAxisIndex'] = axisByMetric.get(primaryMetric) ?? 0;
       allSeries.push(namedSeries);
     }
 
@@ -3535,39 +3579,140 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         const namedSeries = { ...series };
         const originalName = `${namedSeries['name'] ?? extra.metric}`;
         namedSeries['name'] = `${extra.metric} - ${originalName}`;
-        namedSeries['yAxisIndex'] = yAxisByMetric.get(extra.metric) ?? 0;
+        namedSeries['yAxisIndex'] = axisByMetric.get(extra.metric) ?? 0;
         allSeries.push(namedSeries);
       }
     }
 
     mergedOption['series'] = allSeries;
-    mergedOption['yAxis'] = this.buildMetricYAxis(mergedOption, metricOrder);
+    mergedOption['yAxis'] = this.buildMetricYAxis(mergedOption, metricOrder, axisByMetric);
     return mergedOption as EChartsOption;
   }
 
-  private buildMetricYAxis(option: Record<string, unknown>, metrics: string[]): Record<string, unknown>[] {
+  private buildMetricYAxis(option: Record<string, unknown>, metrics: string[], axisByMetric: Map<string, 0 | 1>): Record<string, unknown>[] {
     const yAxisRaw = option['yAxis'];
     const template = Array.isArray(yAxisRaw)
       ? this.asObject(yAxisRaw[0])
       : this.asObject(yAxisRaw);
     const baseAxis = template || { type: 'value' };
 
-    return metrics.map((metric, index) => {
-      const axis = { ...baseAxis };
-      const columnPair = Math.floor(index / 2);
+    const primaryMetric = metrics[0] || this.selectedMetric;
+    const leftMetrics = metrics.filter(metric => (axisByMetric.get(metric) ?? 0) === 0);
+    const rightMetrics = metrics.filter(metric => (axisByMetric.get(metric) ?? 0) === 1);
 
+    const axes: Record<string, unknown>[] = [];
+
+    const buildAxis = (position: 'left' | 'right', metricList: string[]) => {
+      if (metricList.length === 0) {
+        return;
+      }
+
+      const referenceMetric = metricList[0];
+      const axis = { ...baseAxis };
       axis['type'] = axis['type'] || 'value';
-      axis['name'] = metric;
-      axis['position'] = index % 2 === 0 ? 'left' : 'right';
-      axis['offset'] = columnPair === 0 ? 0 : columnPair * 56;
+      axis['position'] = position;
+      axis['name'] = metricList.join(' / ');
       axis['alignTicks'] = true;
       axis['axisLabel'] = {
         ...(this.asObject(axis['axisLabel']) || {}),
-        formatter: (value: unknown) => this.formatMetricValue(value, metric)
+        formatter: (value: unknown) => this.formatMetricValue(value, referenceMetric)
       };
+      axes.push(axis);
+    };
 
-      return axis;
-    });
+    buildAxis('left', leftMetrics.length > 0 ? leftMetrics : [primaryMetric]);
+    if (rightMetrics.length > 0) {
+      buildAxis('right', rightMetrics);
+    }
+
+    return axes;
+  }
+
+  private initializeAxisControlsFromMeta(): void {
+    const assignments = this.seriesAssignmentsFromMeta;
+    if (assignments.length === 0) {
+      return;
+    }
+
+    const nextOverrides: Record<string, 0 | 1> = {};
+    for (const assignment of assignments) {
+      nextOverrides[assignment.columnName] = (assignment.yAxisIndex === 1 ? 1 : 0);
+    }
+
+    this.metricAxisOverride = nextOverrides;
+  }
+
+  private applyRecommendedAxisOverrides(): void {
+    const nextOverrides: Record<string, 0 | 1> = { ...this.metricAxisOverride };
+    for (const assignment of this.seriesAssignmentsFromMeta) {
+      nextOverrides[assignment.columnName] = (assignment.recommendedAxisIndex === 1 ? 1 : 0);
+    }
+
+    this.metricAxisOverride = nextOverrides;
+  }
+
+  private ensureMetricAxisDefault(metric: string): void {
+    if (!metric || this.metricAxisOverride[metric] !== undefined) {
+      return;
+    }
+
+    const primary = this.selectedMetric || this.selectedMetricsY[0] || metric;
+    this.metricAxisOverride[metric] = this.resolveSemanticDefaultAxis(metric, primary);
+  }
+
+  private resolveMetricAxisIndex(metric: string, primaryMetric: string): 0 | 1 {
+    const manual = this.metricAxisOverride[metric];
+    if (manual !== undefined) {
+      return manual;
+    }
+
+    if (this.separateYAxes) {
+      const recommended = this.seriesAssignmentsFromMeta.find(item =>
+        this.sameMetric(item.columnName, metric) || this.sameMetric(item.seriesName, metric));
+
+      if (recommended) {
+        return recommended.recommendedAxisIndex === 1 ? 1 : 0;
+      }
+    }
+
+    return this.resolveSemanticDefaultAxis(metric, primaryMetric);
+  }
+
+  private resolveSemanticDefaultAxis(metric: string, primaryMetric: string): 0 | 1 {
+    const metricSemantic = this.resolveMetricSemanticType(metric);
+    const primarySemantic = this.resolveMetricSemanticType(primaryMetric);
+    if (metricSemantic !== primarySemantic && this.effectiveAxisPolicy.maxAxes > 1) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  private resolveMetricSemanticType(metric: string): 'Money' | 'Percentage' | 'Generic' {
+    const fromMeta = this.seriesAssignmentsFromMeta.find(item => this.sameMetric(item.columnName, metric) || this.sameMetric(item.seriesName, metric));
+    if (fromMeta?.semanticType) {
+      return fromMeta.semanticType;
+    }
+
+    const profile = this.profileColumns.find(column => this.sameMetric(column.name, metric));
+    const type = `${profile?.confirmedType || profile?.inferredType || ''}`.toLowerCase();
+    if (type === 'money') {
+      return 'Money';
+    }
+
+    if (type === 'percentage') {
+      return 'Percentage';
+    }
+
+    return 'Generic';
+  }
+
+  private get seriesAssignmentsFromMeta(): SeriesAxisAssignment[] {
+    return this.chartMeta?.seriesAxisAssignments || [];
+  }
+
+  private sameMetric(left: string, right: string): boolean {
+    return `${left || ''}`.trim().toLowerCase() === `${right || ''}`.trim().toLowerCase();
   }
 
   private applyPresentationTransforms(option: EChartsOption): EChartsOption {

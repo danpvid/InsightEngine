@@ -1365,6 +1365,24 @@
                     </button>
                   </mat-chip>
                 </div>
+
+                <div class="selected-metrics" *ngIf="canUseAxisSplit && selectedMetricsY.length > 1">
+                  <mat-slide-toggle [(ngModel)]="separateYAxes" (change)="onSeparateYAxisToggle()" color="primary">
+                    Separate Y axes
+                  </mat-slide-toggle>
+                </div>
+
+                <div class="multi-metric-builder" *ngIf="showPerSeriesAxisOverride">
+                  <mat-form-field appearance="outline" *ngFor="let metric of selectedMetricsY">
+                    <mat-label>{{ metric }} axis</mat-label>
+                    <mat-select
+                      [value]="metricAxisOverride[metric] ?? 0"
+                      (selectionChange)="onMetricAxisOverrideChange(metric, $event.value)">
+                      <mat-option [value]="0">Left (0)</mat-option>
+                      <mat-option [value]="1">Right (1)</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                </div>
               </div>
             </ng-template>
 

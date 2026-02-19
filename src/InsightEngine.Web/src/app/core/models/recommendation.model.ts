@@ -6,6 +6,12 @@ export interface ChartRecommendation {
   includedColumns?: string[];
   aggregationPlan?: Record<string, string>;
   reasoning?: string[];
+  axisPolicy?: {
+    defaultMode?: 'SingleAxisBySemanticType' | 'SeparateAxes';
+    maxAxes?: number;
+    suggestSeparateAxesWhenScaleRatioAbove?: number;
+    allowPerSeriesAxisOverride?: boolean;
+  };
   score?: number;
   impactScore?: number;
   scoreCriteria?: string[];

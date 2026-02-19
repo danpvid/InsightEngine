@@ -82,6 +82,24 @@ export interface ChartMeta {
   targetColumn?: string | null;
   ignoredColumnsCount?: number;
   confirmedSchema?: boolean;
+  axisPolicy?: AxisPolicy;
+  seriesAxisAssignments?: SeriesAxisAssignment[];
+}
+
+export interface AxisPolicy {
+  defaultMode: 'SingleAxisBySemanticType' | 'SeparateAxes';
+  maxAxes: number;
+  suggestSeparateAxesWhenScaleRatioAbove: number;
+  allowPerSeriesAxisOverride: boolean;
+}
+
+export interface SeriesAxisAssignment {
+  seriesName: string;
+  columnName: string;
+  semanticType: 'Money' | 'Percentage' | 'Generic';
+  yAxisIndex: 0 | 1;
+  recommendedAxisIndex: 0 | 1;
+  scaleRatioToPrimary: number;
 }
 
 export type PercentileKind = 'P5' | 'P10' | 'P90' | 'P95';
