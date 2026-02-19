@@ -3,6 +3,7 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Models.FormulaDiscovery;
+using InsightEngine.Domain.Models.ImportPreview;
 using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
@@ -28,6 +29,14 @@ public interface IDataSetApplicationService
     /// Get profile analysis for a dataset
     /// </summary>
     Task<Result<DatasetProfile>> GetProfileAsync(Guid datasetId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Get pre-import sample preview for a dataset
+    /// </summary>
+    Task<Result<ImportPreviewResponse>> GetImportPreviewAsync(
+        Guid datasetId,
+        int sampleSize = 200,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get chart recommendations for a dataset

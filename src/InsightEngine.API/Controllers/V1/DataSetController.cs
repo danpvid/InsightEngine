@@ -334,6 +334,62 @@ public class DataSetController : BaseController
         }
     }
 
+    [HttpGet("{id:guid}/preview")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetImportPreview(Guid id, [FromQuery] int sampleSize = 200)
+    {
+        try
+        {
+            var result = await _dataSetApplicationService.GetImportPreviewAsync(id, sampleSize);
+
+            if (!result.IsSuccess)
+            {
+                return ErrorResponse(StatusCodes.Status404NotFound, result.Errors, "not_found");
+            }
+
+            var preview = result.Data;
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    tempUploadId = preview.TempUploadId,
+                    sampleSize = preview.SampleSize,
+                    columns = preview.Columns.Select(column => new
+                    {
+                        name = column.Name,
+                        inferredType = column.InferredType.ToString(),
+                        confidence = column.Confidence,
+                        reasons = column.Reasons,
+                        hints = new
+                        {
+                            hasPercentSign = column.Hints.HasPercentSign,
+                            hasCurrencySymbol = column.Hints.HasCurrencySymbol,
+                            mostlyZeroToOne = column.Hints.MostlyZeroToOne,
+                            mostlyZeroToHundred = column.Hints.MostlyZeroToHundred,
+                            mostlyInteger = column.Hints.MostlyInteger,
+                            consistentTwoDecimalPlaces = column.Hints.ConsistentTwoDecimalPlaces,
+                            currencyCode = column.Hints.CurrencyCode
+                        }
+                    }),
+                    sampleRows = preview.SampleRows,
+                    suggestedTargetCandidates = preview.SuggestedTargetCandidates,
+                    suggestedIgnoredCandidates = preview.SuggestedIgnoredCandidates
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating import preview for dataset {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao gerar preview de importação do dataset.");
+        }
+    }
+
     [HttpPost("{id:guid}/index:build")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

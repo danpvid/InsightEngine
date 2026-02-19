@@ -4,6 +4,7 @@ using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Models.FormulaDiscovery;
+using InsightEngine.Domain.Models.ImportPreview;
 using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
@@ -89,6 +90,38 @@ public class DataSetApplicationService : IDataSetApplicationService
         {
             _logger.LogWarning("Failed to generate profile for dataset {DatasetId}: {Errors}", 
                 datasetId, string.Join(", ", result.Errors));
+        }
+
+        return result;
+    }
+
+    public async Task<Result<ImportPreviewResponse>> GetImportPreviewAsync(
+        Guid datasetId,
+        int sampleSize = 200,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Generating import preview for dataset {DatasetId} using sample size {SampleSize}",
+            datasetId,
+            sampleSize);
+
+        var query = new GetDataSetImportPreviewQuery(datasetId, sampleSize);
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (result.IsSuccess)
+        {
+            _logger.LogInformation(
+                "Import preview generated for dataset {DatasetId}: sampleRows={SampleRows}, columns={Columns}",
+                datasetId,
+                result.Data.SampleSize,
+                result.Data.Columns.Count);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "Failed to generate import preview for dataset {DatasetId}: {Errors}",
+                datasetId,
+                string.Join(", ", result.Errors));
         }
 
         return result;
