@@ -28,6 +28,7 @@ import {
   DeepInsightsRequest,
   EvidenceFact,
   ExplainChartResponse,
+  InsightPackAskResponse,
   InsightSummary,
   PercentileKind,
   ScenarioDeltaPoint,
@@ -35,7 +36,8 @@ import {
   ScenarioOperationRequest,
   ScenarioOperationType,
   ScenarioSimulationRequest,
-  ScenarioSimulationResponse
+  ScenarioSimulationResponse,
+  SemanticInsightPackResponse
 } from '../../../../core/models/chart.model';
 import { ChartRecommendation } from '../../../../core/models/recommendation.model';
 import { ApiError } from '../../../../core/models/api-response.model';
@@ -169,6 +171,12 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   askError: string | null = null;
   askPlan: AskAnalysisPlanResponse | null = null;
   askReasoningExpanded: boolean = false;
+  semanticPack: SemanticInsightPackResponse | null = null;
+  semanticPackLoading: boolean = false;
+  semanticPackError: string | null = null;
+  insightAskResult: InsightPackAskResponse | null = null;
+  insightAskLoading: boolean = false;
+  insightAskError: string | null = null;
   loading: boolean = false;
   chartRefreshing: boolean = false;
   error: ApiError | null = null;
@@ -1295,6 +1303,68 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.askLoading = false;
         this.askError = HttpErrorUtil.extractErrorMessage(err);
+      }
+    });
+  }
+
+  loadSemanticPack(): void {
+    if (this.semanticPackLoading) {
+      return;
+    }
+
+    this.semanticPackLoading = true;
+    this.semanticPackError = null;
+
+    const basePayload = this.buildDeepInsightsPayload();
+    this.datasetApi.getInsightPack(this.datasetId, {
+      recommendationId: this.recommendationId,
+      ...basePayload
+    }).subscribe({
+      next: response => {
+        this.semanticPackLoading = false;
+        if (!response.success || !response.data) {
+          this.semanticPackError = response.errors?.[0]?.message || 'Unable to load insight pack.';
+          return;
+        }
+
+        this.semanticPack = response.data;
+      },
+      error: err => {
+        this.semanticPackLoading = false;
+        this.semanticPackError = HttpErrorUtil.extractErrorMessage(err);
+      }
+    });
+  }
+
+  askWithSemanticPack(): void {
+    const question = this.askQuestion.trim();
+    if (!question) {
+      this.toast.info('Digite uma pergunta para consultar o Insight Pack.');
+      return;
+    }
+
+    this.insightAskLoading = true;
+    this.insightAskError = null;
+    this.insightAskResult = null;
+
+    const basePayload = this.buildDeepInsightsPayload();
+    this.datasetApi.askWithInsightPack(this.datasetId, {
+      recommendationId: this.recommendationId,
+      question,
+      ...basePayload
+    }).subscribe({
+      next: response => {
+        this.insightAskLoading = false;
+        if (!response.success || !response.data) {
+          this.insightAskError = response.errors?.[0]?.message || 'Unable to answer with insight pack.';
+          return;
+        }
+
+        this.insightAskResult = response.data;
+      },
+      error: err => {
+        this.insightAskLoading = false;
+        this.insightAskError = HttpErrorUtil.extractErrorMessage(err);
       }
     });
   }

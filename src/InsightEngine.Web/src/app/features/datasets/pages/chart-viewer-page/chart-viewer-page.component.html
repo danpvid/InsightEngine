@@ -254,6 +254,12 @@
             <button mat-flat-button color="primary" (click)="submitAskQuestion()" [disabled]="askLoading">
               {{ askLoading ? ('chartViewer.analyzing' | translate) : ('chartViewer.ask' | translate) }}
             </button>
+            <button mat-stroked-button color="primary" (click)="askWithSemanticPack()" [disabled]="insightAskLoading">
+              {{ insightAskLoading ? 'Analyzing Pack...' : 'Ask with Insight Pack' }}
+            </button>
+            <button mat-button color="primary" (click)="loadSemanticPack()" [disabled]="semanticPackLoading">
+              {{ semanticPackLoading ? 'Loading Pack...' : 'Load Insight Pack' }}
+            </button>
           </div>
 
           <div class="chart-skeleton" *ngIf="askLoading">
@@ -262,6 +268,29 @@
           </div>
 
           <div class="simulation-error" *ngIf="askError">{{ askError }}</div>
+          <div class="simulation-error" *ngIf="semanticPackError">{{ semanticPackError }}</div>
+          <div class="simulation-error" *ngIf="insightAskError">{{ insightAskError }}</div>
+
+          <div class="insight-subsection" *ngIf="semanticPack?.pack as pack">
+            <h4>Semantic Insight Pack</h4>
+            <div class="insight-chips">
+              <mat-chip color="primary" selected>Scale: {{ pack.percentageScaleHint }}</mat-chip>
+              <mat-chip color="accent" selected *ngIf="semanticPack?.meta?.cacheHit">cached ⚡</mat-chip>
+            </div>
+            <ul class="insight-bullets" *ngIf="pack.targetDrivers?.length">
+              <li *ngFor="let driver of pack.targetDrivers | slice:0:4">
+                <strong>{{ driver.name }}</strong> — {{ driver.whyItMatters }}
+              </li>
+            </ul>
+          </div>
+
+          <div class="insight-subsection" *ngIf="insightAskResult as semanticAnswer">
+            <h4>Insight Pack Answer</h4>
+            <p>{{ semanticAnswer.answer }}</p>
+            <ul class="insight-bullets" *ngIf="semanticAnswer.caveats?.length">
+              <li *ngFor="let caveat of semanticAnswer.caveats">{{ caveat }}</li>
+            </ul>
+          </div>
 
           <ng-container *ngIf="askPlan">
             <div class="insight-chips">

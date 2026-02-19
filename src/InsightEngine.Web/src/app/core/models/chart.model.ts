@@ -285,6 +285,51 @@ export interface EvidenceFact {
   value: string;
 }
 
+export interface SemanticInsightPackRequest extends DeepInsightsRequest {
+  recommendationId: string;
+}
+
+export interface SemanticInsightPack {
+  datasetId: string;
+  recommendationId: string;
+  queryHash: string;
+  evidenceVersion: string;
+  percentageScaleHint: string;
+  targetDrivers: InsightPackDriver[];
+  correlations: InsightPackCorrelation[];
+  facts: EvidenceFact[];
+}
+
+export interface InsightPackDriver {
+  name: string;
+  whyItMatters: string;
+  score: number;
+}
+
+export interface InsightPackCorrelation {
+  left: string;
+  right: string;
+  correlation: number;
+  direction: 'positive' | 'negative' | 'neutral';
+}
+
+export interface SemanticInsightPackResponse {
+  pack: SemanticInsightPack;
+  meta: AiGenerationMeta;
+}
+
+export interface InsightPackAskRequest extends SemanticInsightPackRequest {
+  question: string;
+}
+
+export interface InsightPackAskResponse {
+  answer: string;
+  caveats: string[];
+  citations: DeepInsightCitation[];
+  pack: SemanticInsightPack;
+  meta: AiGenerationMeta;
+}
+
 export type TrendSignal = 'Up' | 'Down' | 'Flat';
 export type VolatilitySignal = 'Low' | 'Medium' | 'High';
 export type OutlierSignal = 'None' | 'Few' | 'Many';

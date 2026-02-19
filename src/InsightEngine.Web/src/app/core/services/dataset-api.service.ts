@@ -24,8 +24,12 @@ import {
   DeepInsightsRequest,
   DeepInsightsResponse,
   ExplainChartResponse,
+  InsightPackAskRequest,
+  InsightPackAskResponse,
   ScenarioSimulationRequest,
-  ScenarioSimulationResponse
+  ScenarioSimulationResponse,
+  SemanticInsightPackRequest,
+  SemanticInsightPackResponse
 } from '../models/chart.model';
 import { RuntimeConfig } from '../models/runtime-config.model';
 
@@ -304,6 +308,26 @@ export class DatasetApiService {
   ): Observable<ApiResponse<DeepInsightsResponse>> {
     return this.http.post<ApiResponse<DeepInsightsResponse>>(
       `${this.baseUrl}/api/v1/datasets/${datasetId}/charts/${recommendationId}/deep-insights`,
+      payload
+    );
+  }
+
+  getInsightPack(
+    datasetId: string,
+    payload: SemanticInsightPackRequest
+  ): Observable<ApiResponse<SemanticInsightPackResponse>> {
+    return this.http.post<ApiResponse<SemanticInsightPackResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/insights/pack`,
+      payload
+    );
+  }
+
+  askWithInsightPack(
+    datasetId: string,
+    payload: InsightPackAskRequest
+  ): Observable<ApiResponse<InsightPackAskResponse>> {
+    return this.http.post<ApiResponse<InsightPackAskResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/insights/ask`,
       payload
     );
   }
