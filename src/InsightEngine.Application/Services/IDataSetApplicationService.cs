@@ -38,6 +38,11 @@ public interface IDataSetApplicationService
         int sampleSize = 200,
         CancellationToken cancellationToken = default);
 
+    Task<Result<FinalizeImportResponse>> FinalizeImportAsync(
+        Guid datasetId,
+        FinalizeImportRequest request,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Get chart recommendations for a dataset
     /// </summary>

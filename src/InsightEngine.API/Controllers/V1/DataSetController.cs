@@ -433,6 +433,50 @@ public class DataSetController : BaseController
         }
     }
 
+    [HttpPost("{id:guid}/finalize")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> FinalizeImport(Guid id, [FromBody] FinalizeImportRequest? request)
+    {
+        try
+        {
+            var finalizeRequest = request ?? new FinalizeImportRequest();
+            var result = await _dataSetApplicationService.FinalizeImportAsync(id, finalizeRequest);
+            if (!result.IsSuccess)
+            {
+                var notFound = result.Errors.Any(error =>
+                    error.Contains("not found", StringComparison.OrdinalIgnoreCase));
+                var statusCode = notFound ? StatusCodes.Status404NotFound : StatusCodes.Status400BadRequest;
+                var code = notFound ? "not_found" : "validation_error";
+                return ErrorResponse(statusCode, result.Errors, code);
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    datasetId = result.Data!.DatasetId,
+                    schemaVersion = result.Data.SchemaVersion,
+                    targetColumn = result.Data.TargetColumn,
+                    ignoredColumnsCount = result.Data.IgnoredColumnsCount,
+                    storedColumnsCount = result.Data.StoredColumnsCount,
+                    currencyCode = result.Data.CurrencyCode
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error finalizing import for dataset {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao finalizar importação do dataset.");
+        }
+    }
+
     [HttpGet("{id:guid}/index")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

@@ -85,6 +85,7 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<IChartExecutionService, ChartExecutionService>();
         services.AddScoped<IChartPercentileService, ChartPercentileService>();
         services.AddScoped<IScenarioSimulationService, ScenarioSimulationService>();
+        services.AddScoped<IDataSetSanitizer, DataSetSanitizer>();
         services.AddScoped<IDataSetCleanupService, DataSetCleanupService>();
         services.AddScoped<FormulaSamplingService>();
         services.AddScoped<LinearRegressionService>();
@@ -95,6 +96,7 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<ILLMContextBuilder, LLMContextBuilder>();
         services.AddScoped<IEvidencePackService, EvidencePackService>();
         services.AddScoped<IAIInsightService, AIInsightService>();
+        services.AddSingleton<IDataSetSchemaStore, DataSetSchemaStore>();
         services.AddSingleton<Flurl.Http.IFlurlClient, Flurl.Http.FlurlClient>();
         services.AddScoped<LocalHttpLLMClient>();
         services.AddScoped<NullLLMClient>();

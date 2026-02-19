@@ -127,6 +127,43 @@ public class DataSetApplicationService : IDataSetApplicationService
         return result;
     }
 
+    public async Task<Result<FinalizeImportResponse>> FinalizeImportAsync(
+        Guid datasetId,
+        FinalizeImportRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Finalizing import for dataset {DatasetId}: target={TargetColumn}, ignoredColumns={IgnoredColumnsCount}",
+            datasetId,
+            request.TargetColumn,
+            request.IgnoredColumns.Count);
+
+        var command = new FinalizeDataSetImportCommand(datasetId)
+        {
+            TargetColumn = request.TargetColumn,
+            IgnoredColumns = request.IgnoredColumns ?? new List<string>(),
+            ColumnTypeOverrides = request.ColumnTypeOverrides ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            CurrencyCode = string.IsNullOrWhiteSpace(request.CurrencyCode) ? "BRL" : request.CurrencyCode
+        };
+
+        var commandResult = await _mediator.Send(command, cancellationToken);
+        if (!commandResult.IsSuccess)
+        {
+            return Result.Failure<FinalizeImportResponse>(commandResult.Errors);
+        }
+
+        var data = commandResult.Data!;
+        return Result.Success(new FinalizeImportResponse
+        {
+            DatasetId = data.DatasetId,
+            SchemaVersion = data.SchemaVersion,
+            TargetColumn = data.TargetColumn,
+            IgnoredColumnsCount = data.IgnoredColumnsCount,
+            StoredColumnsCount = data.StoredColumnsCount,
+            CurrencyCode = data.CurrencyCode
+        });
+    }
+
     public async Task<Result<List<ChartRecommendation>>> GetRecommendationsAsync(
         Guid datasetId, 
         CancellationToken cancellationToken = default)
