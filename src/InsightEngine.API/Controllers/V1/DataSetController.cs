@@ -1416,6 +1416,118 @@ OFFSET {offset};
         }));
     }
 
+    [HttpPost("{id:guid}/insights/pack")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetInsightPack(
+        Guid id,
+        [FromBody] InsightPackRequest? request)
+    {
+        request ??= new InsightPackRequest();
+        if (string.IsNullOrWhiteSpace(request.RecommendationId))
+        {
+            return ResponseResult(Result.Failure<object>("RecommendationId is required."));
+        }
+
+        var filterErrors = new List<string>();
+        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
+        if (filterErrors.Count > 0)
+        {
+            return ResponseResult(Result.Failure<object>(filterErrors));
+        }
+
+        var language = ResolveLanguage();
+        var result = await _aiInsightService.BuildSemanticInsightPackAsync(
+            new DeepInsightsRequest
+            {
+                DatasetId = id,
+                RecommendationId = request.RecommendationId,
+                Language = language,
+                Aggregation = request.Aggregation,
+                TimeBin = request.TimeBin,
+                MetricY = request.MetricY,
+                GroupBy = request.GroupBy,
+                Filters = parsedFilters,
+                Scenario = request.Scenario,
+                Horizon = request.Horizon,
+                SensitiveMode = request.SensitiveMode,
+                RequesterKey = ResolveRequesterKey()
+            },
+            HttpContext.RequestAborted);
+
+        if (!result.IsSuccess)
+        {
+            return ResponseResult(Result.Failure<object>(result.Errors));
+        }
+
+        return ResponseResult(Result.Success(new
+        {
+            pack = result.Data!.Pack,
+            meta = result.Data.Meta
+        }));
+    }
+
+    [HttpPost("{id:guid}/insights/ask")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AskWithInsightPack(
+        Guid id,
+        [FromBody] InsightPackAskApiRequest? request)
+    {
+        request ??= new InsightPackAskApiRequest();
+        if (string.IsNullOrWhiteSpace(request.RecommendationId))
+        {
+            return ResponseResult(Result.Failure<object>("RecommendationId is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Question))
+        {
+            return ResponseResult(Result.Failure<object>("Question is required."));
+        }
+
+        var filterErrors = new List<string>();
+        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
+        if (filterErrors.Count > 0)
+        {
+            return ResponseResult(Result.Failure<object>(filterErrors));
+        }
+
+        var language = ResolveLanguage();
+        var result = await _aiInsightService.AskWithInsightPackAsync(
+            new InsightPackAskRequest
+            {
+                DatasetId = id,
+                RecommendationId = request.RecommendationId,
+                Question = request.Question,
+                Language = language,
+                Aggregation = request.Aggregation,
+                TimeBin = request.TimeBin,
+                MetricY = request.MetricY,
+                GroupBy = request.GroupBy,
+                Filters = parsedFilters,
+                SensitiveMode = request.SensitiveMode
+            },
+            HttpContext.RequestAborted);
+
+        if (!result.IsSuccess)
+        {
+            return ResponseResult(Result.Failure<object>(result.Errors));
+        }
+
+        return ResponseResult(Result.Success(new
+        {
+            answer = result.Data!.Answer,
+            caveats = result.Data.Caveats,
+            citations = result.Data.Citations,
+            pack = result.Data.Pack,
+            meta = result.Data.Meta
+        }));
+    }
+
     [HttpPost("{id:guid}/ask")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]

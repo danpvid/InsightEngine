@@ -404,6 +404,194 @@ public class AIInsightService : IAIInsightService
         return Result.Success(fallbackResult);
     }
 
+    public async Task<Result<SemanticInsightPackResult>> BuildSemanticInsightPackAsync(
+        DeepInsightsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var evidenceResult = await _evidencePackService.BuildEvidencePackAsync(request, cancellationToken);
+        if (!evidenceResult.IsSuccess || evidenceResult.Data == null)
+        {
+            return Result.Failure<SemanticInsightPackResult>(evidenceResult.Errors);
+        }
+
+        var evidencePack = evidenceResult.Data.EvidencePack;
+        var drivers = evidencePack.SegmentBreakdowns
+            .OrderByDescending(item => Math.Abs(item.ContributionValue))
+            .ThenBy(item => item.Segment)
+            .Take(6)
+            .Select(item => new InsightPackDriver
+            {
+                Name = item.Segment,
+                Score = Math.Round(Math.Abs(item.ContributionValue), 6),
+                WhyItMatters = item.IsOutlierSegment
+                    ? "Segmento com comportamento atípico e alto impacto no resultado."
+                    : "Segmento com contribuição relevante para o resultado agregado."
+            })
+            .ToList();
+
+        var correlations = evidencePack.SegmentBreakdowns
+            .Take(6)
+            .Select(item =>
+            {
+                var rawCorrelation = Math.Clamp((item.SharePercent / 100d) * Math.Max(0.1, item.StabilityScore), 0d, 1d);
+                var signed = item.IsOutlierSegment ? -rawCorrelation : rawCorrelation;
+                return new InsightPackCorrelation
+                {
+                    Left = item.Segment,
+                    Right = "target",
+                    Correlation = Math.Round(signed, 4),
+                    Direction = signed switch
+                    {
+                        > 0.1 => "positive",
+                        < -0.1 => "negative",
+                        _ => "neutral"
+                    }
+                };
+            })
+            .ToList();
+
+        var percentageScaleHint = InferPercentageScaleHint(evidencePack);
+
+        return Result.Success(new SemanticInsightPackResult
+        {
+            Pack = new SemanticInsightPack
+            {
+                DatasetId = request.DatasetId,
+                RecommendationId = request.RecommendationId,
+                QueryHash = evidencePack.QueryHash,
+                EvidenceVersion = evidencePack.EvidenceVersion,
+                PercentageScaleHint = percentageScaleHint,
+                TargetDrivers = drivers,
+                Correlations = correlations,
+                Facts = evidencePack.Facts.Take(20).ToList()
+            },
+            Meta = new AiGenerationMeta
+            {
+                Provider = LLMProvider.None,
+                Model = "deterministic-pack",
+                CacheHit = evidenceResult.Data.CacheHit,
+                FallbackUsed = false,
+                EvidenceBytes = evidencePack.SerializedBytes,
+                ValidationStatus = "ok"
+            }
+        });
+    }
+
+    public async Task<Result<InsightPackAskResult>> AskWithInsightPackAsync(
+        InsightPackAskRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.DatasetId == Guid.Empty)
+        {
+            return Result.Failure<InsightPackAskResult>("DatasetId is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.RecommendationId))
+        {
+            return Result.Failure<InsightPackAskResult>("RecommendationId is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Question))
+        {
+            return Result.Failure<InsightPackAskResult>("Question is required.");
+        }
+
+        var packResult = await BuildSemanticInsightPackAsync(new DeepInsightsRequest
+        {
+            DatasetId = request.DatasetId,
+            RecommendationId = request.RecommendationId,
+            Language = request.Language,
+            Aggregation = request.Aggregation,
+            TimeBin = request.TimeBin,
+            MetricY = request.MetricY,
+            GroupBy = request.GroupBy,
+            Filters = request.Filters,
+            SensitiveMode = request.SensitiveMode
+        }, cancellationToken);
+
+        if (!packResult.IsSuccess || packResult.Data == null)
+        {
+            return Result.Failure<InsightPackAskResult>(packResult.Errors);
+        }
+
+        var pack = packResult.Data.Pack;
+        var language = NormalizeLanguage(request.Language);
+        var llmRequest = new LLMRequest
+        {
+            DatasetId = request.DatasetId,
+            RecommendationId = request.RecommendationId,
+            QueryHash = pack.QueryHash,
+            FeatureKind = $"insights-ask-{language}",
+            PromptVersion = $"{LLMPromptVersion.Value}-{pack.EvidenceVersion}",
+            ResponseFormat = LLMResponseFormat.Json,
+            SystemPrompt = BuildInsightPackAskSystemPrompt(language),
+            UserPrompt = BuildInsightPackAskUserPrompt(request.Question, language),
+            ContextObjects = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["insightPack"] = pack
+            }
+        };
+
+        var llmResult = await _llmClient.GenerateJsonAsync(llmRequest, cancellationToken);
+        if (llmResult.IsSuccess && llmResult.Data != null)
+        {
+            var parsed = TryParseInsightPackAnswer(llmResult.Data.Json ?? llmResult.Data.Text);
+            if (parsed != null)
+            {
+                parsed.Pack = pack;
+                parsed.Meta = new AiGenerationMeta
+                {
+                    Provider = llmResult.Data.Provider,
+                    Model = llmResult.Data.ModelId,
+                    DurationMs = llmResult.Data.DurationMs,
+                    CacheHit = llmResult.Data.CacheHit,
+                    FallbackUsed = false,
+                    ValidationStatus = "ok"
+                };
+                return Result.Success(parsed);
+            }
+        }
+
+        var caveat = pack.PercentageScaleHint switch
+        {
+            "0_1" => "Percentual detectado em escala 0-1; a apresentação deve converter para 0-100 apenas no formato.",
+            "0_100" => "Percentual detectado em escala 0-100; os valores brutos foram mantidos.",
+            _ => "Escala percentual não confirmada; valide se os percentuais estão em 0-1 ou 0-100 antes de concluir."
+        };
+
+        return Result.Success(new InsightPackAskResult
+        {
+            Answer = IsPortuguese(language)
+                ? "Com base no Insight Pack, os principais drivers estão nos segmentos com maior contribuição e estabilidade. Use as correlações como sinal direcional, não causal."
+                : "Based on the Insight Pack, the strongest drivers are the segments with the highest contribution and stability. Treat correlations as directional signals, not causality.",
+            Caveats =
+            [
+                caveat,
+                IsPortuguese(language)
+                    ? "A resposta foi gerada sem acesso a linhas brutas do dataset."
+                    : "The answer was generated without access to raw dataset rows."
+            ],
+            Citations = pack.Facts.Take(6).Select(f => new DeepInsightCitation
+            {
+                EvidenceId = f.EvidenceId,
+                ShortClaim = f.ShortClaim
+            }).ToList(),
+            Meta = new AiGenerationMeta
+            {
+                Provider = llmResult.Data?.Provider ?? LLMProvider.None,
+                Model = llmResult.Data?.ModelId ?? "deterministic-fallback",
+                DurationMs = llmResult.Data?.DurationMs ?? 0,
+                CacheHit = llmResult.Data?.CacheHit ?? false,
+                FallbackUsed = true,
+                FallbackReason = llmResult.IsSuccess
+                    ? "Invalid JSON output from LLM for insight-pack ask."
+                    : string.Join(" | ", llmResult.Errors),
+                ValidationStatus = "fallback"
+            },
+            Pack = pack
+        });
+    }
+
     private static DeepInsightReport? TryParseDeepInsightsReport(string? payload)
     {
         if (string.IsNullOrWhiteSpace(payload))
@@ -1234,6 +1422,135 @@ If information is missing from context, keep fields null instead of guessing.
             "}",
             string.Empty,
             BuildOutputLanguageInstruction(language));
+    }
+
+    private static string BuildInsightPackAskSystemPrompt(string language)
+    {
+        return """
+You answer data questions using only the provided insightPack context.
+Never assume access to raw rows.
+Never invent metrics or percentages.
+Return JSON only.
+"""
+        + Environment.NewLine
+        + BuildOutputLanguageInstruction(language);
+    }
+
+    private static string BuildInsightPackAskUserPrompt(string question, string language)
+    {
+        return string.Join('\n',
+            "Question:",
+            question,
+            string.Empty,
+            "Return JSON with this schema:",
+            "{",
+            "  \"answer\": \"string\",",
+            "  \"caveats\": [\"string\"],",
+            "  \"citations\": [",
+            "    {",
+            "      \"evidenceId\": \"string\",",
+            "      \"shortClaim\": \"string\"",
+            "    }",
+            "  ]",
+            "}",
+            string.Empty,
+            BuildOutputLanguageInstruction(language));
+    }
+
+    private static InsightPackAskResult? TryParseInsightPackAnswer(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var answer = root.TryGetProperty("answer", out var answerEl)
+                ? answerEl.GetString()
+                : null;
+            if (string.IsNullOrWhiteSpace(answer))
+            {
+                return null;
+            }
+
+            var caveats = new List<string>();
+            if (root.TryGetProperty("caveats", out var caveatsEl) && caveatsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in caveatsEl.EnumerateArray())
+                {
+                    var value = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        caveats.Add(value.Trim());
+                    }
+                }
+            }
+
+            var citations = new List<DeepInsightCitation>();
+            if (root.TryGetProperty("citations", out var citationsEl) && citationsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var citation in citationsEl.EnumerateArray())
+                {
+                    if (citation.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    var id = citation.TryGetProperty("evidenceId", out var idEl) ? idEl.GetString() : null;
+                    var claim = citation.TryGetProperty("shortClaim", out var claimEl) ? claimEl.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(claim))
+                    {
+                        continue;
+                    }
+
+                    citations.Add(new DeepInsightCitation
+                    {
+                        EvidenceId = id.Trim(),
+                        ShortClaim = claim.Trim()
+                    });
+                }
+            }
+
+            return new InsightPackAskResult
+            {
+                Answer = answer.Trim(),
+                Caveats = caveats.Take(6).ToList(),
+                Citations = citations.Take(12).ToList()
+            };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string InferPercentageScaleHint(EvidencePack pack)
+    {
+        var distribution = pack.DistributionStats.FirstOrDefault();
+        if (distribution == null)
+        {
+            return "unknown";
+        }
+
+        if (distribution.Max <= 1.000001 && distribution.Min >= -0.000001)
+        {
+            return "0_1";
+        }
+
+        if (distribution.Max <= 100.000001 && distribution.Min >= -0.000001)
+        {
+            return "0_100";
+        }
+
+        return "unknown";
     }
 
     private static bool IsPortuguese(string language) =>

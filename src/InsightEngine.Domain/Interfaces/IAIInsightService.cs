@@ -20,4 +20,12 @@ public interface IAIInsightService
     Task<Result<DeepInsightsResult>> GenerateDeepInsightsAsync(
         DeepInsightsRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<Result<SemanticInsightPackResult>> BuildSemanticInsightPackAsync(
+        DeepInsightsRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<InsightPackAskResult>> AskWithInsightPackAsync(
+        InsightPackAskRequest request,
+        CancellationToken cancellationToken = default);
 }
