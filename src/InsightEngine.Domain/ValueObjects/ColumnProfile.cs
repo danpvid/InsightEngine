@@ -6,6 +6,11 @@ public class ColumnProfile
 {
     public string Name { get; set; } = string.Empty;
     public InferredType InferredType { get; set; }
+    public InferredType? ConfirmedType { get; set; }
+    public bool IsIgnored { get; set; }
+    public bool IsTarget { get; set; }
+    public string? CurrencyCode { get; set; }
+    public bool? HasPercentSign { get; set; }
     public double NullRate { get; set; }
     public int DistinctCount { get; set; }
     public List<string> TopValues { get; set; } = new();

@@ -3,8 +3,12 @@ namespace InsightEngine.Domain.Enums;
 public enum InferredType
 {
     String,
-    Number,
+    Integer,
+    Decimal,
+    Percentage,
+    Money,
     Date,
     Boolean,
-    Category
+    Category,
+    Number = Decimal
 }
