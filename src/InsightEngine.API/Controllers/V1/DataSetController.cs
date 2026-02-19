@@ -320,6 +320,7 @@ public class DataSetController : BaseController
                         isTarget = c.IsTarget,
                         currencyCode = c.CurrencyCode,
                         hasPercentSign = c.HasPercentSign,
+                        percentageScaleHint = c.PercentageScaleHint?.ToString(),
                         nullRate = Math.Round(c.NullRate, 4),
                         distinctCount = c.DistinctCount,
                         topValues = c.TopValues,
@@ -379,6 +380,7 @@ public class DataSetController : BaseController
                             mostlyZeroToHundred = column.Hints.MostlyZeroToHundred,
                             mostlyInteger = column.Hints.MostlyInteger,
                             consistentTwoDecimalPlaces = column.Hints.ConsistentTwoDecimalPlaces,
+                            percentageScaleHint = column.Hints.PercentageScaleHint?.ToString(),
                             currencyCode = column.Hints.CurrencyCode
                         }
                     }),
@@ -476,7 +478,8 @@ public class DataSetController : BaseController
                         isIgnored = column.IsIgnored,
                         isTarget = column.IsTarget,
                         currencyCode = column.CurrencyCode,
-                        hasPercentSign = column.HasPercentSign
+                        hasPercentSign = column.HasPercentSign,
+                        percentageScaleHint = column.PercentageScaleHint?.ToString()
                     })
                 }
             });

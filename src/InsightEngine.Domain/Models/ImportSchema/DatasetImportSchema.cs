@@ -22,4 +22,5 @@ public class DatasetImportSchemaColumn
     public bool IsTarget { get; set; }
     public string? CurrencyCode { get; set; }
     public bool? HasPercentSign { get; set; }
+    public PercentageScaleHint? PercentageScaleHint { get; set; }
 }

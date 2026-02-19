@@ -11,6 +11,7 @@ public class ColumnProfile
     public bool IsTarget { get; set; }
     public string? CurrencyCode { get; set; }
     public bool? HasPercentSign { get; set; }
+    public PercentageScaleHint? PercentageScaleHint { get; set; }
     public double NullRate { get; set; }
     public int DistinctCount { get; set; }
     public List<string> TopValues { get; set; } = new();
@@ -20,6 +21,11 @@ public class ColumnProfile
     /// Minimum value (only for numeric columns)
     /// </summary>
     public double? Min { get; set; }
+
+    /// <summary>
+    /// Mean value (only for numeric columns)
+    /// </summary>
+    public double? Mean { get; set; }
     
     /// <summary>
     /// Maximum value (only for numeric columns)

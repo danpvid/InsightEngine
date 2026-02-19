@@ -38,6 +38,7 @@ public static class DatasetSchemaProfileMapper
             column.IsTarget = mapped.IsTarget;
             column.CurrencyCode = mapped.CurrencyCode;
             column.HasPercentSign = mapped.HasPercentSign;
+            column.PercentageScaleHint = mapped.PercentageScaleHint;
         }
 
         profile.Columns = profile.Columns.Where(column => !column.IsIgnored).ToList();

@@ -1,5 +1,6 @@
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
+using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models.ImportSchema;
 using MediatR;
@@ -117,7 +118,10 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                         IsIgnored = ignoredColumns.Contains(column.Name),
                         IsTarget = string.Equals(column.Name, targetColumn, StringComparison.OrdinalIgnoreCase),
                         CurrencyCode = confirmedType == InferredType.Money ? request.CurrencyCode : null,
-                        HasPercentSign = confirmedType == InferredType.Percentage ? column.HasPercentSign : null
+                        HasPercentSign = confirmedType == InferredType.Percentage ? column.HasPercentSign : null,
+                        PercentageScaleHint = confirmedType == InferredType.Percentage && !ignoredColumns.Contains(column.Name)
+                            ? PercentageScaleHintDetector.Detect(column.Min, column.Max, column.Mean)
+                            : null
                     };
                 })
                 .ToList();

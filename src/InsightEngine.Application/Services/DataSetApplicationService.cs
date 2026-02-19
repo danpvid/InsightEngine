@@ -1,6 +1,7 @@
 using InsightEngine.Domain.Commands.DataSet;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
+using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Models.FormulaDiscovery;
@@ -211,7 +212,10 @@ public class DataSetApplicationService : IDataSetApplicationService
                     IsIgnored = false,
                     IsTarget = false,
                     CurrencyCode = confirmedType == InferredType.Money ? "BRL" : null,
-                    HasPercentSign = confirmedType == InferredType.Percentage ? column.HasPercentSign : null
+                    HasPercentSign = confirmedType == InferredType.Percentage ? column.HasPercentSign : null,
+                    PercentageScaleHint = confirmedType == InferredType.Percentage
+                        ? PercentageScaleHintDetector.Detect(column.Min, column.Max, column.Mean)
+                        : null
                 };
             })
             .ToList();

@@ -34,5 +34,6 @@ public class ImportPreviewHints
     public bool MostlyZeroToHundred { get; set; }
     public bool MostlyInteger { get; set; }
     public bool ConsistentTwoDecimalPlaces { get; set; }
+    public PercentageScaleHint? PercentageScaleHint { get; set; }
     public string CurrencyCode { get; set; } = "BRL";
 }

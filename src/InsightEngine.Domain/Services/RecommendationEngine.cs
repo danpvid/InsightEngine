@@ -7,12 +7,29 @@ namespace InsightEngine.Domain.Services;
 public class RecommendationEngine
 {
     private const int MaxRecommendations = 12;
+    private static readonly string[] IdLikeNameHints =
+    [
+        "id", "uuid", "guid", "hash", "key", "token"
+    ];
 
     public List<ChartRecommendation> Generate(DatasetProfile profile)
     {
-
         var recommendations = new List<ChartRecommendation>();
-        var roles = DetectColumnRoles(profile);
+        var activeColumns = profile.Columns.Where(column => !column.IsIgnored).ToList();
+        if (activeColumns.Count == 0)
+        {
+            activeColumns = profile.Columns;
+        }
+
+        var effectiveProfile = new DatasetProfile
+        {
+            DatasetId = profile.DatasetId,
+            RowCount = profile.RowCount,
+            SampleSize = profile.SampleSize,
+            Columns = activeColumns
+        };
+
+        var roles = DetectColumnRoles(effectiveProfile);
 
         var timeColumns = roles.Where(r => r.Role == AxisRole.Time).ToList();
         var measureColumns = roles.Where(r => r.Role == AxisRole.Measure).ToList();
@@ -32,7 +49,7 @@ public class RecommendationEngine
         // 4. Scatter - até 2
         recommendations.AddRange(GenerateScatterRecommendations(measureColumns, ref recCounter, maxCount: 2));
 
-        ApplyScores(recommendations, profile);
+        ApplyScores(recommendations, effectiveProfile);
 
         var finalRecommendations = recommendations
             .Select((rec, index) => new { rec, index })
@@ -172,38 +189,52 @@ public class RecommendationEngine
     private List<ColumnRole> DetectColumnRoles(DatasetProfile profile)
     {
         var roles = new List<ColumnRole>();
+        var sampleSize = Math.Max(1, profile.SampleSize);
 
         foreach (var column in profile.Columns)
         {
+            var normalizedType = (column.ConfirmedType ?? column.InferredType).NormalizeLegacy();
+            var isIdLike = IsIdColumn(column, sampleSize);
+            var semantic = ComputeMeasureSemantic(column.Name, normalizedType);
+
             var role = new ColumnRole
             {
                 ColumnName = column.Name,
-                InferredType = column.InferredType,
-                DistinctCount = column.DistinctCount
+                InferredType = normalizedType,
+                DistinctCount = column.DistinctCount,
+                IsIdLike = isIdLike,
+                MeasureSemantic = semantic,
+                MeasureScore = ComputeMeasureScore(column, semantic, sampleSize, isIdLike),
+                DimensionScore = ComputeDimensionScore(column, sampleSize, isIdLike)
             };
 
             // Detectar papel
-            if (column.InferredType == InferredType.Date)
+            if (normalizedType == InferredType.Date)
             {
                 role.Role = AxisRole.Time;
+                role.RoleHint = ColumnRoleHint.Time;
             }
-            else if (IsIdColumn(column, profile.SampleSize))
+            else if (isIdLike)
             {
                 role.Role = AxisRole.Id;
+                role.RoleHint = ColumnRoleHint.IdLike;
             }
-            else if (column.InferredType.IsNumericLike())
+            else if (normalizedType.IsNumericLike())
             {
                 role.Role = AxisRole.Measure;
+                role.RoleHint = ColumnRoleHint.Measure;
             }
-            else if (column.InferredType == InferredType.Category ||
-                     column.InferredType == InferredType.Boolean ||
-                     (column.InferredType == InferredType.String && column.DistinctCount <= Math.Max(20, profile.SampleSize * 0.05)))
+            else if (normalizedType == InferredType.Category ||
+                     normalizedType == InferredType.Boolean ||
+                     (normalizedType == InferredType.String && column.DistinctCount <= Math.Max(20, profile.SampleSize * 0.05)))
             {
                 role.Role = AxisRole.Category;
+                role.RoleHint = ColumnRoleHint.Dimension;
             }
             else
             {
                 role.Role = AxisRole.Category; // Default
+                role.RoleHint = ColumnRoleHint.Noise;
             }
 
             roles.Add(role);
@@ -214,8 +245,8 @@ public class RecommendationEngine
 
     private bool IsIdColumn(ColumnProfile column, int sampleSize)
     {
-        // Nome contém "id"
-        if (column.Name.Contains("id", StringComparison.OrdinalIgnoreCase))
+        // Nome contém pistas de identificador
+        if (IsIdLikeNameHint(column.Name))
         {
             return true;
         }
@@ -232,6 +263,76 @@ public class RecommendationEngine
         }
 
         return false;
+    }
+
+    private static bool IsIdLikeNameHint(string columnName)
+    {
+        return IdLikeNameHints.Any(hint =>
+            columnName.Contains(hint, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static MeasureSemantic ComputeMeasureSemantic(string columnName, InferredType inferredType)
+    {
+        var normalizedName = columnName.Trim();
+        if (inferredType == InferredType.Money || normalizedName.Contains("price", StringComparison.OrdinalIgnoreCase)
+            || normalizedName.Contains("amount", StringComparison.OrdinalIgnoreCase)
+            || normalizedName.Contains("revenue", StringComparison.OrdinalIgnoreCase)
+            || normalizedName.Contains("cost", StringComparison.OrdinalIgnoreCase))
+        {
+            return MeasureSemantic.Money;
+        }
+
+        if (inferredType == InferredType.Percentage)
+        {
+            return MeasureSemantic.Percentage;
+        }
+
+        if (normalizedName.Contains("count", StringComparison.OrdinalIgnoreCase)
+            || normalizedName.Contains("qty", StringComparison.OrdinalIgnoreCase)
+            || normalizedName.Contains("quant", StringComparison.OrdinalIgnoreCase)
+            || normalizedName.Contains("volume", StringComparison.OrdinalIgnoreCase))
+        {
+            return normalizedName.Contains("count", StringComparison.OrdinalIgnoreCase)
+                ? MeasureSemantic.Count
+                : MeasureSemantic.Quantity;
+        }
+
+        return MeasureSemantic.Generic;
+    }
+
+    private static double ComputeMeasureScore(
+        ColumnProfile column,
+        MeasureSemantic semantic,
+        int sampleSize,
+        bool isIdLike)
+    {
+        var distinctRatio = Math.Clamp(column.DistinctCount / (double)Math.Max(1, sampleSize), 0.0, 1.0);
+        var varianceWeight = distinctRatio;
+        var completenessWeight = Math.Clamp(1.0 - column.NullRate, 0.0, 1.0);
+        var semanticWeight = semantic switch
+        {
+            MeasureSemantic.Money => 1.0,
+            MeasureSemantic.Percentage => 0.9,
+            _ => 0.75
+        };
+        var idNoisePenalty = isIdLike ? 0.75 : 0.0;
+
+        var score = (0.45 * varianceWeight) + (0.3 * completenessWeight) + (0.35 * semanticWeight) - idNoisePenalty;
+        return Math.Round(Math.Clamp(score, 0.0, 1.0), 4);
+    }
+
+    private static double ComputeDimensionScore(ColumnProfile column, int sampleSize, bool isIdLike)
+    {
+        var distinctRatio = Math.Clamp(column.DistinctCount / (double)Math.Max(1, sampleSize), 0.0, 1.0);
+        var moderateCardinalityWeight = 1.0 - Math.Abs(distinctRatio - 0.2);
+        moderateCardinalityWeight = Math.Clamp(moderateCardinalityWeight, 0.0, 1.0);
+
+        var completenessWeight = Math.Clamp(1.0 - column.NullRate, 0.0, 1.0);
+        var nonTextPenalty = column.InferredType == InferredType.String && distinctRatio > 0.85 ? 0.3 : 0.0;
+        var idPenalty = isIdLike ? 0.85 : 0.0;
+
+        var score = (0.5 * moderateCardinalityWeight) + (0.35 * completenessWeight) - nonTextPenalty - idPenalty;
+        return Math.Round(Math.Clamp(score, 0.0, 1.0), 4);
     }
 
     private List<ChartRecommendation> GenerateTimeSeriesRecommendations(
@@ -303,7 +404,11 @@ public class RecommendationEngine
             return recommendations;
 
         // Filtrar categorias com distinctCount <= 20
-        var validCategories = categoryColumns.Where(c => c.DistinctCount <= 20).Take(3).ToList();
+        var validCategories = categoryColumns
+            .Where(c => c.DistinctCount <= 20)
+            .OrderByDescending(c => c.DimensionScore)
+            .Take(3)
+            .ToList();
         var selectedMeasures = SelectPreferredMeasures(measureColumns).Take(2).ToList();
 
         foreach (var category in validCategories)
@@ -449,7 +554,10 @@ public class RecommendationEngine
     {
         // Ordem de preferência: score, balance, depois por distinctCount desc
         var ordered = measures
-            .OrderByDescending(m => m.ColumnName.Contains("score", StringComparison.OrdinalIgnoreCase) ? 3 : 0)
+            .OrderByDescending(m => m.MeasureScore)
+            .ThenByDescending(m => m.MeasureSemantic == MeasureSemantic.Money ? 1 : 0)
+            .ThenByDescending(m => m.MeasureSemantic == MeasureSemantic.Percentage ? 1 : 0)
+            .ThenByDescending(m => m.ColumnName.Contains("score", StringComparison.OrdinalIgnoreCase) ? 3 : 0)
             .ThenByDescending(m => m.ColumnName.Contains("balance", StringComparison.OrdinalIgnoreCase) ? 2 : 0)
             .ThenByDescending(m => m.DistinctCount)
             .ToList();

@@ -2,6 +2,7 @@
 using CsvHelper;
 using CsvHelper.Configuration;
 using InsightEngine.Domain.Enums;
+using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models.ImportPreview;
 using InsightEngine.Domain.Settings;
@@ -180,6 +181,7 @@ public class CsvProfiler : ICsvProfiler
         private int _twoDecimalCount;
         private int _betweenZeroAndOneCount;
         private int _betweenZeroAndHundredCount;
+        private double _numericSum;
         private readonly HashSet<string> _distinctValues;
         private readonly Dictionary<string, int> _valueFrequency;
         private bool _distinctTrackingActive = true;
@@ -252,6 +254,7 @@ public class CsvProfiler : ICsvProfiler
 
                 _min = _min.HasValue ? Math.Min(_min.Value, numericValue) : numericValue;
                 _max = _max.HasValue ? Math.Max(_max.Value, numericValue) : numericValue;
+                _numericSum += numericValue;
             }
 
             if (ContainsCurrencySymbol(value))
@@ -294,6 +297,7 @@ public class CsvProfiler : ICsvProfiler
                 CurrencyCode = "BRL",
                 HasPercentSign = nonNull > 0 && (double)_percentSignCount / nonNull >= 0.1,
                 Min = _min,
+                Mean = _numberOk > 0 ? _numericSum / _numberOk : null,
                 Max = _max
             };
         }
@@ -472,6 +476,14 @@ public class CsvProfiler : ICsvProfiler
             else if (inferred == InferredType.Decimal)
             {
                 confidence = Math.Max(confidence, 0.8);
+            }
+
+            if (inferred == InferredType.Percentage)
+            {
+                hints.PercentageScaleHint = PercentageScaleHintDetector.Detect(
+                    _min,
+                    _max,
+                    _numberOk > 0 ? _numericSum / _numberOk : null);
             }
 
             return inferred;
