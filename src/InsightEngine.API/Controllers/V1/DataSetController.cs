@@ -1236,7 +1236,9 @@ OFFSET {offset};
                     TopN = domainResponse.TopN,
                     TimeBin = domainResponse.TimeBin,
                     PercentScaleHintBySeries = domainResponse.PercentScaleHintBySeries,
-                    YAxisMapping = domainResponse.YAxisMapping
+                    YAxisMapping = domainResponse.YAxisMapping,
+                    AxisPolicy = domainResponse.AxisPolicy,
+                    SeriesAxisAssignments = domainResponse.SeriesAxisAssignments
                 },
                 DebugSql = _environment.IsDevelopment() ? domainResponse.ExecutionResult.GeneratedSql : null
             };

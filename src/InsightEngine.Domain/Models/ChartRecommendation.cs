@@ -1,4 +1,5 @@
 using System.Text.Json;
+using InsightEngine.Domain.Models.Charts;
 
 namespace InsightEngine.Domain.Models;
 
@@ -17,6 +18,7 @@ public class ChartRecommendation
     public RecommendationIncludedColumns IncludedColumns { get; set; } = new();
     public RecommendationAggregationPlan AggregationPlan { get; set; } = new();
     public string Reasoning { get; set; } = string.Empty;
+    public AxisPolicy AxisPolicy { get; set; } = new();
 
     // Helper properties para acesso direto (Prompt 5)
     public string XColumn => Query.X.Column;

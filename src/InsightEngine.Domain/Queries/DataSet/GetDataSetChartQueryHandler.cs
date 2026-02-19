@@ -330,6 +330,23 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 YAxisMapping = recommendation.Query.YAxisMapping
             };
 
+            var axisResolution = AxisAssignmentService.BuildAssignments(
+                recommendation,
+                executionResult.Data!.Option,
+                schema,
+                schema?.TargetColumn);
+
+            response.AxisPolicy = axisResolution.Policy;
+            response.SeriesAxisAssignments = axisResolution.Assignments;
+
+            if (axisResolution.Assignments.Count > 0)
+            {
+                response.YAxisMapping = axisResolution.Assignments.ToDictionary(
+                    item => item.SeriesName,
+                    item => item.YAxisIndex,
+                    StringComparer.OrdinalIgnoreCase);
+            }
+
             var measureColumnsUsed = recommendation.Query.YMetrics.Count > 0
                 ? recommendation.Query.YMetrics.Select(metric => metric.Column)
                 : [recommendation.Query.Y.Column];

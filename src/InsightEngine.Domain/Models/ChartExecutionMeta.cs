@@ -1,4 +1,5 @@
 namespace InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.Charts;
 
 /// <summary>
 /// Metadata about chart execution performance and details
@@ -65,4 +66,8 @@ public class ChartExecutionMeta
     public Dictionary<string, string?> PercentScaleHintBySeries { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public Dictionary<string, int> YAxisMapping { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public AxisPolicy AxisPolicy { get; set; } = new();
+
+    public List<SeriesAxisAssignment> SeriesAxisAssignments { get; set; } = new();
 }

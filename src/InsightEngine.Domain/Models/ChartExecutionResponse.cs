@@ -1,4 +1,5 @@
 namespace InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.Charts;
 
 /// <summary>
 /// Resposta completa de execução de chart com dados e telemetria (Domain layer)
@@ -22,4 +23,6 @@ public class ChartExecutionResponse
     public string? TimeBin { get; set; }
     public Dictionary<string, string?> PercentScaleHintBySeries { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, int> YAxisMapping { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public AxisPolicy AxisPolicy { get; set; } = new();
+    public List<SeriesAxisAssignment> SeriesAxisAssignments { get; set; } = new();
 }
