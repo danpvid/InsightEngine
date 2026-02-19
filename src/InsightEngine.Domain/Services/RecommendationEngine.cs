@@ -1,5 +1,6 @@
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.Charts;
 using InsightEngine.Domain.ValueObjects;
 
 namespace InsightEngine.Domain.Services;
@@ -102,6 +103,110 @@ public class RecommendationEngine
             .OrderByDescending(column => column.MeasureScore)
             .Take(4)
             .ToList();
+
+        if (target.MeasureSemantic == MeasureSemantic.Money)
+        {
+            var companionMoneyMeasures = measureColumns
+                .Where(column =>
+                    !string.Equals(column.ColumnName, target.ColumnName, StringComparison.OrdinalIgnoreCase) &&
+                    column.MeasureSemantic == MeasureSemantic.Money)
+                .OrderByDescending(column => column.MeasureScore)
+                .Take(3)
+                .ToList();
+
+            if (companionMoneyMeasures.Count > 0)
+            {
+                var moneyPackMeasures = new List<ColumnRole> { target };
+                moneyPackMeasures.AddRange(companionMoneyMeasures);
+
+                var moneyAxisPolicy = new AxisPolicy
+                {
+                    DefaultMode = "SingleAxisBySemanticType",
+                    MaxAxes = 2,
+                    SuggestSeparateAxesWhenScaleRatioAbove = 50,
+                    AllowPerSeriesAxisOverride = true
+                };
+
+                if (bestTime != null)
+                {
+                    recommendations.Add(new ChartRecommendation
+                    {
+                        Id = $"rec_{counter++:D3}",
+                        TemplateType = "MoneyPackWithTarget",
+                        Title = $"{target.ColumnName}: money pack over time",
+                        Reason = "multiple Money measures + target selected",
+                        Reasoning = BuildReasoning(target, moneyPackMeasures, bestDimensions, "Combines target and companion money measures with axis-separation suggestions by scale ratio."),
+                        Chart = new ChartMeta { Library = ChartLibrary.ECharts, Type = ChartType.Line },
+                        Query = new ChartQuery
+                        {
+                            X = new FieldSpec { Column = bestTime.ColumnName, Role = AxisRole.Time, Bin = TimeBin.Month },
+                            Y = new FieldSpec { Column = target.ColumnName, Role = AxisRole.Measure, Aggregation = Aggregation.Sum },
+                            YMetrics = moneyPackMeasures.Select(metric => new FieldSpec
+                            {
+                                Column = metric.ColumnName,
+                                Role = AxisRole.Measure,
+                                Aggregation = Aggregation.Sum
+                            }).ToList(),
+                            YAxisMapping = moneyPackMeasures.ToDictionary(
+                                metric => metric.ColumnName,
+                                _ => 0,
+                                StringComparer.OrdinalIgnoreCase)
+                        },
+                        IncludedColumns = new RecommendationIncludedColumns
+                        {
+                            X = bestTime.ColumnName,
+                            Y = moneyPackMeasures.Select(metric => metric.ColumnName).ToList()
+                        },
+                        AggregationPlan = new RecommendationAggregationPlan
+                        {
+                            DefaultAggregation = "Sum",
+                            SupportedAggregations = ["Sum", "Avg"]
+                        },
+                        AxisPolicy = moneyAxisPolicy
+                    });
+                }
+                else if (bestDimensions.Count > 0)
+                {
+                    var bestDimension = bestDimensions[0];
+                    recommendations.Add(new ChartRecommendation
+                    {
+                        Id = $"rec_{counter++:D3}",
+                        TemplateType = "MoneyPackWithTarget",
+                        Title = $"{target.ColumnName} money pack by {bestDimension.ColumnName}",
+                        Reason = "multiple Money measures + target selected",
+                        Reasoning = BuildReasoning(target, moneyPackMeasures, [bestDimension], "Prioritizes target money measure and companion measures by the strongest categorical breakdown."),
+                        Chart = new ChartMeta { Library = ChartLibrary.ECharts, Type = ChartType.Bar },
+                        Query = new ChartQuery
+                        {
+                            X = new FieldSpec { Column = bestDimension.ColumnName, Role = AxisRole.Category },
+                            Y = new FieldSpec { Column = target.ColumnName, Role = AxisRole.Measure, Aggregation = Aggregation.Sum },
+                            YMetrics = moneyPackMeasures.Select(metric => new FieldSpec
+                            {
+                                Column = metric.ColumnName,
+                                Role = AxisRole.Measure,
+                                Aggregation = Aggregation.Sum
+                            }).ToList(),
+                            TopN = 10,
+                            YAxisMapping = moneyPackMeasures.ToDictionary(
+                                metric => metric.ColumnName,
+                                _ => 0,
+                                StringComparer.OrdinalIgnoreCase)
+                        },
+                        IncludedColumns = new RecommendationIncludedColumns
+                        {
+                            X = bestDimension.ColumnName,
+                            Y = moneyPackMeasures.Select(metric => metric.ColumnName).ToList()
+                        },
+                        AggregationPlan = new RecommendationAggregationPlan
+                        {
+                            DefaultAggregation = "Sum",
+                            SupportedAggregations = ["Sum", "Avg"]
+                        },
+                        AxisPolicy = moneyAxisPolicy
+                    });
+                }
+            }
+        }
 
         if (bestTime != null && bestMeasures.Count >= 2)
         {
