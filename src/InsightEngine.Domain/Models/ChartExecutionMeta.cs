@@ -55,4 +55,14 @@ public class ChartExecutionMeta
     public int IgnoredColumnsCount { get; set; }
 
     public bool ConfirmedSchema { get; set; }
+
+    public string? AggregationUsed { get; set; }
+
+    public int? TopN { get; set; }
+
+    public string? TimeBin { get; set; }
+
+    public Dictionary<string, string?> PercentScaleHintBySeries { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public Dictionary<string, int> YAxisMapping { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

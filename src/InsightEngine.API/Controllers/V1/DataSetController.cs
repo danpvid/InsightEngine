@@ -1231,7 +1231,12 @@ OFFSET {offset};
                     View = domainResponse.View,
                     TargetColumn = domainResponse.TargetColumn,
                     IgnoredColumnsCount = domainResponse.IgnoredColumnsCount,
-                    ConfirmedSchema = domainResponse.SchemaConfirmed
+                    ConfirmedSchema = domainResponse.SchemaConfirmed,
+                    AggregationUsed = domainResponse.AggregationUsed,
+                    TopN = domainResponse.TopN,
+                    TimeBin = domainResponse.TimeBin,
+                    PercentScaleHintBySeries = domainResponse.PercentScaleHintBySeries,
+                    YAxisMapping = domainResponse.YAxisMapping
                 },
                 DebugSql = _environment.IsDevelopment() ? domainResponse.ExecutionResult.GeneratedSql : null
             };

@@ -114,6 +114,11 @@ public class ChartExecutionService : IChartExecutionService
             if (!recommendation.Query.Y.Aggregation.HasValue)
                 return Result.Failure<ChartExecutionResult>("Line chart requires Y axis with aggregation defined.");
 
+            if (recommendation.Query.YMetrics.Count > 1)
+            {
+                return await ExecuteMultiMetricLineAsync(csvPath, recommendation, ct);
+            }
+
             // Gerar e executar SQL
             var sql = BuildTimeSeriesSQL(csvPath, recommendation);
             var maxPoints = _settings.TimeSeriesMaxPoints > 0 ? _settings.TimeSeriesMaxPoints : 2000;
@@ -203,6 +208,11 @@ public class ChartExecutionService : IChartExecutionService
             if (!recommendation.Query.Y.Aggregation.HasValue)
                 return Result.Failure<ChartExecutionResult>("Bar chart requires Y axis with aggregation defined.");
 
+            if (string.Equals(recommendation.TemplateType, "Pareto", StringComparison.OrdinalIgnoreCase))
+            {
+                return await ExecuteParetoBarAsync(csvPath, recommendation, ct);
+            }
+
             // Gerar e executar SQL
             var sql = BuildBarSQL(csvPath, recommendation);
 
@@ -254,54 +264,9 @@ public class ChartExecutionService : IChartExecutionService
 
     private string BuildBarSQL(string csvPath, ChartRecommendation recommendation)
     {
-        var xCol = recommendation.Query.X.Column;
-        var yCol = recommendation.Query.Y.Column;
-        var agg = recommendation.Query.Y.Aggregation!.Value;
-        var seriesCol = recommendation.Query.Series?.Column;
-
-        var aggFunction = agg switch
-        {
-            Aggregation.Sum => "SUM",
-            Aggregation.Avg => "AVG",
-            Aggregation.Count => "COUNT",
-            Aggregation.Min => "MIN",
-            Aggregation.Max => "MAX",
-            _ => "AVG"
-        };
-
-        var escapedPath = csvPath.Replace("'", "''");
         var filterClause = BuildFilterClause(recommendation.Query.Filters);
-
-        // TopN configurável (default 20)
         var topN = _settings.BarChartTopN > 0 ? _settings.BarChartTopN : 20;
-
-        // GROUP BY + agregação + ORDER BY + LIMIT
-        if (string.IsNullOrWhiteSpace(seriesCol))
-        {
-            return $@"
-SELECT 
-    CAST(""{xCol}"" AS VARCHAR) AS category,
-    {aggFunction}(CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE)) AS value
-FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL{filterClause}
-GROUP BY 1
-ORDER BY 2 DESC
-LIMIT {topN};
-";
-        }
-
-        var groupedLimit = topN * 5;
-        return $@"
-SELECT 
-    CAST(""{xCol}"" AS VARCHAR) AS category,
-    CAST(""{seriesCol}"" AS VARCHAR) AS series,
-    {aggFunction}(CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE)) AS value
-FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL AND ""{seriesCol}"" IS NOT NULL{filterClause}
-GROUP BY 1, 2
-ORDER BY 3 DESC
-LIMIT {groupedLimit};
-";
+        return ChartQueryBuilder.BuildBarSql(csvPath, recommendation, filterClause, topN);
     }
 
     private async Task<Result<List<CategoryValue>>> ExecuteBarQueryAsync(
@@ -1174,105 +1139,161 @@ ORDER BY 1;
 
     private string BuildTimeSeriesSQL(string csvPath, ChartRecommendation recommendation)
     {
-        var xCol = recommendation.Query.X.Column;
-        var yCol = recommendation.Query.Y.Column;
-        var bin = recommendation.Query.X.Bin!.Value;
-        var agg = recommendation.Query.Y.Aggregation!.Value;
-        var seriesCol = recommendation.Query.Series?.Column;
         var filterClause = BuildFilterClause(recommendation.Query.Filters);
-
-        _logger.LogInformation(
-            "🔨 BuildTimeSeriesSQL - XCol: {XCol}, YCol: {YCol}, Bin: {Bin}, Agg: {Agg}",
-            xCol, yCol, bin, agg);
-
-        // Mapear TimeBin para date_trunc
-        var dateTruncPart = bin switch
-        {
-            TimeBin.Day => "day",
-            TimeBin.Week => "week",
-            TimeBin.Month => "month",
-            TimeBin.Quarter => "quarter",
-            TimeBin.Year => "year",
-            _ => "day"
-        };
-
-        // Mapear Aggregation para SQL
-        var aggFunction = agg switch
-        {
-            Aggregation.Sum => "SUM",
-            Aggregation.Avg => "AVG",
-            Aggregation.Count => "COUNT",
-            Aggregation.Min => "MIN",
-            Aggregation.Max => "MAX",
-            _ => "AVG"
-        };
-
-        _logger.LogInformation(
-            "🔧 SQL Mapping - dateTruncPart: {DateTrunc}, aggFunction: {AggFunc}",
-            dateTruncPart, aggFunction);
-
-        // Escapar o path do CSV (importante para segurança)
-        // DuckDB aceita single quotes no path e escapa aspas internas duplicando-as
-        var escapedPath = csvPath.Replace("'", "''");
-
-        // Montar SQL com path do CSV inline (DuckDB não suporta parâmetros em read_csv_auto)
-        // Usa COALESCE com TRY_STRPTIME para tentar múltiplos formatos de data comuns em CSVs brasileiros
-        // CAST para VARCHAR primeiro para evitar erro "Binder Error: No function matches... BIGINT"
-        string sql;
-        if (string.IsNullOrWhiteSpace(seriesCol))
-        {
-            sql = $@"
-SELECT 
-    date_trunc('{dateTruncPart}', parsed_date) AS x,
-    {aggFunction}(parsed_value) AS y
-FROM (
-    SELECT 
-        COALESCE(
-            TRY_CAST(""{xCol}"" AS TIMESTAMP),
-            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%Y%m%d'),
-            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%d/%m/%Y'),
-            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%Y-%m-%d'),
-            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%m/%d/%Y')
-        ) AS parsed_date,
-        CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS parsed_value
-    FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-    WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL{filterClause}
-)
-WHERE parsed_date IS NOT NULL AND parsed_value IS NOT NULL
-GROUP BY 1
-ORDER BY 1;
-";
-        }
-        else
-        {
-            sql = $@"
-SELECT 
-    date_trunc('{dateTruncPart}', parsed_date) AS x,
-    series,
-    {aggFunction}(parsed_value) AS y
-FROM (
-    SELECT 
-        COALESCE(
-            TRY_CAST(""{xCol}"" AS TIMESTAMP),
-            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%Y%m%d'),
-            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%d/%m/%Y'),
-            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%Y-%m-%d'),
-            TRY_STRPTIME(CAST(""{xCol}"" AS VARCHAR), '%m/%d/%Y')
-        ) AS parsed_date,
-        CAST(REPLACE(CAST(""{yCol}"" AS VARCHAR), ',', '') AS DOUBLE) AS parsed_value,
-        CAST(""{seriesCol}"" AS VARCHAR) AS series
-    FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-    WHERE ""{xCol}"" IS NOT NULL AND ""{yCol}"" IS NOT NULL AND ""{seriesCol}"" IS NOT NULL{filterClause}
-)
-WHERE parsed_date IS NOT NULL AND parsed_value IS NOT NULL AND series IS NOT NULL
-GROUP BY 1, 2
-ORDER BY 1, 2;
-";
-        }
-
+        var sql = ChartQueryBuilder.BuildTimeSeriesSql(csvPath, recommendation, filterClause);
         _logger.LogInformation("💾 Generated SQL:\n{SQL}", sql);
-
         return sql;
+    }
+
+    private async Task<Result<ChartExecutionResult>> ExecuteMultiMetricLineAsync(
+        string csvPath,
+        ChartRecommendation recommendation,
+        CancellationToken ct)
+    {
+        var swDuckDb = Stopwatch.StartNew();
+        var filterClause = BuildFilterClause(recommendation.Query.Filters);
+        var sql = ChartQueryBuilder.BuildMultiMetricTimeSeriesSql(csvPath, recommendation, filterClause);
+        var maxPoints = _settings.TimeSeriesMaxPoints > 0 ? _settings.TimeSeriesMaxPoints : 2000;
+
+        var dataResult = await ExecuteGroupedTimeSeriesQueryAsync(sql, ct);
+        swDuckDb.Stop();
+
+        if (!dataResult.IsSuccess)
+        {
+            return Result.Failure<ChartExecutionResult>(dataResult.Errors);
+        }
+
+        var grouped = dataResult.Data!;
+        var seriesData = new Dictionary<string, List<(long TimestampMs, double? Value)>>();
+
+        foreach (var group in grouped.GroupBy(point => string.IsNullOrWhiteSpace(point.Series) ? "Unknown" : point.Series))
+        {
+            var rawPoints = group.Select(point => new TimeSeriesPoint(point.TimestampMs, point.Value)).ToList();
+            var processed = ApplyGapFilling(rawPoints, recommendation.Query.X.Bin ?? TimeBin.Month);
+            processed = DownsampleSeries(processed, maxPoints);
+            seriesData[group.Key] = processed;
+        }
+
+        var option = BuildEChartsOption(recommendation, seriesData);
+        return Result.Success(new ChartExecutionResult
+        {
+            Option = option,
+            DuckDbMs = swDuckDb.ElapsedMilliseconds,
+            GeneratedSql = sql,
+            RowCount = seriesData.Sum(series => series.Value.Count)
+        });
+    }
+
+    private async Task<Result<ChartExecutionResult>> ExecuteParetoBarAsync(
+        string csvPath,
+        ChartRecommendation recommendation,
+        CancellationToken ct)
+    {
+        var swDuckDb = Stopwatch.StartNew();
+        var filterClause = BuildFilterClause(recommendation.Query.Filters);
+        var topN = recommendation.Query.TopN.GetValueOrDefault(_settings.BarChartTopN > 0 ? _settings.BarChartTopN : 10);
+        var sql = ChartQueryBuilder.BuildParetoSql(csvPath, recommendation, filterClause, topN);
+
+        var dataResult = await ExecuteParetoQueryAsync(sql, ct);
+        swDuckDb.Stop();
+
+        if (!dataResult.IsSuccess)
+        {
+            return Result.Failure<ChartExecutionResult>(dataResult.Errors);
+        }
+
+        var option = BuildParetoEChartsOption(recommendation, dataResult.Data!);
+        return Result.Success(new ChartExecutionResult
+        {
+            Option = option,
+            DuckDbMs = swDuckDb.ElapsedMilliseconds,
+            GeneratedSql = sql,
+            RowCount = dataResult.Data!.Count
+        });
+    }
+
+    private async Task<Result<List<(string Category, double Contribution, double CumulativePct)>>> ExecuteParetoQueryAsync(
+        string sql,
+        CancellationToken ct)
+    {
+        await Task.CompletedTask;
+
+        var rows = new List<(string Category, double Contribution, double CumulativePct)>();
+
+        try
+        {
+            using var connection = new DuckDBConnection("DataSource=:memory:");
+            connection.Open();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (ct.IsCancellationRequested)
+                    break;
+
+                rows.Add((
+                    reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+                    reader.IsDBNull(1) ? 0.0 : reader.GetDouble(1),
+                    reader.IsDBNull(2) ? 0.0 : reader.GetDouble(2)));
+            }
+
+            return Result.Success(rows);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "DuckDB Pareto query execution failed");
+            return Result.Failure<List<(string Category, double Contribution, double CumulativePct)>>($"Pareto query execution failed: {ex.Message}");
+        }
+    }
+
+    private EChartsOption BuildParetoEChartsOption(
+        ChartRecommendation recommendation,
+        List<(string Category, double Contribution, double CumulativePct)> rows)
+    {
+        var categories = rows.Select(row => row.Category).ToList();
+        var contributions = rows.Select(row => row.Contribution).ToList();
+        var cumulative = rows.Select(row => row.CumulativePct).ToList();
+
+        return new EChartsOption
+        {
+            Title = new Dictionary<string, object>
+            {
+                ["text"] = recommendation.Title,
+                ["subtext"] = recommendation.Reason
+            },
+            Tooltip = new Dictionary<string, object> { ["trigger"] = "axis" },
+            XAxis = new Dictionary<string, object>
+            {
+                ["type"] = "category",
+                ["name"] = recommendation.Query.X.Column,
+                ["data"] = categories
+            },
+            YAxis = new Dictionary<string, object>
+            {
+                ["type"] = "value",
+                ["name"] = recommendation.Query.Y.Column
+            },
+            Series =
+            [
+                new Dictionary<string, object>
+                {
+                    ["name"] = "Contribution",
+                    ["type"] = "bar",
+                    ["yAxisIndex"] = 0,
+                    ["data"] = contributions
+                },
+                new Dictionary<string, object>
+                {
+                    ["name"] = "Cumulative %",
+                    ["type"] = "line",
+                    ["yAxisIndex"] = 1,
+                    ["data"] = cumulative
+                }
+            ]
+        };
     }
 
     /// <summary>
@@ -1360,12 +1381,14 @@ ORDER BY 1, 2;
 
         foreach (var series in seriesData)
         {
+            recommendation.Query.YAxisMapping.TryGetValue(series.Key, out var yAxisIndex);
             option.Series!.Add(new Dictionary<string, object>
             {
                 ["name"] = series.Key,
                 ["type"] = "line",
                 ["smooth"] = true,
                 ["connectNulls"] = true,
+                ["yAxisIndex"] = yAxisIndex,
                 ["data"] = series.Value.Select(p => new object?[] { p.TimestampMs, p.Value }).ToList()
             });
         }

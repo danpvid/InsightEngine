@@ -323,8 +323,30 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
                 CacheHit = false,
                 TargetColumn = schema?.TargetColumn,
                 IgnoredColumnsCount = schema?.Columns.Count(column => column.IsIgnored) ?? 0,
-                SchemaConfirmed = schema?.SchemaConfirmed ?? false
+                SchemaConfirmed = schema?.SchemaConfirmed ?? false,
+                AggregationUsed = recommendation.Query.Y.Aggregation?.ToString(),
+                TopN = recommendation.Query.TopN,
+                TimeBin = recommendation.Query.X.Bin?.ToString(),
+                YAxisMapping = recommendation.Query.YAxisMapping
             };
+
+            var measureColumnsUsed = recommendation.Query.YMetrics.Count > 0
+                ? recommendation.Query.YMetrics.Select(metric => metric.Column)
+                : [recommendation.Query.Y.Column];
+
+            var schemaColumns = schema?.Columns ?? [];
+            foreach (var metricColumn in measureColumnsUsed.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                var matched = schemaColumns.FirstOrDefault(column =>
+                    string.Equals(column.Name, metricColumn, StringComparison.OrdinalIgnoreCase));
+
+                if (matched == null || matched.ConfirmedType != InferredType.Percentage)
+                {
+                    continue;
+                }
+
+                response.PercentScaleHintBySeries[metricColumn] = matched.PercentageScaleHint?.ToString();
+            }
 
             await _chartQueryCache.SetAsync(
                 request.DatasetId,
