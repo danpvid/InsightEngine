@@ -120,6 +120,12 @@ Antes de entrar em recommendations, o usuario confirma como o dataset deve ser i
 
 Ao finalizar, o schema confirmado e persistido e passa a ser usado nos endpoints downstream (profile, recommendations, charts, index, formula discovery).
 
+### Percentage policy (Option 1)
+
+- Valores percentuais sao sempre armazenados em **raw scale** (sem normalizacao no import).
+- O sistema infere `percentageScaleHint` (`0..1`, `0..100`, `unknown`) com base no perfil amostral.
+- Conversao visual para `%` e feita apenas na camada de formatacao (UI/tooltip/label), sem alterar dados persistidos.
+
 Para datasets legados sem `schema.json`, `GET /schema` faz **backfill automatico** com defaults:
 - `schemaConfirmed = false`
 - `confirmedType = inferredType`
@@ -251,6 +257,8 @@ Principais endpoints:
 - `POST /api/v1/datasets/{id}/charts/{recommendationId}/explain` - explicacao estruturada
 - `POST /api/v1/datasets/{id}/charts/{recommendationId}/deep-insights` - narrativa analitica profunda com citacoes de evidencias
 - `POST /api/v1/datasets/{id}/ask` - pergunta NL -> analysis plan (sem SQL execution)
+- `POST /api/v1/datasets/{id}/insights/pack` - gera Semantic Insight Pack (drivers/correlations/facts) sem expor linhas brutas
+- `POST /api/v1/datasets/{id}/insights/ask` - responde pergunta usando apenas Insight Pack + citacoes
 - `POST /api/v1/datasets/{id}/simulate` - simulacao
 - `POST /api/v1/datasets/cleanup` - cleanup manual (dev/admin)
 - `GET /health` e `GET /health/ready`
