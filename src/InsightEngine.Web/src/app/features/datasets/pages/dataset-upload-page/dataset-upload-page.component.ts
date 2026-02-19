@@ -201,7 +201,7 @@ export class DatasetUploadPageComponent implements OnInit {
               fileSizeBytes: this.selectedFile?.size || 0
             });
             this.toast.success(this.languageService.translate('upload.successDatasetUploaded'));
-            this.router.navigate(['/', this.currentLanguage, 'datasets', progressEvent.response.data.datasetId, 'recommendations']);
+            this.router.navigate(['/', this.currentLanguage, 'datasets', progressEvent.response.data.datasetId, 'import-preview']);
           } else if (progressEvent.response.errors && progressEvent.response.errors.length > 0) {
             const first = progressEvent.response.errors[0];
             this.error = {

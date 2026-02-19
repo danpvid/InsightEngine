@@ -28,16 +28,67 @@ export interface DatasetProfile {
   datasetId: string;
   rowCount: number;
   sampleSize: number;
+  targetColumn?: string | null;
+  ignoredColumns?: string[];
+  schemaConfirmed?: boolean;
   columns: DatasetColumnProfile[];
 }
 
 export interface DatasetColumnProfile {
   name: string;
   inferredType: string;
+  confirmedType?: string;
+  isIgnored?: boolean;
+  isTarget?: boolean;
+  currencyCode?: string | null;
+  hasPercentSign?: boolean;
   nullRate: number;
   distinctCount: number;
   topValues: string[];
   topValueStats?: DatasetColumnTopValueStat[];
+}
+
+export interface ImportPreviewHints {
+  hasPercentSign: boolean;
+  hasCurrencySymbol: boolean;
+  mostlyZeroToOne: boolean;
+  mostlyZeroToHundred: boolean;
+  mostlyInteger: boolean;
+  consistentTwoDecimalPlaces: boolean;
+  currencyCode: string;
+}
+
+export interface ImportPreviewColumn {
+  name: string;
+  inferredType: string;
+  confidence: number;
+  reasons: string[];
+  hints: ImportPreviewHints;
+}
+
+export interface ImportPreviewResponse {
+  tempUploadId: string;
+  sampleSize: number;
+  columns: ImportPreviewColumn[];
+  sampleRows: Array<Record<string, string>>;
+  suggestedTargetCandidates: string[];
+  suggestedIgnoredCandidates: string[];
+}
+
+export interface FinalizeImportRequest {
+  targetColumn?: string | null;
+  ignoredColumns: string[];
+  columnTypeOverrides: Record<string, string>;
+  currencyCode: string;
+}
+
+export interface FinalizeImportResponse {
+  datasetId: string;
+  schemaVersion: number;
+  targetColumn?: string | null;
+  ignoredColumnsCount: number;
+  storedColumnsCount: number;
+  currencyCode: string;
 }
 
 export interface DatasetColumnTopValueStat {

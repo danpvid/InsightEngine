@@ -8,6 +8,9 @@ import {
   UploadDatasetResponse,
   DataSetSummary,
   DatasetProfile,
+  ImportPreviewResponse,
+  FinalizeImportRequest,
+  FinalizeImportResponse,
   RawDatasetRowsResponse,
   DataSetDeletionResponse,
   FormulaDiscoveryResult
@@ -109,6 +112,20 @@ export class DatasetApiService {
   getProfile(datasetId: string): Observable<ApiResponse<DatasetProfile>> {
     return this.http.get<ApiResponse<DatasetProfile>>(
       `${this.baseUrl}/api/v1/datasets/${datasetId}/profile`
+    );
+  }
+
+  getImportPreview(datasetId: string, sampleSize: number = 200): Observable<ApiResponse<ImportPreviewResponse>> {
+    const boundedSampleSize = Math.max(50, Math.min(2000, sampleSize));
+    return this.http.get<ApiResponse<ImportPreviewResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/preview?sampleSize=${boundedSampleSize}`
+    );
+  }
+
+  finalizeImport(datasetId: string, payload: FinalizeImportRequest): Observable<ApiResponse<FinalizeImportResponse>> {
+    return this.http.post<ApiResponse<FinalizeImportResponse>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/finalize`,
+      payload
     );
   }
 

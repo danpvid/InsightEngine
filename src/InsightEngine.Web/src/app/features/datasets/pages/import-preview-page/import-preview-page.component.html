@@ -1,0 +1,120 @@
+<div class="container-wide" style="max-width:none;width:100%;">
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>{{ 'importPreview.title' | translate }}</mat-card-title>
+      <mat-card-subtitle>
+        {{ 'importPreview.subtitle' | translate:{ datasetId: datasetId } }}
+      </mat-card-subtitle>
+    </mat-card-header>
+
+    <mat-card-content>
+      <app-loading-bar [loading]="loading"></app-loading-bar>
+      <app-error-panel [error]="error"></app-error-panel>
+
+      <div *ngIf="preview && !loading" class="preview-layout">
+        <div class="preview-config">
+          <mat-form-field appearance="outline">
+            <mat-label>{{ 'importPreview.targetColumn' | translate }}</mat-label>
+            <mat-select [(ngModel)]="targetColumn">
+              <mat-option value="">{{ 'importPreview.none' | translate }}</mat-option>
+              <mat-option
+                *ngFor="let column of columns; trackBy: trackByColumnName"
+                [value]="column.name"
+                [disabled]="ignoredColumns.has(column.name)">
+                {{ column.name }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>{{ 'importPreview.currencyCode' | translate }}</mat-label>
+            <input matInput [(ngModel)]="currencyCode" maxlength="3" />
+          </mat-form-field>
+        </div>
+
+        <div class="columns-table-wrap">
+          <table class="columns-table">
+            <thead>
+              <tr>
+                <th>{{ 'importPreview.column' | translate }}</th>
+                <th>{{ 'importPreview.inferredType' | translate }}</th>
+                <th>{{ 'importPreview.confirmedType' | translate }}</th>
+                <th>{{ 'importPreview.confidence' | translate }}</th>
+                <th>{{ 'importPreview.target' | translate }}</th>
+                <th>{{ 'importPreview.ignore' | translate }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let column of columns; trackBy: trackByColumnName">
+                <td>
+                  <div class="col-name">{{ column.name }}</div>
+                  <div class="col-reasons" *ngIf="column.reasons.length > 0">
+                    {{ column.reasons.join(' · ') }}
+                  </div>
+                </td>
+                <td>{{ column.inferredType }}</td>
+                <td>
+                  <mat-form-field appearance="outline" class="type-select">
+                    <mat-select [(ngModel)]="confirmedTypeByColumn[column.name]">
+                      <mat-option value="Integer">Integer</mat-option>
+                      <mat-option value="Decimal">Decimal</mat-option>
+                      <mat-option value="Percentage">Percentage</mat-option>
+                      <mat-option value="Money">Money</mat-option>
+                      <mat-option value="Date">Date</mat-option>
+                      <mat-option value="Boolean">Boolean</mat-option>
+                      <mat-option value="Category">Category</mat-option>
+                      <mat-option value="String">String</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                </td>
+                <td>{{ (column.confidence * 100) | number:'1.0-0' }}%</td>
+                <td>
+                  <button
+                    mat-button
+                    type="button"
+                    [disabled]="ignoredColumns.has(column.name)"
+                    (click)="setTarget(column.name)">
+                    <mat-icon>{{ targetColumn === column.name ? 'radio_button_checked' : 'radio_button_unchecked' }}</mat-icon>
+                  </button>
+                </td>
+                <td>
+                  <mat-checkbox
+                    [checked]="ignoredColumns.has(column.name)"
+                    (change)="setIgnored(column.name, $event.checked)">
+                  </mat-checkbox>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="sample-wrap" *ngIf="preview.sampleRows.length > 0">
+          <h3>{{ 'importPreview.sampleRows' | translate }}</h3>
+          <div class="sample-table-scroll">
+            <table class="sample-table">
+              <thead>
+                <tr>
+                  <th *ngFor="let column of displayedColumns">{{ column }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of preview.sampleRows">
+                  <td *ngFor="let column of displayedColumns">{{ row[column] }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </mat-card-content>
+
+    <mat-card-actions align="end" *ngIf="preview && !loading">
+      <button mat-button (click)="goBackToUpload()">
+        {{ 'importPreview.backToUpload' | translate }}
+      </button>
+      <button mat-raised-button color="primary" (click)="finalizeImport()" [disabled]="finalizing">
+        {{ finalizing ? ('importPreview.confirming' | translate) : ('importPreview.confirm' | translate) }}
+      </button>
+    </mat-card-actions>
+  </mat-card>
+</div>
