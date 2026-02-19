@@ -441,6 +441,56 @@ public class DataSetController : BaseController
         }
     }
 
+    [HttpGet("{id:guid}/schema")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetSchema(Guid id)
+    {
+        try
+        {
+            var result = await _dataSetApplicationService.GetSchemaAsync(id);
+            if (!result.IsSuccess)
+            {
+                return ErrorResponse(StatusCodes.Status404NotFound, result.Errors, "not_found");
+            }
+
+            var schema = result.Data;
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    datasetId = schema.DatasetId,
+                    schemaVersion = schema.SchemaVersion,
+                    schemaConfirmed = schema.SchemaConfirmed,
+                    targetColumn = schema.TargetColumn,
+                    currencyCode = schema.CurrencyCode,
+                    finalizedAtUtc = schema.FinalizedAtUtc,
+                    ignoredColumnsCount = schema.Columns.Count(column => column.IsIgnored),
+                    columns = schema.Columns.Select(column => new
+                    {
+                        name = column.Name,
+                        inferredType = column.InferredType.NormalizeLegacy().ToString(),
+                        confirmedType = column.ConfirmedType.NormalizeLegacy().ToString(),
+                        isIgnored = column.IsIgnored,
+                        isTarget = column.IsTarget,
+                        currencyCode = column.CurrencyCode,
+                        hasPercentSign = column.HasPercentSign
+                    })
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading schema for dataset {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Erro ao carregar schema do dataset.");
+        }
+    }
+
     [HttpPost("{id:guid}/finalize")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]

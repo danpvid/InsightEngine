@@ -5,6 +5,7 @@ using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Models.FormulaDiscovery;
 using InsightEngine.Domain.Models.ImportPreview;
+using InsightEngine.Domain.Models.ImportSchema;
 using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
@@ -25,17 +26,20 @@ public class DataSetApplicationService : IDataSetApplicationService
     private readonly ILogger<DataSetApplicationService> _logger;
     private readonly IMetadataCacheService _cacheService;
     private readonly IScenarioSimulationService _scenarioSimulationService;
+    private readonly IDataSetSchemaStore _schemaStore;
 
     public DataSetApplicationService(
         IMediator mediator,
         ILogger<DataSetApplicationService> logger,
         IMetadataCacheService cacheService,
-        IScenarioSimulationService scenarioSimulationService)
+        IScenarioSimulationService scenarioSimulationService,
+        IDataSetSchemaStore schemaStore)
     {
         _mediator = mediator;
         _logger = logger;
         _cacheService = cacheService;
         _scenarioSimulationService = scenarioSimulationService;
+        _schemaStore = schemaStore;
     }
 
     public async Task<Result<UploadDataSetResponse>> UploadAsync(
@@ -162,6 +166,19 @@ public class DataSetApplicationService : IDataSetApplicationService
             StoredColumnsCount = data.StoredColumnsCount,
             CurrencyCode = data.CurrencyCode
         });
+    }
+
+    public async Task<Result<DatasetImportSchema>> GetSchemaAsync(
+        Guid datasetId,
+        CancellationToken cancellationToken = default)
+    {
+        var schema = await _schemaStore.LoadAsync(datasetId, cancellationToken);
+        if (schema == null)
+        {
+            return Result.Failure<DatasetImportSchema>($"Schema not found for dataset {datasetId}.");
+        }
+
+        return Result.Success(schema);
     }
 
     public async Task<Result<List<ChartRecommendation>>> GetRecommendationsAsync(

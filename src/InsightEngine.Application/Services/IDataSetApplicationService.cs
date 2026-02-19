@@ -4,6 +4,7 @@ using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Models.FormulaDiscovery;
 using InsightEngine.Domain.Models.ImportPreview;
+using InsightEngine.Domain.Models.ImportSchema;
 using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.ValueObjects;
@@ -41,6 +42,10 @@ public interface IDataSetApplicationService
     Task<Result<FinalizeImportResponse>> FinalizeImportAsync(
         Guid datasetId,
         FinalizeImportRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<DatasetImportSchema>> GetSchemaAsync(
+        Guid datasetId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
