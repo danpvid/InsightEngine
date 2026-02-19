@@ -1369,6 +1369,19 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     });
   }
 
+  getPercentagePolicyLabel(scaleHint?: string): string {
+    const hint = (scaleHint || '').trim().toLowerCase();
+    if (hint === '0_1') {
+      return '0-1 raw values kept; UI formats as percentage (×100).';
+    }
+
+    if (hint === '0_100') {
+      return '0-100 raw values kept; UI renders as percentage directly.';
+    }
+
+    return 'Percentage scale unknown; raw values are preserved.';
+  }
+
   applyAskPlan(runAfterApply: boolean): void {
     if (!this.askPlan) {
       return;

@@ -277,6 +277,7 @@
               <mat-chip color="primary" selected>Scale: {{ pack.percentageScaleHint }}</mat-chip>
               <mat-chip color="accent" selected *ngIf="semanticPack?.meta?.cacheHit">cached ⚡</mat-chip>
             </div>
+            <p class="filters-hint">{{ getPercentagePolicyLabel(pack.percentageScaleHint) }}</p>
             <ul class="insight-bullets" *ngIf="pack.targetDrivers?.length">
               <li *ngFor="let driver of pack.targetDrivers | slice:0:4">
                 <strong>{{ driver.name }}</strong> — {{ driver.whyItMatters }}
