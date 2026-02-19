@@ -100,12 +100,31 @@ URLs padrao:
 ## Fluxo de Uso (UI)
 
 1. Upload: `/datasets/new`
-2. Recommendations: `/datasets/{datasetId}/recommendations`
-3. Chart Viewer: `/datasets/{datasetId}/charts/{recId}`
-4. Explore: `/datasets/{datasetId}/explore` (metadata-driven discovery).
-5. Exploracao: ajustar controles no painel lateral e compartilhar URL.
-6. Simulacao: aba de simulacao com comparativo baseline vs simulated.
-7. AI opt-in: Generate AI Summary, Explain chart, Ask question.
+2. Pre-import Preview: `/datasets/{datasetId}/import-preview`
+3. Finalizacao de schema (target, ignored columns, type overrides).
+4. Recommendations: `/datasets/{datasetId}/recommendations`
+5. Chart Viewer: `/datasets/{datasetId}/charts/{recId}`
+6. Explore: `/datasets/{datasetId}/explore` (metadata-driven discovery).
+7. Exploracao: ajustar controles no painel lateral e compartilhar URL.
+8. Simulacao: aba de simulacao com comparativo baseline vs simulated.
+9. AI opt-in: Generate AI Summary, Explain chart, Ask question.
+
+### Pre-import Preview & Confirmation
+
+Antes de entrar em recommendations, o usuario confirma como o dataset deve ser interpretado:
+
+- **Target column**: metrica principal para recomendacao/formula/simulacao.
+- **Ignored columns**: colunas removidas do fluxo analitico.
+- **Column type overrides**: ajuste manual de tipo (`Integer`, `Decimal`, `Money`, `Percentage`, etc).
+- **CurrencyCode**: aplicado quando colunas forem confirmadas como `Money`.
+
+Ao finalizar, o schema confirmado e persistido e passa a ser usado nos endpoints downstream (profile, recommendations, charts, index, formula discovery).
+
+Para datasets legados sem `schema.json`, `GET /schema` faz **backfill automatico** com defaults:
+- `schemaConfirmed = false`
+- `confirmedType = inferredType`
+- `ignoredColumnsCount = 0`
+- `targetColumn = primeira coluna numeric-like`, quando existir
 
 ## Metadata Index (Dataset Catalog)
 
@@ -218,6 +237,9 @@ ollama pull llama3.2
 Principais endpoints:
 - `POST /api/v1/datasets` - upload CSV
 - `GET /api/v1/datasets/runtime-config` - limites runtime para frontend
+- `GET /api/v1/datasets/{id}/preview?sampleSize=200` - pre-import preview
+- `POST /api/v1/datasets/{id}/finalize` - confirma target/ignored/overrides e persiste schema
+- `GET /api/v1/datasets/{id}/schema` - retorna schema confirmado (ou backfill default para legado)
 - `GET /api/v1/datasets/{id}/recommendations` - recomendacoes
 - `POST /api/v1/datasets/{id}/index:build` - constroi metadata index
 - `GET /api/v1/datasets/{id}/index` - retorna metadata index persistido
@@ -235,6 +257,56 @@ Principais endpoints:
 - `POST /api/v1/auth/login` - login demo JWT
 
 ## Exemplos de resposta
+
+### Import preview (resumido)
+```json
+{
+  "success": true,
+  "data": {
+    "tempUploadId": "8e9e66f6-57f8-4f2d-b7f1-8c6de4a5e40f",
+    "sampleSize": 200,
+    "columns": [
+      { "name": "date", "inferredType": "Date", "confidence": 0.99 },
+      { "name": "sales", "inferredType": "Decimal", "confidence": 0.95 }
+    ],
+    "suggestedTargetCandidates": ["sales"],
+    "suggestedIgnoredCandidates": []
+  }
+}
+```
+
+### Finalize import (resumido)
+```json
+{
+  "success": true,
+  "data": {
+    "datasetId": "8e9e66f6-57f8-4f2d-b7f1-8c6de4a5e40f",
+    "schemaVersion": 1,
+    "targetColumn": "sales",
+    "ignoredColumnsCount": 1,
+    "storedColumnsCount": 5,
+    "currencyCode": "BRL"
+  }
+}
+```
+
+### Get schema (resumido)
+```json
+{
+  "success": true,
+  "data": {
+    "datasetId": "8e9e66f6-57f8-4f2d-b7f1-8c6de4a5e40f",
+    "schemaVersion": 1,
+    "schemaConfirmed": true,
+    "targetColumn": "sales",
+    "ignoredColumnsCount": 1,
+    "columns": [
+      { "name": "sales", "inferredType": "Decimal", "confirmedType": "Money", "isTarget": true },
+      { "name": "region", "inferredType": "Category", "confirmedType": "Category", "isIgnored": true }
+    ]
+  }
+}
+```
 
 ### Chart execution (resumido)
 ```json
