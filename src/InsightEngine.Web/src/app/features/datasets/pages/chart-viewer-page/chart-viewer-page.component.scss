@@ -420,6 +420,17 @@ mat-progress-spinner {
 
 /* data-grid-card styles extracted to global stylesheet (see src/styles.scss) to reduce component CSS size */
 
+.data-grid-card .data-grid-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1;
+
+  mat-icon {
+    margin: 0;
+  }
+}
+
 /* ── Raw data toolbar: search + column-width buttons + field info inline ── */
 .data-grid-card .data-grid-toolbar {
   display: flex;
@@ -431,9 +442,10 @@ mat-progress-spinner {
 
 .data-grid-card .data-grid-search {
   --mat-form-field-container-height: var(--control-height);
-  --mat-form-field-container-vertical-padding: 0px;
+  --mat-form-field-container-vertical-padding: 8px;
   flex: 0 1 220px;
   min-width: 140px;
+  margin-bottom: 0;
 
   ::ng-deep .mat-mdc-form-field-subscript-wrapper {
     display: none;
@@ -443,10 +455,8 @@ mat-progress-spinner {
     white-space: nowrap;
   }
 
-  ::ng-deep .mat-mdc-text-field-wrapper.mdc-text-field--filled {
+  ::ng-deep .mat-mdc-text-field-wrapper {
     background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
     height: var(--control-height);
   }
 } 

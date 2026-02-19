@@ -792,57 +792,13 @@
           <mat-tab [label]="'chartViewer.tabRawData' | translate">
             <mat-card class="data-grid-card">
               <mat-card-header>
-                <mat-card-title>
+                <mat-card-title class="data-grid-title">
                   <mat-icon>table_chart</mat-icon>
                   {{ 'chartViewer.interactiveGrid' | translate }}
                 </mat-card-title>
               </mat-card-header>
 
               <mat-card-content>
-                <div class="data-grid-toolbar">
-                  <div class="app-compact-control">
-                    <mat-form-field appearance="fill" subscriptSizing="dynamic" class="app-compact-control-field data-grid-search">
-                      <mat-label>{{ 'chartViewer.searchTable' | translate }}</mat-label>
-                      <input matInput aria-label="Buscar linhas" [(ngModel)]="rawDataSearch" (ngModelChange)="onRawSearchChange()" [placeholder]="'chartViewer.searchTablePlaceholder' | translate" />
-                      <mat-icon matSuffix>search</mat-icon>
-                    </mat-form-field>
-                  </div>
-                  <div [ngStyle]="{ display: 'inline-flex', 'align-items': 'center', gap: '6px' }">
-                    <span [ngStyle]="{ 'font-size': '12px', color: 'var(--text-2)' }">Colunas:</span>
-                    <button
-                      mat-stroked-button
-                      type="button"
-                      [color]="isRawColumnWidthMode('compact') ? 'primary' : undefined"
-                      [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
-                      (click)="setRawColumnWidthMode('compact')">-</button>
-                    <button
-                      mat-stroked-button
-                      type="button"
-                      [color]="isRawColumnWidthMode('balanced') ? 'primary' : undefined"
-                      [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
-                      (click)="setRawColumnWidthMode('balanced')">=</button>
-                    <button
-                      mat-stroked-button
-                      type="button"
-                      [color]="isRawColumnWidthMode('expanded') ? 'primary' : undefined"
-                      [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
-                      (click)="setRawColumnWidthMode('expanded')">+</button>
-                  </div>
-                  <!-- Column info: shown inline in toolbar when a field is selected -->
-                  <div class="data-grid-field-info" *ngIf="selectedRawFieldMetric as field">
-                    <span class="field-info-name">{{ field.name }}</span>
-                    <span class="field-info-sep">·</span>
-                    <span class="field-info-type">{{ rawFieldStats?.column === field.name ? rawFieldStats?.inferredType : field.inferredType }}</span>
-                    <span class="field-info-sep">·</span>
-                    <span>{{ 'chartViewer.distinctValues' | translate }}: <strong>{{ rawFieldStats?.column === field.name ? rawFieldStats?.distinctCount : (field.distinctCountProfile || field.distinctCountPage) }}</strong></span>
-                    <span class="field-info-sep">·</span>
-                    <span>{{ 'chartViewer.pageNullRate' | translate }}: <strong>{{ field.nullRatePage | percent:'1.0-1' }}</strong></span>
-                  </div>
-                  <span class="data-grid-count">
-                    {{ 'chartViewer.gridCount' | translate:{ shown: rawDataRows.length, total: rawTotalRows, page: (rawPageIndex + 1), pages: (rawTotalPages || 1) } }}
-                  </span>
-                </div>
-
                 <app-loading-bar [loading]="rawDataLoading"></app-loading-bar>
                 <div class="simulation-error" *ngIf="rawDataError">{{ rawDataError }}</div>
 
@@ -888,6 +844,47 @@
                   </aside>
 
                   <section class="raw-main-panel">
+                    <div class="data-grid-toolbar">
+                      <mat-form-field appearance="outline" class="data-grid-search">
+                        <mat-label>{{ 'chartViewer.searchTable' | translate }}</mat-label>
+                        <input matInput aria-label="Buscar linhas" [(ngModel)]="rawDataSearch" (ngModelChange)="onRawSearchChange()" [placeholder]="'chartViewer.searchTablePlaceholder' | translate" />
+                        <mat-icon matSuffix>search</mat-icon>
+                      </mat-form-field>
+                      <div [ngStyle]="{ display: 'inline-flex', 'align-items': 'center', gap: '6px' }">
+                        <span [ngStyle]="{ 'font-size': '12px', color: 'var(--text-2)' }">Colunas:</span>
+                        <button
+                          mat-stroked-button
+                          type="button"
+                          [color]="isRawColumnWidthMode('compact') ? 'primary' : undefined"
+                          [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
+                          (click)="setRawColumnWidthMode('compact')">-</button>
+                        <button
+                          mat-stroked-button
+                          type="button"
+                          [color]="isRawColumnWidthMode('balanced') ? 'primary' : undefined"
+                          [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
+                          (click)="setRawColumnWidthMode('balanced')">=</button>
+                        <button
+                          mat-stroked-button
+                          type="button"
+                          [color]="isRawColumnWidthMode('expanded') ? 'primary' : undefined"
+                          [ngStyle]="{ 'min-width': '30px', padding: '0 8px' }"
+                          (click)="setRawColumnWidthMode('expanded')">+</button>
+                      </div>
+                      <div class="data-grid-field-info" *ngIf="selectedRawFieldMetric as field">
+                        <span class="field-info-name">{{ field.name }}</span>
+                        <span class="field-info-sep">·</span>
+                        <span class="field-info-type">{{ rawFieldStats?.column === field.name ? rawFieldStats?.inferredType : field.inferredType }}</span>
+                        <span class="field-info-sep">·</span>
+                        <span>{{ 'chartViewer.distinctValues' | translate }}: <strong>{{ rawFieldStats?.column === field.name ? rawFieldStats?.distinctCount : (field.distinctCountProfile || field.distinctCountPage) }}</strong></span>
+                        <span class="field-info-sep">·</span>
+                        <span>{{ 'chartViewer.pageNullRate' | translate }}: <strong>{{ field.nullRatePage | percent:'1.0-1' }}</strong></span>
+                      </div>
+                      <span class="data-grid-count">
+                        {{ 'chartViewer.gridCount' | translate:{ shown: rawDataRows.length, total: rawTotalRows, page: (rawPageIndex + 1), pages: (rawTotalPages || 1) } }}
+                      </span>
+                    </div>
+
                     <div
                       [ngStyle]="showRawQuickFiltersAside
                         ? { display: 'grid', 'grid-template-columns': 'minmax(0, 1fr) minmax(240px, 300px)', gap: '12px', 'align-items': 'start' }
