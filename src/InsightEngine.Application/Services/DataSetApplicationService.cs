@@ -173,12 +173,71 @@ public class DataSetApplicationService : IDataSetApplicationService
         CancellationToken cancellationToken = default)
     {
         var schema = await _schemaStore.LoadAsync(datasetId, cancellationToken);
-        if (schema == null)
+        if (schema is not null)
         {
-            return Result.Failure<DatasetImportSchema>($"Schema not found for dataset {datasetId}.");
+            return Result.Success(schema);
         }
 
-        return Result.Success(schema);
+        var profileResult = await GetProfileAsync(datasetId, cancellationToken);
+        if (!profileResult.IsSuccess)
+        {
+            return Result.Failure<DatasetImportSchema>(profileResult.Errors);
+        }
+
+        var backfilledSchema = BuildDefaultSchemaFromProfile(datasetId, profileResult.Data!);
+        await _schemaStore.SaveAsync(backfilledSchema, cancellationToken);
+
+        _logger.LogInformation(
+            "Backfilled default schema for legacy dataset {DatasetId} with {ColumnCount} columns",
+            datasetId,
+            backfilledSchema.Columns.Count);
+
+        return Result.Success(backfilledSchema);
+    }
+
+    private static DatasetImportSchema BuildDefaultSchemaFromProfile(Guid datasetId, DatasetProfile profile)
+    {
+        var columns = profile.Columns
+            .Select(column =>
+            {
+                var inferredType = column.InferredType.NormalizeLegacy();
+                var confirmedType = (column.ConfirmedType ?? column.InferredType).NormalizeLegacy();
+
+                return new DatasetImportSchemaColumn
+                {
+                    Name = column.Name,
+                    InferredType = inferredType,
+                    ConfirmedType = confirmedType,
+                    IsIgnored = false,
+                    IsTarget = false,
+                    CurrencyCode = confirmedType == InferredType.Money ? "BRL" : null,
+                    HasPercentSign = confirmedType == InferredType.Percentage ? column.HasPercentSign : null
+                };
+            })
+            .ToList();
+
+        var targetColumn = columns
+            .FirstOrDefault(column => column.ConfirmedType.IsNumericLike())
+            ?.Name;
+
+        if (!string.IsNullOrWhiteSpace(targetColumn))
+        {
+            foreach (var column in columns)
+            {
+                column.IsTarget = string.Equals(column.Name, targetColumn, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return new DatasetImportSchema
+        {
+            DatasetId = datasetId,
+            SchemaVersion = 1,
+            SchemaConfirmed = false,
+            TargetColumn = targetColumn,
+            CurrencyCode = "BRL",
+            FinalizedAtUtc = DateTime.UtcNow,
+            Columns = columns
+        };
     }
 
     public async Task<Result<List<ChartRecommendation>>> GetRecommendationsAsync(

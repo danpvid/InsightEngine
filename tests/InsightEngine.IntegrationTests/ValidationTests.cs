@@ -166,6 +166,36 @@ public class ValidationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetSchema_WithNonExistentDataset_ReturnsNotFound()
+    {
+        var nonExistentId = Guid.NewGuid();
+
+        var response = await _client.GetAsync($"/api/v1/datasets/{nonExistentId}/schema");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task FinalizeImport_WithInvalidTypeOverride_ReturnsBadRequest()
+    {
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client);
+        var payload = new
+        {
+            targetColumn = "sales",
+            ignoredColumns = Array.Empty<string>(),
+            columnTypeOverrides = new Dictionary<string, string>
+            {
+                ["sales"] = "NotAValidType"
+            },
+            currencyCode = "BRL"
+        };
+
+        var response = await _client.PostAsJsonAsync($"/api/v1/datasets/{datasetId}/finalize", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task UploadDataset_WithVeryLargeFile_HandlesGracefully()
     {
         // Arrange - CSV com muitas linhas (mas não muito grande para não travar o teste)

@@ -6,6 +6,9 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
+using InsightEngine.Domain.Models.FormulaDiscovery;
+using InsightEngine.Domain.Models.ImportPreview;
+using InsightEngine.Domain.Models.ImportSchema;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
@@ -286,6 +289,29 @@ public class LLMFeatureServiceTests
             return Task.FromResult(Result.Success(profile));
         }
 
+        public Task<Result<ImportPreviewResponse>> GetImportPreviewAsync(
+            Guid datasetId,
+            int sampleSize = 200,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result.Failure<ImportPreviewResponse>("Not used"));
+        }
+
+        public Task<Result<FinalizeImportResponse>> FinalizeImportAsync(
+            Guid datasetId,
+            FinalizeImportRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result.Failure<FinalizeImportResponse>("Not used"));
+        }
+
+        public Task<Result<DatasetImportSchema>> GetSchemaAsync(
+            Guid datasetId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result.Failure<DatasetImportSchema>("Not used"));
+        }
+
         public Task<Result<List<ChartRecommendation>>> GetRecommendationsAsync(Guid datasetId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(Result.Success(new List<ChartRecommendation>
@@ -382,6 +408,14 @@ public class LLMFeatureServiceTests
         public Task<Result<DatasetIndexStatus>> GetIndexStatusAsync(Guid datasetId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(Result.Failure<DatasetIndexStatus>("Not used"));
+        }
+
+        public Task<Result<FormulaDiscoveryResult>> GetFormulaDiscoveryAsync(
+            Guid datasetId,
+            FormulaDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Result.Failure<FormulaDiscoveryResult>("Not used"));
         }
     }
 

@@ -96,7 +96,7 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<ILLMContextBuilder, LLMContextBuilder>();
         services.AddScoped<IEvidencePackService, EvidencePackService>();
         services.AddScoped<IAIInsightService, AIInsightService>();
-        services.AddSingleton<IDataSetSchemaStore, DataSetSchemaStore>();
+        services.AddScoped<IDataSetSchemaStore, DataSetSchemaStore>();
         services.AddSingleton<Flurl.Http.IFlurlClient, Flurl.Http.FlurlClient>();
         services.AddScoped<LocalHttpLLMClient>();
         services.AddScoped<NullLLMClient>();

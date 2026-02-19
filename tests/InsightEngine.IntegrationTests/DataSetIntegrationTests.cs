@@ -7,6 +7,7 @@ using InsightEngine.Domain.ValueObjects;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Xunit;
 using ChartExecutionResponse = InsightEngine.API.Models.ChartExecutionResponse;
 
@@ -227,5 +228,51 @@ public class DataSetIntegrationTests : IAsyncLifetime
 
         // Assert
         responses.Should().AllSatisfy(r => r.StatusCode.Should().Be(HttpStatusCode.OK));
+    }
+
+    [Fact]
+    public async Task GetSchema_ForLegacyDataset_BackfillsDefaultSchema()
+    {
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client);
+
+        var response = await _client.GetAsync($"/api/v1/datasets/{datasetId}/schema");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = payload.RootElement.GetProperty("data");
+
+        data.GetProperty("datasetId").GetGuid().ToString().Should().Be(datasetId);
+        data.GetProperty("schemaConfirmed").GetBoolean().Should().BeFalse();
+        data.GetProperty("ignoredColumnsCount").GetInt32().Should().Be(0);
+
+        var columns = data.GetProperty("columns").EnumerateArray().ToList();
+        columns.Should().HaveCount(3);
+        columns.Should().Contain(column => column.GetProperty("name").GetString() == "sales");
+        data.GetProperty("targetColumn").GetString().Should().Be("sales");
+    }
+
+    [Fact]
+    public async Task PreviewAndFinalize_Workflow_Succeeds()
+    {
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client);
+
+        var previewResponse = await _client.GetAsync($"/api/v1/datasets/{datasetId}/preview?sampleSize=5");
+        previewResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var finalizePayload = new
+        {
+            targetColumn = "sales",
+            ignoredColumns = Array.Empty<string>(),
+            columnTypeOverrides = new Dictionary<string, string>(),
+            currencyCode = "BRL"
+        };
+
+        var finalizeResponse = await _client.PostAsJsonAsync($"/api/v1/datasets/{datasetId}/finalize", finalizePayload);
+        finalizeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var finalizePayloadJson = JsonDocument.Parse(await finalizeResponse.Content.ReadAsStringAsync());
+        var finalizeData = finalizePayloadJson.RootElement.GetProperty("data");
+        finalizeData.GetProperty("targetColumn").GetString().Should().Be("sales");
+        finalizeData.GetProperty("schemaVersion").GetInt32().Should().Be(1);
     }
 }
