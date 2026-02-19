@@ -117,12 +117,22 @@
           <mat-chip [color]="getChartTypeColor(getChartType(rec))" highlighted>
             {{ getChartType(rec) }}
           </mat-chip>
+          <mat-chip highlighted *ngIf="rec.templateType">
+            {{ rec.templateType }}
+          </mat-chip>
           <mat-chip highlighted>
             {{ 'recommendations.score' | translate:{ value: formatScore(rec.score) } }}
           </mat-chip>
           <mat-chip highlighted>
             {{ 'recommendations.impact' | translate:{ value: formatScore(rec.impactScore) } }}
           </mat-chip>
+        </div>
+
+        <div class="chart-details" *ngIf="rec.includedColumns?.length">
+          <div class="detail-row">
+            <mat-icon>dataset</mat-icon>
+            <span><strong>Columns</strong> {{ rec.includedColumns.slice(0, 4).join(', ') }}</span>
+          </div>
         </div>
 
         <div class="chart-details" *ngIf="rec.xColumn || rec.yColumn">
