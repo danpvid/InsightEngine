@@ -34,19 +34,32 @@ public class RecommendationEngine
         var timeColumns = roles.Where(r => r.Role == AxisRole.Time).ToList();
         var measureColumns = roles.Where(r => r.Role == AxisRole.Measure).ToList();
         var categoryColumns = roles.Where(r => r.Role == AxisRole.Category).ToList();
+        var targetRole = !string.IsNullOrWhiteSpace(profile.TargetColumn)
+            ? roles.FirstOrDefault(role => string.Equals(role.ColumnName, profile.TargetColumn, StringComparison.OrdinalIgnoreCase))
+            : null;
 
         int recCounter = 1;
 
-        // 1. Time Series (Line) - até 2
-        recommendations.AddRange(GenerateTimeSeriesRecommendations(timeColumns, measureColumns, ref recCounter, maxCount: 2));
+        if (targetRole != null)
+        {
+            recommendations.AddRange(GenerateTargetDrivenTemplates(
+                targetRole,
+                timeColumns,
+                categoryColumns,
+                measureColumns,
+                ref recCounter));
+        }
+        else
+        {
+            recommendations.AddRange(GenerateSemanticTemplatesWithoutTarget(
+                timeColumns,
+                categoryColumns,
+                measureColumns,
+                ref recCounter));
+        }
 
-        // 2. Category vs Measure (Bar) - até 6
-        recommendations.AddRange(GenerateCategoryBarRecommendations(categoryColumns, measureColumns, ref recCounter, maxCount: 6));
-
-        // 3. Histogram - até 2
+        recommendations.AddRange(GenerateCategoryBarRecommendations(categoryColumns, measureColumns, ref recCounter, maxCount: 3));
         recommendations.AddRange(GenerateHistogramRecommendations(measureColumns, ref recCounter, maxCount: 2));
-
-        // 4. Scatter - até 2
         recommendations.AddRange(GenerateScatterRecommendations(measureColumns, ref recCounter, maxCount: 2));
 
         ApplyScores(recommendations, effectiveProfile);
@@ -67,6 +80,279 @@ public class RecommendationEngine
         }
 
         return finalRecommendations;
+    }
+
+    private List<ChartRecommendation> GenerateTargetDrivenTemplates(
+        ColumnRole target,
+        List<ColumnRole> timeColumns,
+        List<ColumnRole> categoryColumns,
+        List<ColumnRole> measureColumns,
+        ref int counter)
+    {
+        var recommendations = new List<ChartRecommendation>();
+
+        var bestTime = timeColumns.FirstOrDefault();
+        var bestDimensions = categoryColumns
+            .Where(column => !column.IsIdLike)
+            .OrderByDescending(column => column.DimensionScore)
+            .Take(3)
+            .ToList();
+
+        var bestMeasures = measureColumns
+            .OrderByDescending(column => column.MeasureScore)
+            .Take(4)
+            .ToList();
+
+        if (bestTime != null && bestMeasures.Count >= 2)
+        {
+            var selected = bestMeasures.Take(4).ToList();
+            var primary = selected[0];
+
+            recommendations.Add(new ChartRecommendation
+            {
+                Id = $"rec_{counter++:D3}",
+                TemplateType = "MultiMetricTimeSeries",
+                Title = $"{target.ColumnName}: multi-metric trend over time",
+                Reason = "Target-focused multivariate time-series recommendation.",
+                Reasoning = BuildReasoning(target, selected, bestDimensions, "Combines top semantic measures over time for target monitoring."),
+                Chart = new ChartMeta { Library = ChartLibrary.ECharts, Type = ChartType.Line },
+                Query = new ChartQuery
+                {
+                    X = new FieldSpec { Column = bestTime.ColumnName, Role = AxisRole.Time, Bin = TimeBin.Month },
+                    Y = new FieldSpec { Column = primary.ColumnName, Role = AxisRole.Measure, Aggregation = ResolveDefaultAggregation(primary) },
+                    YMetrics = selected.Select(metric => new FieldSpec
+                    {
+                        Column = metric.ColumnName,
+                        Role = AxisRole.Measure,
+                        Aggregation = ResolveDefaultAggregation(metric)
+                    }).ToList()
+                },
+                IncludedColumns = new RecommendationIncludedColumns
+                {
+                    X = bestTime.ColumnName,
+                    Y = selected.Select(metric => metric.ColumnName).ToList()
+                },
+                AggregationPlan = new RecommendationAggregationPlan
+                {
+                    DefaultAggregation = ResolveDefaultAggregation(primary).ToString(),
+                    SupportedAggregations = ["Sum", "Avg", "Count", "Min", "Max"]
+                }
+            });
+        }
+
+        if (bestTime != null && bestDimensions.Count > 0)
+        {
+            var bestDimension = bestDimensions[0];
+            recommendations.Add(new ChartRecommendation
+            {
+                Id = $"rec_{counter++:D3}",
+                TemplateType = "TargetSplitByCategory",
+                Title = $"{target.ColumnName} over time by {bestDimension.ColumnName}",
+                Reason = "Target split across the strongest dimension over time.",
+                Reasoning = BuildReasoning(target, [target], [bestDimension], "Highlights which categories drive target shifts in time."),
+                Chart = new ChartMeta { Library = ChartLibrary.ECharts, Type = ChartType.Line },
+                Query = new ChartQuery
+                {
+                    X = new FieldSpec { Column = bestTime.ColumnName, Role = AxisRole.Time, Bin = TimeBin.Month },
+                    Y = new FieldSpec { Column = target.ColumnName, Role = AxisRole.Measure, Aggregation = ResolveDefaultAggregation(target) },
+                    Series = new FieldSpec { Column = bestDimension.ColumnName, Role = AxisRole.Category },
+                    TopN = 6
+                },
+                IncludedColumns = new RecommendationIncludedColumns
+                {
+                    X = bestTime.ColumnName,
+                    Y = [target.ColumnName],
+                    Series = bestDimension.ColumnName
+                },
+                AggregationPlan = new RecommendationAggregationPlan
+                {
+                    DefaultAggregation = ResolveDefaultAggregation(target).ToString(),
+                    SupportedAggregations = ["Sum", "Avg", "Count"]
+                }
+            });
+        }
+
+        if (bestDimensions.Count > 0)
+        {
+            var bestDimension = bestDimensions[0];
+            recommendations.Add(new ChartRecommendation
+            {
+                Id = $"rec_{counter++:D3}",
+                TemplateType = "TargetTopNByCategory",
+                Title = $"Top categories impacting {target.ColumnName}",
+                Reason = "Top-N category ranking with optional Others bucket.",
+                Reasoning = BuildReasoning(target, [target], [bestDimension], "Surfaces concentration effects by category and supports Top-N analysis."),
+                Chart = new ChartMeta { Library = ChartLibrary.ECharts, Type = ChartType.Bar },
+                Query = new ChartQuery
+                {
+                    X = new FieldSpec { Column = bestDimension.ColumnName, Role = AxisRole.Category },
+                    Y = new FieldSpec { Column = target.ColumnName, Role = AxisRole.Measure, Aggregation = ResolveDefaultAggregation(target) },
+                    TopN = 10
+                },
+                IncludedColumns = new RecommendationIncludedColumns
+                {
+                    X = bestDimension.ColumnName,
+                    Y = [target.ColumnName]
+                },
+                AggregationPlan = new RecommendationAggregationPlan
+                {
+                    DefaultAggregation = ResolveDefaultAggregation(target).ToString(),
+                    SupportedAggregations = ["Sum", "Avg", "Count"]
+                }
+            });
+
+            if (target.MeasureSemantic == MeasureSemantic.Money)
+            {
+                recommendations.Add(new ChartRecommendation
+                {
+                    Id = $"rec_{counter++:D3}",
+                    TemplateType = "Pareto",
+                    Title = $"Pareto of negative impact on {target.ColumnName}",
+                    Reason = "Money target enables Pareto contribution analysis.",
+                    Reasoning = BuildReasoning(target, [target], [bestDimension], "Ranks categories by impact and cumulative contribution for focus."),
+                    Chart = new ChartMeta { Library = ChartLibrary.ECharts, Type = ChartType.Bar },
+                    Query = new ChartQuery
+                    {
+                        X = new FieldSpec { Column = bestDimension.ColumnName, Role = AxisRole.Category },
+                        Y = new FieldSpec { Column = target.ColumnName, Role = AxisRole.Measure, Aggregation = Aggregation.Sum },
+                        TopN = 12
+                    },
+                    IncludedColumns = new RecommendationIncludedColumns
+                    {
+                        X = bestDimension.ColumnName,
+                        Y = [target.ColumnName]
+                    },
+                    AggregationPlan = new RecommendationAggregationPlan
+                    {
+                        DefaultAggregation = "Sum",
+                        SupportedAggregations = ["Sum"]
+                    }
+                });
+            }
+        }
+
+        var scatterCandidate = measureColumns
+            .Where(column => !string.Equals(column.ColumnName, target.ColumnName, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(column => column.MeasureScore)
+            .FirstOrDefault();
+
+        if (scatterCandidate != null)
+        {
+            recommendations.Add(new ChartRecommendation
+            {
+                Id = $"rec_{counter++:D3}",
+                TemplateType = "TargetScatter",
+                Title = $"{target.ColumnName} vs {scatterCandidate.ColumnName}",
+                Reason = "Scatter recommendation for target-feature relationship.",
+                Reasoning = BuildReasoning(target, [target, scatterCandidate], bestDimensions, "Shows relationship and potential trendline between target and feature."),
+                Chart = new ChartMeta { Library = ChartLibrary.ECharts, Type = ChartType.Scatter },
+                Query = new ChartQuery
+                {
+                    X = new FieldSpec { Column = scatterCandidate.ColumnName, Role = AxisRole.Measure },
+                    Y = new FieldSpec { Column = target.ColumnName, Role = AxisRole.Measure }
+                },
+                IncludedColumns = new RecommendationIncludedColumns
+                {
+                    X = scatterCandidate.ColumnName,
+                    Y = [target.ColumnName]
+                },
+                AggregationPlan = new RecommendationAggregationPlan
+                {
+                    DefaultAggregation = "None",
+                    SupportedAggregations = ["None"]
+                }
+            });
+        }
+
+        var moneyMeasure = measureColumns.FirstOrDefault(column => column.MeasureSemantic == MeasureSemantic.Money);
+        var percentageMeasure = measureColumns.FirstOrDefault(column => column.MeasureSemantic == MeasureSemantic.Percentage);
+        if (bestTime != null && moneyMeasure != null && percentageMeasure != null)
+        {
+            recommendations.Add(new ChartRecommendation
+            {
+                Id = $"rec_{counter++:D3}",
+                TemplateType = "DualAxisMoneyPercentage",
+                Title = $"{moneyMeasure.ColumnName} and {percentageMeasure.ColumnName} over time",
+                Reason = "Dual-axis template mixing Money and Percentage measures.",
+                Reasoning = BuildReasoning(target, [moneyMeasure, percentageMeasure], bestDimensions, "Combines financial volume and rate behavior in one trend."),
+                Chart = new ChartMeta { Library = ChartLibrary.ECharts, Type = ChartType.Line },
+                Query = new ChartQuery
+                {
+                    X = new FieldSpec { Column = bestTime.ColumnName, Role = AxisRole.Time, Bin = TimeBin.Month },
+                    Y = new FieldSpec { Column = moneyMeasure.ColumnName, Role = AxisRole.Measure, Aggregation = Aggregation.Sum },
+                    YMetrics =
+                    [
+                        new FieldSpec { Column = moneyMeasure.ColumnName, Role = AxisRole.Measure, Aggregation = Aggregation.Sum },
+                        new FieldSpec { Column = percentageMeasure.ColumnName, Role = AxisRole.Measure, Aggregation = Aggregation.Avg }
+                    ],
+                    YAxisMapping = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        [moneyMeasure.ColumnName] = 0,
+                        [percentageMeasure.ColumnName] = 1
+                    }
+                },
+                IncludedColumns = new RecommendationIncludedColumns
+                {
+                    X = bestTime.ColumnName,
+                    Y = [moneyMeasure.ColumnName, percentageMeasure.ColumnName]
+                },
+                AggregationPlan = new RecommendationAggregationPlan
+                {
+                    DefaultAggregation = "Sum/Avg",
+                    SupportedAggregations = ["Sum", "Avg"]
+                }
+            });
+        }
+
+        return recommendations;
+    }
+
+    private List<ChartRecommendation> GenerateSemanticTemplatesWithoutTarget(
+        List<ColumnRole> timeColumns,
+        List<ColumnRole> categoryColumns,
+        List<ColumnRole> measureColumns,
+        ref int counter)
+    {
+        var recommendations = new List<ChartRecommendation>();
+        var bestTime = timeColumns.FirstOrDefault();
+        var bestMeasures = measureColumns.OrderByDescending(column => column.MeasureScore).Take(4).ToList();
+
+        if (bestTime != null && bestMeasures.Count >= 2)
+        {
+            var primary = bestMeasures[0];
+            recommendations.Add(new ChartRecommendation
+            {
+                Id = $"rec_{counter++:D3}",
+                TemplateType = "MultiMetricTimeSeries",
+                Title = "Top measures over time",
+                Reason = "Semantic multi-metric trend without explicit target.",
+                Reasoning = BuildReasoning(primary, bestMeasures, categoryColumns, "Compares highest-value measures over common time grain."),
+                Chart = new ChartMeta { Library = ChartLibrary.ECharts, Type = ChartType.Line },
+                Query = new ChartQuery
+                {
+                    X = new FieldSpec { Column = bestTime.ColumnName, Role = AxisRole.Time, Bin = TimeBin.Month },
+                    Y = new FieldSpec { Column = primary.ColumnName, Role = AxisRole.Measure, Aggregation = ResolveDefaultAggregation(primary) },
+                    YMetrics = bestMeasures.Select(metric => new FieldSpec
+                    {
+                        Column = metric.ColumnName,
+                        Role = AxisRole.Measure,
+                        Aggregation = ResolveDefaultAggregation(metric)
+                    }).ToList()
+                },
+                IncludedColumns = new RecommendationIncludedColumns
+                {
+                    X = bestTime.ColumnName,
+                    Y = bestMeasures.Select(column => column.ColumnName).ToList()
+                },
+                AggregationPlan = new RecommendationAggregationPlan
+                {
+                    DefaultAggregation = ResolveDefaultAggregation(primary).ToString(),
+                    SupportedAggregations = ["Sum", "Avg", "Count"]
+                }
+            });
+        }
+
+        return recommendations;
     }
 
     private static void ApplyScores(List<ChartRecommendation> recommendations, DatasetProfile profile)
@@ -379,9 +665,21 @@ public class RecommendationEngine
                     {
                         Column = measure.ColumnName,
                         Role = AxisRole.Measure,
-                        Aggregation = Aggregation.Avg
+                            Aggregation = ResolveDefaultAggregation(measure)
                     }
                 },
+                    TemplateType = "TimeSeries",
+                    IncludedColumns = new RecommendationIncludedColumns
+                    {
+                        X = preferredTimeColumn.ColumnName,
+                        Y = [measure.ColumnName]
+                    },
+                    AggregationPlan = new RecommendationAggregationPlan
+                    {
+                        DefaultAggregation = ResolveDefaultAggregation(measure).ToString(),
+                        SupportedAggregations = ["Sum", "Avg", "Count"]
+                    },
+                    Reasoning = BuildReasoning(measure, [measure], [], "Single metric trend line for baseline monitoring."),
                 OptionTemplate = EChartsTemplates.CreateLineTemplate()
             };
 
@@ -438,10 +736,22 @@ public class RecommendationEngine
                         {
                             Column = measure.ColumnName,
                             Role = AxisRole.Measure,
-                            Aggregation = Aggregation.Sum
+                            Aggregation = ResolveDefaultAggregation(measure)
                         },
                         TopN = 20
                     },
+                    TemplateType = "CategoryVsMeasure",
+                    IncludedColumns = new RecommendationIncludedColumns
+                    {
+                        X = category.ColumnName,
+                        Y = [measure.ColumnName]
+                    },
+                    AggregationPlan = new RecommendationAggregationPlan
+                    {
+                        DefaultAggregation = ResolveDefaultAggregation(measure).ToString(),
+                        SupportedAggregations = ["Sum", "Avg", "Count", "Min", "Max"]
+                    },
+                    Reasoning = BuildReasoning(measure, [measure], [category], "Category distribution on selected measure with Top-N filtering."),
                     OptionTemplate = EChartsTemplates.CreateBarTemplate()
                 };
 
@@ -486,6 +796,18 @@ public class RecommendationEngine
                     }
                     // Histogram não usa Y - calcula frequência automaticamente
                 },
+                TemplateType = "Histogram",
+                IncludedColumns = new RecommendationIncludedColumns
+                {
+                    X = measure.ColumnName,
+                    Y = [measure.ColumnName]
+                },
+                AggregationPlan = new RecommendationAggregationPlan
+                {
+                    DefaultAggregation = "Distribution",
+                    SupportedAggregations = ["Distribution"]
+                },
+                Reasoning = BuildReasoning(measure, [measure], [], "Shape and spread analysis for numeric metric."),
                 OptionTemplate = EChartsTemplates.CreateHistogramTemplate()
             };
 
@@ -539,6 +861,18 @@ public class RecommendationEngine
                             Role = AxisRole.Measure
                         }
                     },
+                    TemplateType = "Scatter",
+                    IncludedColumns = new RecommendationIncludedColumns
+                    {
+                        X = measure1.ColumnName,
+                        Y = [measure2.ColumnName]
+                    },
+                    AggregationPlan = new RecommendationAggregationPlan
+                    {
+                        DefaultAggregation = "None",
+                        SupportedAggregations = ["None"]
+                    },
+                    Reasoning = BuildReasoning(measure2, [measure1, measure2], [], "Pairwise relationship view between top numeric measures."),
                     OptionTemplate = EChartsTemplates.CreateScatterTemplate()
                 };
 
@@ -563,6 +897,35 @@ public class RecommendationEngine
             .ToList();
 
         return ordered;
+    }
+
+    private static Aggregation ResolveDefaultAggregation(ColumnRole measure)
+    {
+        return measure.MeasureSemantic switch
+        {
+            MeasureSemantic.Money => Aggregation.Sum,
+            MeasureSemantic.Percentage => Aggregation.Avg,
+            _ => measure.ColumnName.Contains("count", StringComparison.OrdinalIgnoreCase)
+                || measure.ColumnName.Contains("total", StringComparison.OrdinalIgnoreCase)
+                ? Aggregation.Sum
+                : Aggregation.Avg
+        };
+    }
+
+    private static string BuildReasoning(
+        ColumnRole target,
+        List<ColumnRole> measures,
+        List<ColumnRole> dimensions,
+        string summary)
+    {
+        var measureNames = string.Join(", ", measures.Select(measure =>
+            $"{measure.ColumnName}({measure.MeasureSemantic}, score={measure.MeasureScore:F2})"));
+        var dimNames = dimensions.Any()
+            ? string.Join(", ", dimensions.Take(2).Select(dimension =>
+                $"{dimension.ColumnName}(cardinality={dimension.DistinctCount}, score={dimension.DimensionScore:F2})"))
+            : "none";
+
+        return $"Target={target.ColumnName}; Measures=[{measureNames}]; Dimensions=[{dimNames}]. {summary}";
     }
 }
 
