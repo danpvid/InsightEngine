@@ -838,7 +838,7 @@
                             filter_alt
                           </mat-icon>
                         </span>
-                        <small class="field-meta">{{ field.inferredType }} - {{ getFieldDistinctDisplayCount(field) }}</small>
+                        <small class="field-meta">{{ displayFieldType(field) }} - {{ getFieldDistinctDisplayCount(field) }}</small>
                       </button>
                     </div>
                   </aside>
@@ -874,7 +874,7 @@
                       <div class="data-grid-field-info" *ngIf="selectedRawFieldMetric as field">
                         <span class="field-info-name">{{ field.name }}</span>
                         <span class="field-info-sep">·</span>
-                        <span class="field-info-type">{{ rawFieldStats?.column === field.name ? rawFieldStats?.inferredType : field.inferredType }}</span>
+                        <span class="field-info-type">{{ displayFieldType(field) }}</span>
                         <span class="field-info-sep">·</span>
                         <span>{{ 'chartViewer.distinctValues' | translate }}: <strong>{{ rawFieldStats?.column === field.name ? rawFieldStats?.distinctCount : (field.distinctCountProfile || field.distinctCountPage) }}</strong></span>
                         <span class="field-info-sep">·</span>
@@ -1457,6 +1457,30 @@
           <div class="meta-content">
             <span class="meta-label">{{ 'chartViewer.queryHash' | translate }}</span>
             <span class="meta-value hash">{{ chartMeta.queryHash }}</span>
+          </div>
+        </div>
+
+        <div class="meta-item" *ngIf="chartMeta.confirmedSchema !== undefined">
+          <mat-icon>verified</mat-icon>
+          <div class="meta-content">
+            <span class="meta-label">{{ 'chartViewer.schemaConfirmed' | translate }}</span>
+            <span class="meta-value">{{ chartMeta.confirmedSchema ? 'Yes' : 'No' }}</span>
+          </div>
+        </div>
+
+        <div class="meta-item" *ngIf="chartMeta.targetColumn">
+          <mat-icon>track_changes</mat-icon>
+          <div class="meta-content">
+            <span class="meta-label">{{ 'chartViewer.targetColumn' | translate }}</span>
+            <span class="meta-value">{{ chartMeta.targetColumn }}</span>
+          </div>
+        </div>
+
+        <div class="meta-item" *ngIf="chartMeta.ignoredColumnsCount !== undefined">
+          <mat-icon>visibility_off</mat-icon>
+          <div class="meta-content">
+            <span class="meta-label">{{ 'chartViewer.ignoredColumns' | translate }}</span>
+            <span class="meta-value">{{ chartMeta.ignoredColumnsCount }}</span>
           </div>
         </div>
       </div>

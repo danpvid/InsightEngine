@@ -79,6 +79,9 @@ export interface ChartMeta {
   cacheHit?: boolean;
   percentiles?: ChartPercentilesMeta;
   view?: ChartViewMeta;
+  targetColumn?: string | null;
+  ignoredColumnsCount?: number;
+  confirmedSchema?: boolean;
 }
 
 export type PercentileKind = 'P5' | 'P10' | 'P90' | 'P95';

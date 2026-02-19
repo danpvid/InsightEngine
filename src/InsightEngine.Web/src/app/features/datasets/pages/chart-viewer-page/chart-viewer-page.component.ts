@@ -111,6 +111,7 @@ interface RecommendedChartState {
 interface RawFieldMetric {
   name: string;
   inferredType: string;
+  confirmedType?: string;
   distinctCountProfile: number;
   distinctCountPage: number;
   nullCountPage: number;
@@ -908,11 +909,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         this.profileColumns = response.data.columns || [];
 
         this.availableMetrics = this.profileColumns
-          .filter(c => c.inferredType === 'Number')
+          .filter(c => this.isNumericProfileColumn(c))
           .map(c => c.name);
 
         this.availableGroupBy = this.profileColumns
-          .filter(c => c.inferredType !== 'Number' && c.distinctCount <= this.maxGroupByDistinct)
+          .filter(c => !this.isNumericProfileColumn(c) && c.distinctCount <= this.maxGroupByDistinct)
           .map(c => c.name);
 
         const hadInvalidGroupBy = !!this.selectedGroupBy && !this.isGroupByAllowed(this.selectedGroupBy);
@@ -2088,7 +2089,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   private firstNonNumericColumn(): string {
-    const nonNumeric = this.profileColumns.find(c => c.inferredType !== 'Number');
+    const nonNumeric = this.profileColumns.find(c => !this.isNumericProfileColumn(c));
     return nonNumeric?.name || '';
   }
 
@@ -2521,10 +2522,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       return '0';
     }
 
-    return value.toLocaleString(undefined, {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2
-    });
+    return this.formatMetricValue(value, this.selectedMetric);
   }
 
   simulationOperationDescription(rule: SimulationOperationRule): string {
@@ -2550,13 +2548,69 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     }
 
     if (typeof value === 'number') {
-      return value.toLocaleString(undefined, {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 4
-      });
+      return this.formatMetricValue(value, column);
     }
 
     return `${value}`;
+  }
+
+  displayFieldType(field: RawFieldMetric): string {
+    return field.confirmedType || field.inferredType;
+  }
+
+  private isNumericProfileColumn(column: DatasetColumnProfile): boolean {
+    const type = (column.confirmedType || column.inferredType || '').toLowerCase();
+    return type === 'number' ||
+      type === 'integer' ||
+      type === 'decimal' ||
+      type === 'percentage' ||
+      type === 'money';
+  }
+
+  private resolveMetricForSeries(series: Record<string, unknown>): string {
+    const seriesName = `${series['name'] ?? ''}`.trim();
+    if (seriesName.includes(' - ')) {
+      return seriesName.split(' - ')[0].trim();
+    }
+
+    return this.selectedMetric;
+  }
+
+  private formatMetricValue(value: unknown, metricName: string): string {
+    const numeric = this.tryParseNumeric(value);
+    if (numeric === null) {
+      return `${value ?? ''}`;
+    }
+
+    const profile = this.profileColumns.find(column =>
+      column.name.toLowerCase() === (metricName || '').toLowerCase());
+    const type = (profile?.confirmedType || profile?.inferredType || '').toLowerCase();
+
+    if (type === 'money') {
+      const currencyCode = (profile?.currencyCode || 'BRL').toUpperCase();
+      try {
+        return new Intl.NumberFormat(undefined, {
+          style: 'currency',
+          currency: currencyCode,
+          maximumFractionDigits: 2
+        }).format(numeric);
+      } catch {
+        return `${currencyCode} ${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+      }
+    }
+
+    if (type === 'percentage') {
+      return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+    }
+
+    if (type === 'integer') {
+      return Math.round(numeric).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+
+    return numeric.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    });
   }
 
   openSelectedPointDataModal(): void {
@@ -3065,6 +3119,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       return {
         name: columnName,
         inferredType: profile?.inferredType || 'Unknown',
+        confirmedType: profile?.confirmedType,
         distinctCountProfile: profile?.distinctCount || 0,
         distinctCountPage: distinctMap.size,
         nullCountPage: nullCount,
@@ -3423,6 +3478,10 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       axis['position'] = index % 2 === 0 ? 'left' : 'right';
       axis['offset'] = columnPair === 0 ? 0 : columnPair * 56;
       axis['alignTicks'] = true;
+      axis['axisLabel'] = {
+        ...(this.asObject(axis['axisLabel']) || {}),
+        formatter: (value: unknown) => this.formatMetricValue(value, metric)
+      };
 
       return axis;
     });
@@ -3432,6 +3491,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     const mutable = option as Record<string, unknown>;
 
     this.applyChartTypeTransform(mutable);
+    this.applyMetricValueFormatting(mutable);
     this.normalizeTitleAndAxisLayout(mutable);
     this.ensureHistogramInteractivity(mutable);
     this.ensureLegend(mutable);
@@ -3443,6 +3503,31 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     this.applyThemeToEchartsOption(mutable);
 
     return mutable as EChartsOption;
+  }
+
+  private applyMetricValueFormatting(option: Record<string, unknown>): void {
+    const seriesList = this.readSeriesList(option);
+    for (const series of seriesList) {
+      const metricName = this.resolveMetricForSeries(series);
+      const tooltip = this.asObject(series['tooltip']) || {};
+      tooltip['valueFormatter'] = (value: unknown) => this.formatMetricValue(value, metricName);
+      series['tooltip'] = tooltip;
+    }
+
+    const yAxisRaw = option['yAxis'];
+    const yAxes = Array.isArray(yAxisRaw)
+      ? yAxisRaw.map(item => this.asObject(item)).filter((item): item is Record<string, unknown> => item !== null)
+      : (() => {
+          const single = this.asObject(yAxisRaw);
+          return single ? [single] : [];
+        })();
+
+    yAxes.forEach(axis => {
+      const metricName = `${axis['name'] ?? this.selectedMetric ?? ''}`;
+      const axisLabel = this.asObject(axis['axisLabel']) || {};
+      axisLabel['formatter'] = (value: unknown) => this.formatMetricValue(value, metricName);
+      axis['axisLabel'] = axisLabel;
+    });
   }
 
   /**
