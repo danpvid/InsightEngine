@@ -147,6 +147,59 @@ public class DeepInsightsTests
         result.Data.Explainability.EvidenceUsedCount.Should().BeGreaterThan(0);
     }
 
+    [Fact]
+    public async Task SemanticInsightPack_ShouldProjectDriversCorrelationsAndScaleHint()
+    {
+        var aiService = new AIInsightService(
+            new StubContextBuilder(),
+            new StubEvidencePackService(),
+            new StubLLMClient(Result.Failure<LLMResponse>("Not used")),
+            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
+            NullLogger<AIInsightService>.Instance);
+
+        var result = await aiService.BuildSemanticInsightPackAsync(new DeepInsightsRequest
+        {
+            DatasetId = Guid.NewGuid(),
+            RecommendationId = "rec_001"
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+        result.Data!.Pack.TargetDrivers.Should().NotBeEmpty();
+        result.Data.Pack.Correlations.Should().NotBeEmpty();
+        result.Data.Pack.PercentageScaleHint.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task AskWithInsightPack_WhenLlmJsonIsInvalid_ShouldReturnFallbackAndCaveat()
+    {
+        var aiService = new AIInsightService(
+            new StubContextBuilder(),
+            new StubEvidencePackService(),
+            new StubLLMClient(Result.Success(new LLMResponse
+            {
+                Provider = LLMProvider.LocalHttp,
+                ModelId = "llama3",
+                Json = "{ \"invalid\": true }"
+            })),
+            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
+            NullLogger<AIInsightService>.Instance);
+
+        var result = await aiService.AskWithInsightPackAsync(new InsightPackAskRequest
+        {
+            DatasetId = Guid.NewGuid(),
+            RecommendationId = "rec_001",
+            Question = "What are the main drivers?",
+            Language = "en"
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+        result.Data!.Meta.FallbackUsed.Should().BeTrue();
+        result.Data.Caveats.Should().NotBeEmpty();
+        result.Data.Citations.Should().NotBeEmpty();
+    }
+
     private sealed class StubContextBuilder : ILLMContextBuilder
     {
         public Task<Result<LLMContextPayload>> BuildChartContextAsync(LLMChartContextRequest request, CancellationToken cancellationToken = default)
@@ -172,6 +225,36 @@ public class DeepInsightsTests
                     RecommendationId = request.RecommendationId,
                     QueryHash = "hash",
                     EvidenceVersion = "v1",
+                    DistributionStats =
+                    [
+                        new DistributionStatsEvidence
+                        {
+                            Metric = "metric",
+                            Min = 0,
+                            Max = 0.88,
+                            Mean = 0.42,
+                            Median = 0.4
+                        }
+                    ],
+                    SegmentBreakdowns =
+                    [
+                        new SegmentBreakdownEvidence
+                        {
+                            Segment = "Segment A",
+                            ContributionValue = 120,
+                            SharePercent = 52,
+                            StabilityScore = 0.85,
+                            IsOutlierSegment = false
+                        },
+                        new SegmentBreakdownEvidence
+                        {
+                            Segment = "Segment B",
+                            ContributionValue = 44,
+                            SharePercent = 19,
+                            StabilityScore = 0.62,
+                            IsOutlierSegment = true
+                        }
+                    ],
                     Facts =
                     [
                         new EvidenceFact { EvidenceId = "DIST_MEAN_METRIC", ShortClaim = "Mean", Value = "10" },
