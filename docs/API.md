@@ -462,7 +462,31 @@ Authorization: Bearer {token}
         "min": null,
         "max": null
       }
-    ]
+    ],
+    "indexGenerated": true,
+    "targetFormulaSuggestion": {
+      "bestCandidateExpressionText": "unit_price * quantity",
+      "confidence": "High",
+      "usedColumns": ["unit_price", "quantity"]
+    },
+    "formulaInferenceSummary": {
+      "status": "Completed",
+      "targetColumn": "total_amount",
+      "candidatesCount": 2,
+      "bestCandidateExpressionText": "unit_price * quantity"
+    }
+  },
+  "indexGenerated": true,
+  "targetFormulaSuggestion": {
+    "bestCandidateExpressionText": "unit_price * quantity",
+    "confidence": "High",
+    "usedColumns": ["unit_price", "quantity"]
+  },
+  "formulaInferenceSummary": {
+    "status": "Completed",
+    "targetColumn": "total_amount",
+    "candidatesCount": 2,
+    "bestCandidateExpressionText": "unit_price * quantity"
   },
   "errors": null,
   "traceId": "00-profile456-789-00"
@@ -483,6 +507,11 @@ Columns with `inferredType: "Number"` now include:
 
 **Cache (Task 6.4):**
 Profile is cached in memory after first request. Dataset updates automatically invalidate the cache.
+
+**Index metadata enrichment:**
+- `indexGenerated`: indicates whether metadata index already exists for this dataset.
+- `targetFormulaSuggestion`: best deterministic formula suggestion persisted in index metadata.
+- `formulaInferenceSummary`: compact status snapshot for UI flows (Explore/Recommendations).
 
 **Response 404 Not Found:**
 ```json
@@ -550,6 +579,18 @@ Authorization: Bearer {token}
       "aggregation": null
     }
   ],
+  "indexGenerated": true,
+  "targetFormulaSuggestion": {
+    "bestCandidateExpressionText": "unit_price * quantity",
+    "confidence": "High",
+    "usedColumns": ["unit_price", "quantity"]
+  },
+  "formulaInferenceSummary": {
+    "status": "Completed",
+    "targetColumn": "total_amount",
+    "candidatesCount": 2,
+    "bestCandidateExpressionText": "unit_price * quantity"
+  },
   "errors": null,
   "traceId": "00-recs789-123-00"
 }
@@ -1202,6 +1243,12 @@ curl -X POST "https://localhost:5000/api/v1/charts/scatter" \
 ### 2.2 Formula Inference (Optional)
 
 Formula inference is deterministic and optional. It can be executed explicitly or triggered in the import finalize flow.
+
+It is also triggered automatically during metadata index build when:
+- target column is configured and numeric,
+- at least 2 numeric candidate columns are available.
+
+Index-time execution uses bounded settings (`maxColumns=10`, `maxDepth=5`, `searchBudgetMs=2500`) and never fails index generation if inference fails.
 
 #### 2.2.1 Run Formula Inference
 

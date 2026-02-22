@@ -49,3 +49,15 @@ Because of that, AI feature UI checks are verified manually for now.
    - `/{lang}/datasets/{datasetId}/charts/{recommendationId}`
    - `Dataset > Explore > Recommendations > Chart`
    - first three items clickable, `Chart` active non-clickable.
+
+## E2E sanity checks — formula suggestion in Explore
+
+1. Open `/{lang}/datasets/{datasetId}/explore` after index generation and locate **Target Formula Suggestion** card.
+2. If suggestion exists, verify card shows:
+   - expression text,
+   - confidence,
+   - used columns.
+3. Click **Accept** and confirm success toast; refresh/reopen Explore and verify formula metadata remains present.
+4. Click **Edit**, change expression, confirm; verify success toast and refreshed suggestion content.
+5. Click **Run Again** and verify action completes without page reload and index data refreshes.
+6. Navigate to Recommendations and validate API response still returns chart list plus formula summary metadata.
