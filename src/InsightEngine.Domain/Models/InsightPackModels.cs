@@ -49,6 +49,12 @@ public class InsightPackAskRequest
     public string? MetricY { get; set; }
     public string? GroupBy { get; set; }
     public List<ChartFilter> Filters { get; set; } = new();
+    public string? Month { get; set; }
+    public DateTime? DateFrom { get; set; }
+    public DateTime? DateTo { get; set; }
+    public string? SegmentColumn { get; set; }
+    public string? SegmentValue { get; set; }
+    public string OutputMode { get; set; } = "DeepDive";
     public bool SensitiveMode { get; set; }
 }
 

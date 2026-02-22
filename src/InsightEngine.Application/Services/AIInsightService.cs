@@ -475,7 +475,8 @@ public class AIInsightService : IAIInsightService
                 CacheHit = evidenceResult.Data.CacheHit,
                 FallbackUsed = false,
                 EvidenceBytes = evidencePack.SerializedBytes,
-                ValidationStatus = "ok"
+                ValidationStatus = "ok",
+                PackVersion = evidencePack.PackVersion
             }
         });
     }
@@ -509,6 +510,12 @@ public class AIInsightService : IAIInsightService
             MetricY = request.MetricY,
             GroupBy = request.GroupBy,
             Filters = request.Filters,
+            Month = request.Month,
+            DateFrom = request.DateFrom,
+            DateTo = request.DateTo,
+            SegmentColumn = request.SegmentColumn,
+            SegmentValue = request.SegmentValue,
+            OutputMode = request.OutputMode,
             SensitiveMode = request.SensitiveMode
         }, cancellationToken);
 
@@ -523,7 +530,8 @@ public class AIInsightService : IAIInsightService
             pack,
             request.Question,
             language,
-            BuildAskFilterSummary(request));
+            BuildAskFilterSummary(request),
+            request.OutputMode);
 
         var llmRequest = new LLMRequest
         {
@@ -604,7 +612,8 @@ public class AIInsightService : IAIInsightService
                     DurationMs = llmResult.Data.DurationMs,
                     CacheHit = llmResult.Data.CacheHit,
                     FallbackUsed = false,
-                    ValidationStatus = "ok"
+                    ValidationStatus = "ok",
+                    PackVersion = pack.Version
                 }
             });
         }
@@ -645,7 +654,8 @@ public class AIInsightService : IAIInsightService
                 FallbackReason = llmResult.IsSuccess
                     ? "Invalid JSON output from LLM for insight-pack ask."
                     : string.Join(" | ", llmResult.Errors),
-                ValidationStatus = "fallback"
+                ValidationStatus = "fallback",
+                PackVersion = pack.Version
             },
             Pack = pack
         });
@@ -1856,6 +1866,26 @@ If information is missing from context, keep fields null instead of guessing.
         if (request.Filters.Count > 0)
         {
             parts.Add($"filters={request.Filters.Count}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Month))
+        {
+            parts.Add($"month={request.Month}");
+        }
+
+        if (request.DateFrom.HasValue || request.DateTo.HasValue)
+        {
+            parts.Add($"range={request.DateFrom:yyyy-MM-dd}..{request.DateTo:yyyy-MM-dd}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SegmentColumn) && !string.IsNullOrWhiteSpace(request.SegmentValue))
+        {
+            parts.Add($"segment={request.SegmentColumn}:{request.SegmentValue}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.OutputMode))
+        {
+            parts.Add($"outputMode={request.OutputMode}");
         }
 
         return parts.Count == 0 ? null : string.Join(", ", parts);

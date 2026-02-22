@@ -1452,6 +1452,12 @@ OFFSET {offset};
                 MetricY = request.MetricY,
                 GroupBy = request.GroupBy,
                 Filters = parsedFilters,
+                Month = request.Month,
+                DateFrom = request.DateFrom,
+                DateTo = request.DateTo,
+                SegmentColumn = request.SegmentColumn,
+                SegmentValue = request.SegmentValue,
+                OutputMode = request.OutputMode,
                 Scenario = request.Scenario,
                 Horizon = request.Horizon,
                 SensitiveMode = request.SensitiveMode,
@@ -1466,7 +1472,68 @@ OFFSET {offset};
 
         return ResponseResult(Result.Success(new
         {
+            version = result.Data!.Pack.Version,
             pack = result.Data!.Pack,
+            packV2 = result.Data.Pack.PackV2,
+            meta = result.Data.Meta
+        }));
+    }
+
+    [HttpGet("{id:guid}/insights/pack")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetInsightPackV2(
+        Guid id,
+        [FromQuery] InsightPackQueryRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.RecommendationId))
+        {
+            return ResponseResult(Result.Failure<object>("RecommendationId is required."));
+        }
+
+        var filterErrors = new List<string>();
+        var parsedFilters = ParseFilters(request.Filters, filterErrors);
+        if (filterErrors.Count > 0)
+        {
+            return ResponseResult(Result.Failure<object>(filterErrors));
+        }
+
+        var language = ResolveLanguage();
+        var result = await _aiInsightService.BuildSemanticInsightPackAsync(
+            new DeepInsightsRequest
+            {
+                DatasetId = id,
+                RecommendationId = request.RecommendationId,
+                Language = language,
+                Aggregation = request.Aggregation,
+                TimeBin = request.TimeBin,
+                MetricY = request.MetricY,
+                GroupBy = request.GroupBy,
+                Filters = parsedFilters,
+                Month = request.Month,
+                DateFrom = request.DateFrom,
+                DateTo = request.DateTo,
+                SegmentColumn = request.SegmentColumn,
+                SegmentValue = request.SegmentValue,
+                OutputMode = request.OutputMode,
+                Horizon = request.Horizon,
+                SensitiveMode = request.SensitiveMode,
+                RequesterKey = ResolveRequesterKey()
+            },
+            HttpContext.RequestAborted);
+
+        if (!result.IsSuccess)
+        {
+            return ResponseResult(Result.Failure<object>(result.Errors));
+        }
+
+        return ResponseResult(Result.Success(new
+        {
+            version = result.Data!.Pack.Version,
+            pack = result.Data!.Pack,
+            packV2 = result.Data.Pack.PackV2,
             meta = result.Data.Meta
         }));
     }
@@ -1511,6 +1578,12 @@ OFFSET {offset};
                 MetricY = request.MetricY,
                 GroupBy = request.GroupBy,
                 Filters = parsedFilters,
+                Month = request.Month,
+                DateFrom = request.DateFrom,
+                DateTo = request.DateTo,
+                SegmentColumn = request.SegmentColumn,
+                SegmentValue = request.SegmentValue,
+                OutputMode = request.OutputMode,
                 SensitiveMode = request.SensitiveMode
             },
             HttpContext.RequestAborted);
@@ -1527,6 +1600,7 @@ OFFSET {offset};
             caveats = result.Data.Caveats,
             citations = result.Data.Citations,
             evidenceResolved = result.Data.EvidenceResolved,
+            packVersion = result.Data.Meta.PackVersion,
             pack = result.Data.Pack,
             meta = result.Data.Meta
         }));

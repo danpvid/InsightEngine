@@ -10,7 +10,8 @@ public static class InsightPromptBuilder
         SemanticInsightPack pack,
         string userQuestion,
         string language,
-        string? filterSummary = null)
+      string? filterSummary = null,
+      string? outputMode = null)
     {
         var columns = pack.PackV2?.SchemaContext.Columns.Select(column => column.Name).ToList() ?? new List<string>();
         var anchors = pack.PackV2?.EvidenceIndex.Select(anchor => anchor.Id).ToList() ?? new List<string>();
@@ -35,6 +36,7 @@ public static class InsightPromptBuilder
         }
 
         systemPrompt.AppendLine(BuildOutputLanguageInstruction(language));
+        systemPrompt.AppendLine(BuildOutputModeInstruction(outputMode));
 
         var userPrompt = new StringBuilder();
         userPrompt.AppendLine("User question:");
@@ -76,6 +78,15 @@ Invalid response:
         return language.StartsWith("pt", StringComparison.OrdinalIgnoreCase)
             ? "Output language must be Portuguese (pt-BR)."
             : "Output language must be English.";
+    }
+
+    private static string BuildOutputModeInstruction(string? outputMode)
+    {
+      var mode = (outputMode ?? "DeepDive").Trim();
+
+      return mode.Equals("Executive", StringComparison.OrdinalIgnoreCase)
+        ? "Output mode is Executive: keep concise wording with business outcomes and prioritized actions."
+        : "Output mode is DeepDive: include analytical depth, caveats, and evidence-backed rationale.";
     }
 
     public const string InsightAskJsonSchema = """

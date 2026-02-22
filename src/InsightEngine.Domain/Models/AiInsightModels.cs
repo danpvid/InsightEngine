@@ -22,6 +22,7 @@ public class AiGenerationMeta
     public int? EvidenceBytes { get; set; }
     public int? OutputBytes { get; set; }
     public string? ValidationStatus { get; set; }
+    public string? PackVersion { get; set; }
 }
 
 public class AiInsightSummaryResult
