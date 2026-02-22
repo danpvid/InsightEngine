@@ -196,9 +196,81 @@ public class DeepInsightsTests
         result.IsSuccess.Should().BeTrue();
         result.Data.Should().NotBeNull();
         result.Data!.Meta.FallbackUsed.Should().BeTrue();
+                result.Data.Meta.ConfidenceScore.Should().Be(0.4d);
         result.Data.Caveats.Should().NotBeEmpty();
         result.Data.Citations.Should().NotBeEmpty();
     }
+
+        [Fact]
+        public async Task AskWithInsightPack_ShouldSanitizeCausalLanguageAndEmitConfidenceScore()
+        {
+                var aiService = new AIInsightService(
+                        new StubContextBuilder(),
+                        new StubEvidencePackService(),
+                        new StubLLMClient(Result.Success(new LLMResponse
+                        {
+                                Provider = LLMProvider.LocalHttp,
+                                ModelId = "llama3",
+                                Json = """
+{
+    "executiveSummary": ["Segment A causes higher metric and led to growth.", "Demand is driven by campaign effects."],
+    "keyFindings": [
+        {
+            "title": "Primary cause",
+            "explanation": "Campaign caused uplift due to stronger segment concentration.",
+            "evidence": ["DIST_MEAN_METRIC"],
+            "confidence": "High"
+        }
+    ],
+    "topDrivers": {
+        "negative": [
+            {
+                "name": "Segment B",
+                "why": "Lower conversion caused weaker contribution.",
+                "evidence": ["SEG_SHARE_1"],
+                "confidence": "Medium"
+            }
+        ],
+        "positive": []
+    },
+    "offenders": [],
+    "recommendations": [
+        {
+            "action": "Investigate segment mix because of volatility",
+            "expectedImpact": "IncreaseTarget",
+            "why": "This causes better prioritization.",
+            "evidence": ["TS_TREND_SLOPE"],
+            "risk": "Could cause overfitting"
+        }
+    ],
+    "caveats": ["Correlation does not imply causality."],
+    "followUpQuestions": ["Which factor caused variance?"]
+}
+"""
+                        })),
+                        new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
+                        NullLogger<AIInsightService>.Instance);
+
+                var result = await aiService.AskWithInsightPackAsync(new InsightPackAskRequest
+                {
+                        DatasetId = Guid.NewGuid(),
+                        RecommendationId = "rec_001",
+                        Question = "What is happening?",
+                        Language = "en"
+                });
+
+                result.IsSuccess.Should().BeTrue();
+                result.Data.Should().NotBeNull();
+                result.Data!.Meta.FallbackUsed.Should().BeFalse();
+                result.Data.Meta.ValidationStatus.Should().Be("ok_sanitized");
+                result.Data.Meta.ConfidenceScore.Should().NotBeNull();
+                result.Data.Meta.ConfidenceScore.Should().BeGreaterThan(0.5);
+                result.Data.Answer.Should().NotContainEquivalentOf("causes");
+                result.Data.Answer.Should().ContainEquivalentOf("associated");
+                result.Data.Caveats.Should().Contain(item =>
+                        item.Contains("rewritten", StringComparison.OrdinalIgnoreCase) ||
+                        item.Contains("causal", StringComparison.OrdinalIgnoreCase));
+        }
 
     private sealed class StubContextBuilder : ILLMContextBuilder
     {

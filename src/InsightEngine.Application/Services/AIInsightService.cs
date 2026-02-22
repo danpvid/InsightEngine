@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using InsightEngine.Domain.Constants;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
@@ -17,6 +18,22 @@ namespace InsightEngine.Application.Services;
 
 public class AIInsightService : IAIInsightService
 {
+    private static readonly IReadOnlyList<(Regex Pattern, string Replacement)> EnglishCausalityRules =
+    [
+        (new Regex(@"\b(causes?|caused|causing)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), "is associated with"),
+        (new Regex(@"\b(due to|because of)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), "associated with"),
+        (new Regex(@"\b(results? in|resulted in|leading to|led to)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), "is associated with"),
+        (new Regex(@"\b(driven by|drives|drove)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), "associated with")
+    ];
+
+    private static readonly IReadOnlyList<(Regex Pattern, string Replacement)> PortugueseCausalityRules =
+    [
+        (new Regex(@"\b(causa|causam|causou|causar|causado|causada|causados|causadas)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), "está associado a"),
+        (new Regex(@"\b(devido a|por causa de)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), "associado a"),
+        (new Regex(@"\b(leva a|levam a|levou a)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), "está associado a"),
+        (new Regex(@"\b(provoca|provocam|provocou)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant), "está associado a")
+    ];
+
     private readonly ILLMContextBuilder _contextBuilder;
     private readonly IEvidencePackService _evidencePackService;
     private readonly ILLMClient _llmClient;
@@ -581,7 +598,9 @@ public class AIInsightService : IAIInsightService
 
         if (parsedStructured != null && llmResult.Data != null)
         {
+            var rewriteCount = SanitizeCausalityLanguage(parsedStructured, language);
             var resolvedEvidence = ResolveEvidence(parsedStructured, pack);
+            var confidenceScore = ComputeInsightPackConfidenceScore(parsedStructured, resolvedEvidence, pack);
             var citations = resolvedEvidence.Select(item => new DeepInsightCitation
             {
                 EvidenceId = item.EvidenceId,
@@ -596,6 +615,15 @@ public class AIInsightService : IAIInsightService
                     ? "Escala percentual desconhecida: confirme se os valores estão em 0-1 ou 0-100."
                     : "Percentage scale is unknown: confirm whether values are in 0-1 or 0-100.");
             }
+
+            if (rewriteCount > 0)
+            {
+                caveats.Add(IsPortuguese(language)
+                    ? "Linguagem causal foi reescrita para associação/correlação para evitar inferência causal indevida."
+                    : "Causal wording was rewritten to association/correlation wording to avoid unsupported causality.");
+            }
+
+            caveats = caveats.Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToList();
 
             return Result.Success(new InsightPackAskResult
             {
@@ -612,8 +640,9 @@ public class AIInsightService : IAIInsightService
                     DurationMs = llmResult.Data.DurationMs,
                     CacheHit = llmResult.Data.CacheHit,
                     FallbackUsed = false,
-                    ValidationStatus = "ok",
-                    PackVersion = pack.Version
+                    ValidationStatus = rewriteCount > 0 ? "ok_sanitized" : "ok",
+                    PackVersion = pack.Version,
+                    ConfidenceScore = confidenceScore
                 }
             });
         }
@@ -655,7 +684,8 @@ public class AIInsightService : IAIInsightService
                     ? "Invalid JSON output from LLM for insight-pack ask."
                     : string.Join(" | ", llmResult.Errors),
                 ValidationStatus = "fallback",
-                PackVersion = pack.Version
+                PackVersion = pack.Version,
+                ConfidenceScore = 0.4
             },
             Pack = pack
         });
@@ -1721,6 +1751,143 @@ If information is missing from context, keep fields null instead of guessing.
             "low" => "Low",
             _ => "Medium"
         };
+    }
+
+    private static double ComputeInsightPackConfidenceScore(
+        InsightAskStructuredResponse structured,
+        List<InsightResolvedEvidence> resolvedEvidence,
+        SemanticInsightPack pack)
+    {
+        var confidenceValues = new List<double>();
+        confidenceValues.AddRange(structured.KeyFindings.Select(item => ConfidenceToScore(item.Confidence)));
+        confidenceValues.AddRange(structured.TopDrivers.Negative.Select(item => ConfidenceToScore(item.Confidence)));
+        confidenceValues.AddRange(structured.TopDrivers.Positive.Select(item => ConfidenceToScore(item.Confidence)));
+        confidenceValues.AddRange(structured.Offenders.Select(item => ConfidenceToScore(item.Confidence)));
+
+        var averageDeclaredConfidence = confidenceValues.Count == 0 ? 0.6 : confidenceValues.Average();
+
+        var claimCount = structured.KeyFindings.Count
+                         + structured.TopDrivers.Negative.Count
+                         + structured.TopDrivers.Positive.Count
+                         + structured.Offenders.Count
+                         + structured.Recommendations.Count;
+        claimCount = Math.Max(claimCount, 1);
+
+        var anchoredClaimCount = structured.KeyFindings.Count(item => item.Evidence.Count > 0)
+                                + structured.TopDrivers.Negative.Count(item => item.Evidence.Count > 0)
+                                + structured.TopDrivers.Positive.Count(item => item.Evidence.Count > 0)
+                                + structured.Offenders.Count(item => item.Evidence.Count > 0)
+                                + structured.Recommendations.Count(item => item.Evidence.Count > 0);
+
+        var anchorCoverage = (double)anchoredClaimCount / claimCount;
+
+        var referencedEvidenceCount = CollectEvidenceIds(structured)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+        var resolvedCoverage = referencedEvidenceCount == 0
+            ? 0.0
+            : Math.Min(1.0, (double)resolvedEvidence.Count / referencedEvidenceCount);
+
+        var score = 0.25 + (averageDeclaredConfidence * 0.35) + (anchorCoverage * 0.25) + (resolvedCoverage * 0.15);
+
+        if (string.Equals(pack.PercentageScaleHint, "unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            score -= 0.05;
+        }
+
+        if (structured.Recommendations.Count == 0)
+        {
+            score -= 0.05;
+        }
+
+        score = Math.Clamp(score, 0.05, 0.98);
+        return Math.Round(score, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static double ConfidenceToScore(string? confidence)
+    {
+        return confidence?.Trim().ToLowerInvariant() switch
+        {
+            "high" => 0.85,
+            "low" => 0.45,
+            _ => 0.65
+        };
+    }
+
+    private static int SanitizeCausalityLanguage(InsightAskStructuredResponse structured, string language)
+    {
+        var rewriteCount = 0;
+
+        for (var index = 0; index < structured.ExecutiveSummary.Count; index++)
+        {
+            structured.ExecutiveSummary[index] = RewriteCausalWording(structured.ExecutiveSummary[index], language, ref rewriteCount);
+        }
+
+        foreach (var finding in structured.KeyFindings)
+        {
+            finding.Title = RewriteCausalWording(finding.Title, language, ref rewriteCount);
+            finding.Explanation = RewriteCausalWording(finding.Explanation, language, ref rewriteCount);
+        }
+
+        foreach (var driver in structured.TopDrivers.Negative)
+        {
+            driver.Name = RewriteCausalWording(driver.Name, language, ref rewriteCount);
+            driver.Why = RewriteCausalWording(driver.Why, language, ref rewriteCount);
+        }
+
+        foreach (var driver in structured.TopDrivers.Positive)
+        {
+            driver.Name = RewriteCausalWording(driver.Name, language, ref rewriteCount);
+            driver.Why = RewriteCausalWording(driver.Why, language, ref rewriteCount);
+        }
+
+        foreach (var offender in structured.Offenders)
+        {
+            offender.Name = RewriteCausalWording(offender.Name, language, ref rewriteCount);
+            offender.Impact = RewriteCausalWording(offender.Impact, language, ref rewriteCount);
+        }
+
+        foreach (var recommendation in structured.Recommendations)
+        {
+            recommendation.Action = RewriteCausalWording(recommendation.Action, language, ref rewriteCount);
+            recommendation.Why = RewriteCausalWording(recommendation.Why, language, ref rewriteCount);
+            recommendation.Risk = RewriteCausalWording(recommendation.Risk, language, ref rewriteCount);
+        }
+
+        for (var index = 0; index < structured.Caveats.Count; index++)
+        {
+            structured.Caveats[index] = RewriteCausalWording(structured.Caveats[index], language, ref rewriteCount);
+        }
+
+        for (var index = 0; index < structured.FollowUpQuestions.Count; index++)
+        {
+            structured.FollowUpQuestions[index] = RewriteCausalWording(structured.FollowUpQuestions[index], language, ref rewriteCount);
+        }
+
+        return rewriteCount;
+    }
+
+    private static string RewriteCausalWording(string text, string language, ref int rewriteCount)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return text;
+        }
+
+        var rewritten = text;
+        var rules = IsPortuguese(language) ? PortugueseCausalityRules : EnglishCausalityRules;
+        foreach (var (pattern, replacement) in rules)
+        {
+            rewritten = pattern.Replace(rewritten, replacement);
+        }
+
+        if (!string.Equals(rewritten, text, StringComparison.Ordinal))
+        {
+            rewriteCount++;
+        }
+
+        return rewritten;
     }
 
     private static List<InsightResolvedEvidence> ResolveEvidence(

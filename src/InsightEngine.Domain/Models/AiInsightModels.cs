@@ -23,6 +23,7 @@ public class AiGenerationMeta
     public int? OutputBytes { get; set; }
     public string? ValidationStatus { get; set; }
     public string? PackVersion { get; set; }
+    public double? ConfidenceScore { get; set; }
 }
 
 public class AiInsightSummaryResult
