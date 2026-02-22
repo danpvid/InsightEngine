@@ -1,6 +1,7 @@
 ﻿using InsightEngine.Domain.Enums;
 
 using InsightEngine.Domain.Models.FormulaDiscovery;
+using InsightEngine.Domain.Models.Formulas;
 
 namespace InsightEngine.Domain.Models.MetadataIndex;
 
@@ -22,6 +23,7 @@ public class DatasetIndex
     public GlobalStatsIndex? Stats { get; set; }
     public IndexLimits Limits { get; set; } = new();
     public FormulaDiscoveryIndexEntry? FormulaDiscovery { get; set; }
+    public FormulaInferenceIndexEntry? FormulaInference { get; set; }
 }
 
 public class FormulaDiscoveryIndexEntry
@@ -29,6 +31,12 @@ public class FormulaDiscoveryIndexEntry
     public string CacheKey { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public FormulaDiscoveryResult Result { get; set; } = new();
+}
+
+public class FormulaInferenceIndexEntry
+{
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+    public FormulaInferenceResult Result { get; set; } = new();
 }
 
 public class ColumnIndex

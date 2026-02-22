@@ -50,6 +50,7 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
             Candidates = new List<FormulaExpression>(),
             Warnings = Array.Empty<string>()
         };
+        DatasetIndex? index = null;
 
         try
         {
@@ -70,7 +71,7 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
                 return result;
             }
 
-            var index = await _indexStore.LoadAsync(datasetId, cancellationToken);
+            index = await _indexStore.LoadAsync(datasetId, cancellationToken);
             if (index is null)
             {
                 result.Status = FormulaInferenceStatus.Failed;
@@ -79,21 +80,42 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
                 return result;
             }
 
+            async Task<FormulaInferenceResult> PersistAndReturnAsync()
+            {
+                result.Warnings = warnings.ToArray();
+                if (!meta.ContainsKey("elapsedMs"))
+                {
+                    meta["elapsedMs"] = stopwatch.ElapsedMilliseconds;
+                }
+
+                if (result.Meta.Count == 0)
+                {
+                    result.Meta = new Dictionary<string, object?>(meta);
+                }
+
+                index.FormulaInference = new FormulaInferenceIndexEntry
+                {
+                    UpdatedAtUtc = DateTimeOffset.UtcNow,
+                    Result = result
+                };
+
+                await _indexStore.SaveAsync(index, cancellationToken);
+                return result;
+            }
+
             var resolvedTarget = ResolveTarget(index, targetColumn);
             if (resolvedTarget is null)
             {
                 result.Status = FormulaInferenceStatus.Failed;
                 warnings.Add("Target column not found in index.");
-                result.Warnings = warnings.ToArray();
-                return result;
+                return await PersistAndReturnAsync();
             }
 
             if (!resolvedTarget.InferredType.IsNumericLike())
             {
                 result.Status = FormulaInferenceStatus.Failed;
                 warnings.Add("Target column must be numeric.");
-                result.Warnings = warnings.ToArray();
-                return result;
+                return await PersistAndReturnAsync();
             }
 
             result.TargetColumn = resolvedTarget.Name;
@@ -103,10 +125,12 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
             {
                 warnings.Add("No eligible numeric candidate columns were found.");
                 result.Status = FormulaInferenceStatus.Completed;
-                result.Warnings = warnings.ToArray();
                 result.NumericCandidateColumns = Array.Empty<string>();
-                result.Meta = new Dictionary<string, object?> { ["elapsedMs"] = stopwatch.ElapsedMilliseconds };
-                return result;
+                result.Meta = new Dictionary<string, object?>
+                {
+                    ["elapsedMs"] = stopwatch.ElapsedMilliseconds
+                };
+                return await PersistAndReturnAsync();
             }
 
             result.NumericCandidateColumns = rankedColumns.Select(column => column.Name).ToArray();
@@ -115,9 +139,11 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
             {
                 warnings.Add("Search budget reached before sampling.");
                 result.Status = FormulaInferenceStatus.Completed;
-                result.Warnings = warnings.ToArray();
-                result.Meta = new Dictionary<string, object?> { ["elapsedMs"] = stopwatch.ElapsedMilliseconds };
-                return result;
+                result.Meta = new Dictionary<string, object?>
+                {
+                    ["elapsedMs"] = stopwatch.ElapsedMilliseconds
+                };
+                return await PersistAndReturnAsync();
             }
 
             var searchSample = LoadSample(dataSet, resolvedTarget.Name, rankedColumns, settings.InitialSampleRows, "search", cancellationToken);
@@ -125,13 +151,12 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
             {
                 warnings.Add("No rows available in search sample after null filtering.");
                 result.Status = FormulaInferenceStatus.Completed;
-                result.Warnings = warnings.ToArray();
                 result.Meta = new Dictionary<string, object?>
                 {
                     ["elapsedMs"] = stopwatch.ElapsedMilliseconds,
                     ["searchRows"] = 0
                 };
-                return result;
+                return await PersistAndReturnAsync();
             }
 
             var validationSample = LoadSample(dataSet, resolvedTarget.Name, rankedColumns, settings.ValidationSampleRows, "validation", cancellationToken);
@@ -236,21 +261,32 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
 
             result.Status = FormulaInferenceStatus.Completed;
             result.Candidates = ordered;
-            result.Warnings = warnings.ToArray();
             result.Meta = meta;
 
-            return result;
+            return await PersistAndReturnAsync();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Formula inference failed for dataset {DatasetId} target {TargetColumn}", datasetId, targetColumn);
             result.Status = FormulaInferenceStatus.Failed;
             warnings.Add(ex.Message);
-            result.Warnings = warnings.ToArray();
             result.Meta = new Dictionary<string, object?>
             {
                 ["elapsedMs"] = stopwatch.ElapsedMilliseconds
             };
+
+            if (index is not null)
+            {
+                result.Warnings = warnings.ToArray();
+                index.FormulaInference = new FormulaInferenceIndexEntry
+                {
+                    UpdatedAtUtc = DateTimeOffset.UtcNow,
+                    Result = result
+                };
+
+                await _indexStore.SaveAsync(index, cancellationToken);
+            }
+
             return result;
         }
     }
