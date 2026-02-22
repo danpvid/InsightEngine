@@ -37,6 +37,7 @@ public static class NativeInjectorBootStrapper
         services.Configure<ChartExecutionSettings>(configuration.GetSection("ChartExecution"));
         services.Configure<ChartCacheSettings>(configuration.GetSection("ChartCache"));
         services.Configure<ScenarioSimulationSettings>(configuration.GetSection("ScenarioSimulation"));
+        services.Configure<FormulaInferenceSettings>(configuration.GetSection(FormulaInferenceSettings.SectionName));
         services.Configure<MetadataPersistenceSettings>(configuration.GetSection(MetadataPersistenceSettings.SectionName));
         services.Configure<LLMSettings>(configuration.GetSection(LLMSettings.SectionName));
         services.PostConfigure<ChartExecutionSettings>(options =>
