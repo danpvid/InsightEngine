@@ -16,7 +16,7 @@ export const routes: Routes = [
     children: [
       {
         path: '',
-        redirectTo: 'datasets/new',
+        redirectTo: 'datasets',
         pathMatch: 'full'
       },
       {
@@ -28,6 +28,6 @@ export const routes: Routes = [
   },
   {
     path: '**',
-    redirectTo: '/pt-br/datasets/new'
+    redirectTo: '/pt-br/datasets'
   }
 ];

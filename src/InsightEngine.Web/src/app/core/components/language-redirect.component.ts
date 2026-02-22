@@ -14,7 +14,7 @@ export class LanguageRedirectComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.router.navigate(['/', this.languageService.currentLanguage, 'datasets', 'new'], {
+    this.router.navigate(['/', this.languageService.currentLanguage, 'datasets'], {
       replaceUrl: true
     });
   }

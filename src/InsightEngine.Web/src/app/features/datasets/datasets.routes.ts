@@ -7,8 +7,13 @@ import { ImportPreviewPageComponent } from './pages/import-preview-page/import-p
 
 export const DATASETS_ROUTES: Routes = [
   {
-    path: 'new',
+    path: '',
     component: DatasetUploadPageComponent
+  },
+  {
+    path: 'new',
+    redirectTo: '',
+    pathMatch: 'full'
   },
   {
     path: ':datasetId/recommendations',

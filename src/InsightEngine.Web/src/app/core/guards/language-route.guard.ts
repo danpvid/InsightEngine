@@ -8,7 +8,7 @@ export const languageRouteGuard: CanActivateFn = (route) => {
   const routeLanguage = route.paramMap.get('lang');
 
   if (!languageService.isSupportedLanguage(routeLanguage)) {
-    return router.createUrlTree(['/', languageService.currentLanguage, 'datasets', 'new']);
+    return router.createUrlTree(['/', languageService.currentLanguage, 'datasets']);
   }
 
   languageService.setCurrentLanguage(routeLanguage);

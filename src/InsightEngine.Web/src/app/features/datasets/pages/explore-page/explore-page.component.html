@@ -47,6 +47,14 @@
         <mat-icon>download</mat-icon>
         {{ 'explore.exportIndex' | translate }}
       </button>
+      <button
+        mat-flat-button
+        color="primary"
+        [routerLink]="recommendationsLink"
+        [disabled]="!canViewRecommendations">
+        <mat-icon>arrow_forward</mat-icon>
+        Next: Recommendations
+      </button>
     </div>
   </section>
 

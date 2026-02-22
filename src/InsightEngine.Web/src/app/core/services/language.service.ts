@@ -61,7 +61,7 @@ export class LanguageService {
     const pathSegments = currentUrl.split('?')[0].split('#')[0].split('/').filter(segment => segment.length > 0);
 
     if (pathSegments.length === 0) {
-      await router.navigate(['/', normalized, 'datasets', 'new']);
+      await router.navigate(['/', normalized, 'datasets']);
       return;
     }
 

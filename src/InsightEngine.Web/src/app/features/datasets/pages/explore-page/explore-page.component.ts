@@ -138,7 +138,15 @@ export class ExplorePageComponent implements OnInit {
   }
 
   get newDatasetLink(): string[] {
-    return ['/', this.currentLanguage, 'datasets', 'new'];
+    return ['/', this.currentLanguage, 'datasets'];
+  }
+
+  get recommendationsLink(): string[] {
+    return ['/', this.currentLanguage, 'datasets', this.datasetId, 'recommendations'];
+  }
+
+  get canViewRecommendations(): boolean {
+    return !!this.datasetId && !!this.datasetName;
   }
 
   get currentLanguage(): string {
