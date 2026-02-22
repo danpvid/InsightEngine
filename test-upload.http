@@ -17,3 +17,61 @@ GET http://localhost:5000/api/v1/datasets/{{datasetId}}
 
 ### Test Get Dataset Profile (replace with actual ID)
 GET http://localhost:5000/api/v1/datasets/{{datasetId}}/profile
+
+### Build Metadata Index (required before formula inference auto-run)
+POST http://localhost:5000/api/v1/datasets/{{datasetId}}/index:build
+Content-Type: application/json
+
+{
+	"maxColumnsForCorrelation": 10,
+	"topKEdgesPerColumn": 5,
+	"sampleRows": 5000,
+	"includeStringPatterns": true,
+	"includeDistributions": true
+}
+
+### Run Formula Inference (Auto)
+POST http://localhost:5000/api/v1/datasets/{{datasetId}}/formula-inference/run
+Content-Type: application/json
+
+{
+	"targetColumn": "total",
+	"mode": "Auto",
+	"options": {
+		"maxColumns": 3,
+		"maxDepth": 2,
+		"epsilonAbs": 0.0001,
+		"includePercentageColumns": false
+	}
+}
+
+### Run Formula Inference (Manual)
+POST http://localhost:5000/api/v1/datasets/{{datasetId}}/formula-inference/run
+Content-Type: application/json
+
+{
+	"targetColumn": "total",
+	"mode": "Manual",
+	"manualExpression": "unit_price * quantity"
+}
+
+### Get Formula Inference Metadata
+GET http://localhost:5000/api/v1/datasets/{{datasetId}}/formula-inference
+
+### Finalize Import with Optional Formula Inference Trigger
+POST http://localhost:5000/api/v1/datasets/{{datasetId}}/finalize
+Content-Type: application/json
+
+{
+	"targetColumn": "total",
+	"ignoredColumns": [],
+	"columnTypeOverrides": {},
+	"currencyCode": "BRL",
+	"formulaInference": {
+		"enabled": true,
+		"maxColumns": 3,
+		"maxDepth": 2,
+		"epsilonAbs": 0.0001,
+		"includePercentageColumns": false
+	}
+}
