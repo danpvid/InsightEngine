@@ -314,6 +314,8 @@ public class DataSetController : BaseController
             }
 
             var profile = result.Data;
+            var index = await _indexStore.LoadAsync(id);
+            var formulaInferenceSummary = BuildFormulaInferenceSummary(index?.FormulaInference?.Result);
 
             return Ok(new
             {
@@ -344,8 +346,14 @@ public class DataSetController : BaseController
                             value = item.Value,
                             count = item.Count
                         })
-                    })
-                }
+                    }),
+                    indexGenerated = index is not null,
+                    targetFormulaSuggestion = index?.TargetFormulaSuggestion,
+                    formulaInferenceSummary
+                },
+                indexGenerated = index is not null,
+                targetFormulaSuggestion = index?.TargetFormulaSuggestion,
+                formulaInferenceSummary
             });
         }
         catch (Exception ex)
@@ -581,7 +589,10 @@ public class DataSetController : BaseController
             return Ok(new
             {
                 success = true,
-                data = result.Data
+                data = result.Data,
+                indexGenerated = true,
+                targetFormulaSuggestion = result.Data?.TargetFormulaSuggestion,
+                formulaInferenceSummary = BuildFormulaInferenceSummary(result.Data?.FormulaInference?.Result)
             });
         }
         catch (Exception ex)
@@ -1581,6 +1592,7 @@ OFFSET {offset};
         try
         {
             var result = await _dataSetApplicationService.GetRecommendationsAsync(id);
+            var index = await _indexStore.LoadAsync(id);
 
             if (!result.IsSuccess)
             {
@@ -1590,7 +1602,10 @@ OFFSET {offset};
             return Ok(new
             {
                 success = true,
-                data = result.Data
+                data = result.Data,
+                indexGenerated = index is not null,
+                targetFormulaSuggestion = index?.TargetFormulaSuggestion,
+                formulaInferenceSummary = BuildFormulaInferenceSummary(index?.FormulaInference?.Result)
             });
         }
         catch (Exception ex)
@@ -3031,6 +3046,32 @@ LIMIT {RawTopRangesLimit};
     private static bool TryParseFilterLogicalOperator(string input, out FilterLogicalOperator logicalOperator)
     {
         return Enum.TryParse(input, true, out logicalOperator);
+    }
+
+    private static object? BuildFormulaInferenceSummary(FormulaInferenceResult? result)
+    {
+        if (result is null)
+        {
+            return null;
+        }
+
+        var bestCandidate = result.Candidates
+            .OrderByDescending(candidate => candidate.Confidence)
+            .ThenBy(candidate => candidate.UsedColumns.Length)
+            .ThenBy(candidate => candidate.Depth)
+            .FirstOrDefault();
+
+        return new
+        {
+            status = result.Status,
+            targetColumn = result.TargetColumn,
+            candidatesCount = result.Candidates.Count,
+            generatedAt = result.GeneratedAt,
+            bestCandidateExpressionText = bestCandidate?.ExpressionText,
+            bestCandidateConfidence = bestCandidate?.Confidence,
+            bestCandidateUsedColumns = bestCandidate?.UsedColumns ?? Array.Empty<string>(),
+            warnings = result.Warnings
+        };
     }
 
     private readonly record struct RawSortRule(string Column, bool Descending);
