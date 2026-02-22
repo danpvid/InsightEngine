@@ -529,6 +529,16 @@ public class DataSetController : BaseController
                 return ErrorResponse(statusCode, result.Errors, code);
             }
 
+            object? formulaInference = null;
+            if (finalizeRequest.FormulaInference?.Enabled == true)
+            {
+                formulaInference = await RunFinalizeFormulaInferenceAsync(
+                    id,
+                    result.Data!.TargetColumn,
+                    finalizeRequest.FormulaInference,
+                    HttpContext.RequestAborted);
+            }
+
             return Ok(new
             {
                 success = true,
@@ -539,7 +549,8 @@ public class DataSetController : BaseController
                     targetColumn = result.Data.TargetColumn,
                     ignoredColumnsCount = result.Data.IgnoredColumnsCount,
                     storedColumnsCount = result.Data.StoredColumnsCount,
-                    currencyCode = result.Data.CurrencyCode
+                    currencyCode = result.Data.CurrencyCode,
+                    formulaInference
                 }
             });
         }
@@ -1018,6 +1029,112 @@ FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause
                 StatusCodes.Status500InternalServerError,
                 "internal_error",
                 "Erro ao carregar facetas do dataset.");
+        }
+    }
+
+    private async Task<object> RunFinalizeFormulaInferenceAsync(
+        Guid datasetId,
+        string? targetColumn,
+        FinalizeImportFormulaInferenceOptions options,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(targetColumn))
+            {
+                return new
+                {
+                    triggered = true,
+                    status = "skipped",
+                    reason = "target_not_defined"
+                };
+            }
+
+            var schema = await _schemaStore.LoadAsync(datasetId, cancellationToken);
+            var index = await _indexStore.LoadAsync(datasetId, cancellationToken);
+
+            if (index is null)
+            {
+                return new
+                {
+                    triggered = true,
+                    status = "skipped",
+                    reason = "index_not_found"
+                };
+            }
+
+            var knownColumns = BuildKnownColumns(schema, index);
+            if (!knownColumns.TryGetValue(targetColumn, out var targetInfo)
+                || targetInfo.IsIgnored
+                || !targetInfo.Type.IsNumericLike())
+            {
+                return new
+                {
+                    triggered = true,
+                    status = "skipped",
+                    reason = "invalid_target"
+                };
+            }
+
+            var includePercentageColumns = options.IncludePercentageColumns ?? false;
+            var candidateColumns = knownColumns.Values
+                .Where(column => !column.IsIgnored)
+                .Where(column => !string.Equals(column.Name, targetInfo.Name, StringComparison.OrdinalIgnoreCase))
+                .Where(column => column.Type.IsNumericLike())
+                .Where(column => includePercentageColumns || column.Type.NormalizeLegacy() != InferredType.Percentage)
+                .Select(column => column.Name)
+                .ToArray();
+
+            if (candidateColumns.Length == 0)
+            {
+                return new
+                {
+                    triggered = true,
+                    status = "skipped",
+                    reason = "no_candidate_columns"
+                };
+            }
+
+            var settingsOverride = new FormulaInferenceSettings
+            {
+                EnabledDefault = _formulaInferenceSettings.EnabledDefault,
+                MaxColumns = options.MaxColumns ?? _formulaInferenceSettings.MaxColumns,
+                MaxDepth = options.MaxDepth ?? _formulaInferenceSettings.MaxDepth,
+                MaxCandidatesReturned = _formulaInferenceSettings.MaxCandidatesReturned,
+                SearchBudgetMs = _formulaInferenceSettings.SearchBudgetMs,
+                InitialSampleRows = _formulaInferenceSettings.InitialSampleRows,
+                ValidationSampleRows = _formulaInferenceSettings.ValidationSampleRows,
+                EpsilonAbs = options.EpsilonAbs ?? _formulaInferenceSettings.EpsilonAbs,
+                EpsilonAbsRelaxed = _formulaInferenceSettings.EpsilonAbsRelaxed,
+                DivisionZeroEpsilon = _formulaInferenceSettings.DivisionZeroEpsilon,
+                AllowConstants = false,
+                AllowColumnReuse = _formulaInferenceSettings.AllowColumnReuse,
+                BeamWidth = _formulaInferenceSettings.BeamWidth
+            };
+
+            var inference = await _formulaInferenceEngine.InferAsync(
+                datasetId,
+                targetInfo.Name,
+                candidateColumns,
+                settingsOverride,
+                cancellationToken);
+
+            return new
+            {
+                triggered = true,
+                status = "completed",
+                result = inference
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Formula inference from finalize failed for dataset {DatasetId}", datasetId);
+            return new
+            {
+                triggered = true,
+                status = "failed",
+                reason = "execution_error"
+            };
         }
     }
 

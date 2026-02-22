@@ -6,6 +6,16 @@ public class FinalizeImportRequest : InputModel
     public List<string> IgnoredColumns { get; set; } = new();
     public Dictionary<string, string> ColumnTypeOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string CurrencyCode { get; set; } = "BRL";
+    public FinalizeImportFormulaInferenceOptions? FormulaInference { get; set; }
+}
+
+public class FinalizeImportFormulaInferenceOptions : InputModel
+{
+    public bool Enabled { get; set; }
+    public int? MaxColumns { get; set; }
+    public int? MaxDepth { get; set; }
+    public double? EpsilonAbs { get; set; }
+    public bool? IncludePercentageColumns { get; set; }
 }
 
 public class FinalizeImportResponse : OutputModel
