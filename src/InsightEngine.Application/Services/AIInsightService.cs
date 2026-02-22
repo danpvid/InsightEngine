@@ -456,6 +456,7 @@ public class AIInsightService : IAIInsightService
         {
             Pack = new SemanticInsightPack
             {
+                Version = evidencePack.PackVersion,
                 DatasetId = request.DatasetId,
                 RecommendationId = request.RecommendationId,
                 QueryHash = evidencePack.QueryHash,
@@ -463,7 +464,8 @@ public class AIInsightService : IAIInsightService
                 PercentageScaleHint = percentageScaleHint,
                 TargetDrivers = drivers,
                 Correlations = correlations,
-                Facts = evidencePack.Facts.Take(20).ToList()
+                Facts = evidencePack.Facts.Take(20).ToList(),
+                PackV2 = evidencePack.InsightPackV2
             },
             Meta = new AiGenerationMeta
             {

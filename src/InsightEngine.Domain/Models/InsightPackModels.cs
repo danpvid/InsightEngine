@@ -1,9 +1,11 @@
 using InsightEngine.Domain.Enums;
+using InsightEngine.Domain.Models.Insights;
 
 namespace InsightEngine.Domain.Models;
 
 public class SemanticInsightPack
 {
+    public string Version { get; set; } = "2.0";
     public Guid DatasetId { get; set; }
     public string RecommendationId { get; set; } = string.Empty;
     public string QueryHash { get; set; } = string.Empty;
@@ -12,6 +14,7 @@ public class SemanticInsightPack
     public List<InsightPackDriver> TargetDrivers { get; set; } = new();
     public List<InsightPackCorrelation> Correlations { get; set; } = new();
     public List<EvidenceFact> Facts { get; set; } = new();
+    public InsightPackV2? PackV2 { get; set; }
 }
 
 public class InsightPackDriver

@@ -3,9 +3,13 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.ImportSchema;
+using InsightEngine.Domain.Models.Insights;
+using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Settings;
 using InsightEngine.Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
@@ -51,6 +55,12 @@ public class EvidencePackService : IEvidencePackService
         {
             return Result.Failure<EvidencePackResult>(profileResult.Errors);
         }
+
+        var schemaResult = await _dataSetApplicationService.GetSchemaAsync(request.DatasetId, cancellationToken);
+        DatasetImportSchema? schema = schemaResult.IsSuccess ? schemaResult.Data : null;
+
+        var indexResult = await _dataSetApplicationService.GetIndexAsync(request.DatasetId, cancellationToken);
+        DatasetIndex? index = indexResult.IsSuccess ? indexResult.Data : null;
 
         var recommendationsResult = await _dataSetApplicationService.GetRecommendationsAsync(request.DatasetId, cancellationToken);
         if (!recommendationsResult.IsSuccess || recommendationsResult.Data == null)
@@ -132,6 +142,7 @@ public class EvidencePackService : IEvidencePackService
         var pack = new EvidencePack
         {
             EvidenceVersion = evidenceVersion,
+            PackVersion = "2.0",
             DatasetId = request.DatasetId,
             RecommendationId = request.RecommendationId,
             QueryHash = queryHash,
@@ -143,6 +154,19 @@ public class EvidencePackService : IEvidencePackService
             WhatIfConclusionPack = whatIfPack,
             AggregatedSample = sample
         };
+
+        pack.InsightPackV2 = BuildInsightPackV2(
+            request,
+            profileResult.Data,
+            schema,
+            index,
+            recommendation,
+            chartResponse,
+            points,
+            distribution,
+            timeSeriesStats,
+            segmentBreakdowns,
+            pack.DatasetQuality);
 
         pack.Facts = BuildEvidenceFacts(pack);
         EnforceBudget(pack);
@@ -1142,6 +1166,573 @@ public class EvidencePackService : IEvidencePackService
     }
 
     private static string FormatNumber(double value) => value.ToString("0.######", CultureInfo.InvariantCulture);
+
+    private static InsightPackV2 BuildInsightPackV2(
+        DeepInsightsRequest request,
+        DatasetProfile profile,
+        DatasetImportSchema? schema,
+        DatasetIndex? index,
+        ChartRecommendation recommendation,
+        ChartExecutionResponse chartResponse,
+        IReadOnlyList<SeriesPoint> points,
+        DistributionStatsEvidence distribution,
+        TimeSeriesStatsEvidence? timeSeriesStats,
+        List<SegmentBreakdownEvidence> segmentBreakdowns,
+        DatasetQualityEvidence quality)
+    {
+        var schemaColumns = BuildSchemaColumns(profile, schema);
+        var ignoredColumns = schema?.Columns.Where(c => c.IsIgnored).Select(c => c.Name).ToList()
+            ?? profile.Columns.Where(c => c.IsIgnored).Select(c => c.Name).ToList();
+        var targetColumn = schema?.TargetColumn ?? profile.TargetColumn;
+
+        var v2 = new InsightPackV2
+        {
+            Version = "2.0",
+            DatasetSummary = new InsightDatasetSummary
+            {
+                DatasetId = request.DatasetId,
+                RowCount = profile.RowCount,
+                ColumnCount = profile.Columns.Count,
+                TimeRange = ResolveTimeRange(index),
+                CurrencyCode = schema?.CurrencyCode,
+                SamplingInfo = new InsightSamplingInfo
+                {
+                    SampleRowsUsed = profile.SampleSize,
+                    SampleStrategy = "profile-sample"
+                }
+            },
+            SchemaContext = new InsightSchemaContext
+            {
+                TargetColumn = targetColumn,
+                IgnoredColumns = ignoredColumns,
+                Columns = schemaColumns
+            },
+            DataQuality = BuildDataQualityV2(profile, schema, index, quality),
+            Relationships = BuildRelationshipsV2(index, targetColumn),
+            Actions = BuildActionsV2(segmentBreakdowns, timeSeriesStats),
+            EvidenceIndex = BuildEvidenceAnchorsV2()
+        };
+
+        if (!string.IsNullOrWhiteSpace(targetColumn))
+        {
+            v2.TargetStory = BuildTargetStoryV2(
+                targetColumn!,
+                schemaColumns,
+                points,
+                timeSeriesStats,
+                segmentBreakdowns,
+                recommendation,
+                chartResponse);
+        }
+
+        return v2;
+    }
+
+    private static List<InsightSchemaColumn> BuildSchemaColumns(DatasetProfile profile, DatasetImportSchema? schema)
+    {
+        if (schema?.Columns?.Count > 0)
+        {
+            return schema.Columns.Select(column =>
+            {
+                var profileCol = profile.Columns.FirstOrDefault(c => string.Equals(c.Name, column.Name, StringComparison.OrdinalIgnoreCase));
+                var confirmed = (column.ConfirmedType == InferredType.Number ? InferredType.Decimal : column.ConfirmedType).ToString();
+                return new InsightSchemaColumn
+                {
+                    Name = column.Name,
+                    ConfirmedType = confirmed,
+                    SemanticType = ResolveSemanticTypeLabel(column.ConfirmedType, column.Name),
+                    RoleHint = ResolveRoleHint(column.ConfirmedType, column.Name),
+                    PercentageScaleHint = column.PercentageScaleHint?.ToString(),
+                    FormattingHints = BuildFormattingHints(column.ConfirmedType, column.CurrencyCode, profileCol)
+                };
+            }).ToList();
+        }
+
+        return profile.Columns.Select(column =>
+        {
+            var confirmed = (column.ConfirmedType ?? column.InferredType).NormalizeLegacy();
+            return new InsightSchemaColumn
+            {
+                Name = column.Name,
+                ConfirmedType = confirmed.ToString(),
+                SemanticType = ResolveSemanticTypeLabel(confirmed, column.Name),
+                RoleHint = ResolveRoleHint(confirmed, column.Name),
+                PercentageScaleHint = column.PercentageScaleHint?.ToString(),
+                FormattingHints = BuildFormattingHints(confirmed, column.CurrencyCode, column)
+            };
+        }).ToList();
+    }
+
+    private static InsightFormattingHints BuildFormattingHints(InferredType type, string? currencyCode, ColumnProfile? profile)
+    {
+        return new InsightFormattingHints
+        {
+            Decimals = type switch
+            {
+                InferredType.Integer => 0,
+                InferredType.Percentage => 2,
+                InferredType.Money => 2,
+                _ => 3
+            },
+            CurrencySymbol = type == InferredType.Money
+                ? (string.Equals(currencyCode, "USD", StringComparison.OrdinalIgnoreCase) ? "$" : "R$")
+                : null,
+            Unit = type == InferredType.Percentage
+                ? "%"
+                : (profile?.Name.Contains("qty", StringComparison.OrdinalIgnoreCase) == true ? "qty" : null)
+        };
+    }
+
+    private static InsightDataQualityContext BuildDataQualityV2(
+        DatasetProfile profile,
+        DatasetImportSchema? schema,
+        DatasetIndex? index,
+        DatasetQualityEvidence quality)
+    {
+        var warnings = new List<string>();
+        warnings.AddRange(index?.Quality?.Warnings ?? []);
+        if (quality.MissingRateMax >= 0.2)
+        {
+            warnings.Add($"High missingness detected in {quality.MissingRateMaxColumn} ({quality.MissingRateMax:P1}).");
+        }
+
+        if (quality.InvalidDateCount > 0)
+        {
+            warnings.Add($"Date parsing inconsistencies detected ({quality.InvalidDateCount} values).");
+        }
+
+        return new InsightDataQualityContext
+        {
+            NullHotspots = profile.Columns
+                .OrderByDescending(column => column.NullRate)
+                .Take(8)
+                .Select(column => new InsightNullHotspot
+                {
+                    Column = column.Name,
+                    NullRate = Math.Round(column.NullRate, 6)
+                })
+                .ToList(),
+            DuplicateRateEstimate = Math.Round(index?.Quality?.DuplicateRowRate ?? quality.DuplicateRate, 6),
+            IdLikeCandidates = profile.Columns
+                .Where(column => IsIdLike(column.Name))
+                .Take(8)
+                .Select(column => column.Name)
+                .ToList(),
+            OutlierSummary = BuildOutlierSummary(profile, index),
+            InconsistentFormats = BuildInconsistentFormats(profile, schema, quality),
+            Warnings = warnings.Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList()
+        };
+    }
+
+    private static List<InsightOutlierSummary> BuildOutlierSummary(DatasetProfile profile, DatasetIndex? index)
+    {
+        var output = new List<InsightOutlierSummary>();
+
+        if (index?.Columns?.Count > 0)
+        {
+            foreach (var column in index.Columns)
+            {
+                var stats = column.NumericStats;
+                if (stats == null || !stats.P5.HasValue || !stats.P95.HasValue || !stats.Min.HasValue || !stats.Max.HasValue)
+                {
+                    continue;
+                }
+
+                var spread = Math.Max(1e-9, stats.Max.Value - stats.Min.Value);
+                var outlierRate = Math.Clamp((Math.Abs(stats.Min.Value - stats.P5.Value) + Math.Abs(stats.Max.Value - stats.P95.Value)) / spread, 0d, 1d);
+                output.Add(new InsightOutlierSummary
+                {
+                    Column = column.Name,
+                    OutlierRate = Math.Round(outlierRate, 6),
+                    P5 = Math.Round(stats.P5.Value, 6),
+                    P95 = Math.Round(stats.P95.Value, 6),
+                    Iqr = 0
+                });
+            }
+
+            return output.Take(10).ToList();
+        }
+
+        foreach (var column in profile.Columns.Where(c => c.InferredType.IsNumericLike() && c.Min.HasValue && c.Max.HasValue))
+        {
+            output.Add(new InsightOutlierSummary
+            {
+                Column = column.Name,
+                OutlierRate = 0,
+                P5 = Math.Round(column.Min!.Value, 6),
+                P95 = Math.Round(column.Max!.Value, 6),
+                Iqr = 0
+            });
+        }
+
+        return output.Take(10).ToList();
+    }
+
+    private static List<InsightInconsistentFormat> BuildInconsistentFormats(
+        DatasetProfile profile,
+        DatasetImportSchema? schema,
+        DatasetQualityEvidence quality)
+    {
+        if (quality.InvalidDateCount <= 0)
+        {
+            return [];
+        }
+
+        var dateColumns = schema?.Columns.Where(c => c.ConfirmedType == InferredType.Date).Select(c => c.Name).ToList()
+            ?? profile.Columns.Where(c => c.InferredType == InferredType.Date).Select(c => c.Name).ToList();
+        if (dateColumns.Count == 0)
+        {
+            return [];
+        }
+
+        var perColumn = Math.Max(1, quality.InvalidDateCount / dateColumns.Count);
+        return dateColumns.Select(name => new InsightInconsistentFormat
+        {
+            Column = name,
+            ParseFailuresCount = perColumn
+        }).ToList();
+    }
+
+    private static InsightRelationshipsContext BuildRelationshipsV2(DatasetIndex? index, string? targetColumn)
+    {
+        var edges = index?.Correlations?.Edges ?? [];
+        var topPositive = edges.Where(e => e.Score > 0).OrderByDescending(e => e.Score).Take(8).ToList();
+        var topNegative = edges.Where(e => e.Score < 0).OrderBy(e => e.Score).Take(8).ToList();
+        var targetPairs = string.IsNullOrWhiteSpace(targetColumn)
+            ? new List<CorrelationEdge>()
+            : edges.Where(e =>
+                    string.Equals(e.LeftColumn, targetColumn, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(e.RightColumn, targetColumn, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(e => Math.Abs(e.Score))
+                .Take(8)
+                .ToList();
+
+        return new InsightRelationshipsContext
+        {
+            CorrelationMatrixSummary = new InsightCorrelationMatrixSummary
+            {
+                TopPositivePairs = topPositive.Select(ToCorrelationPair).ToList(),
+                TopNegativePairs = topNegative.Select(ToCorrelationPair).ToList(),
+                TopPairsInvolvingTarget = targetPairs.Select(ToCorrelationPair).ToList()
+            },
+            FunctionalDependenciesHints = BuildFunctionalDependencies(index),
+            TimeSeasonalityHints = new InsightTimeSeasonalityHints
+            {
+                WeekdayVsWeekendImpact = "Pending computation in v2 metrics stage",
+                MonthOfYearEffect = "Pending computation in v2 metrics stage"
+            }
+        };
+    }
+
+    private static List<InsightFunctionalDependencyHint> BuildFunctionalDependencies(DatasetIndex? index)
+    {
+        if (index?.Columns?.Count == 0)
+        {
+            return [];
+        }
+
+        var idLike = index.Columns.Where(c => IsIdLike(c.Name)).ToList();
+        var categories = index.Columns.Where(c => c.InferredType is InferredType.Category or InferredType.String).Take(8).ToList();
+        var hints = new List<InsightFunctionalDependencyHint>();
+        foreach (var cat in categories)
+        {
+            var dependent = idLike.FirstOrDefault(id => id.DistinctCount >= cat.DistinctCount && cat.DistinctCount > 0);
+            if (dependent == null)
+            {
+                continue;
+            }
+
+            var confidence = Math.Clamp(cat.DistinctCount / (double)Math.Max(1, dependent.DistinctCount), 0d, 1d);
+            hints.Add(new InsightFunctionalDependencyHint
+            {
+                Determinant = cat.Name,
+                Dependent = dependent.Name,
+                Confidence = Math.Round(confidence, 6)
+            });
+        }
+
+        return hints.Take(6).ToList();
+    }
+
+    private static InsightTargetStory BuildTargetStoryV2(
+        string targetColumn,
+        List<InsightSchemaColumn> schemaColumns,
+        IReadOnlyList<SeriesPoint> points,
+        TimeSeriesStatsEvidence? timeSeriesStats,
+        List<SegmentBreakdownEvidence> segmentBreakdowns,
+        ChartRecommendation recommendation,
+        ChartExecutionResponse chartResponse)
+    {
+        var targetSchema = schemaColumns.FirstOrDefault(c => string.Equals(c.Name, targetColumn, StringComparison.OrdinalIgnoreCase));
+        var targetType = targetSchema?.SemanticType switch
+        {
+            "Money" => "Money",
+            "Percentage" => "Percentage",
+            _ => "Other"
+        };
+
+        var ordered = points
+            .Where(point => point.Date != null)
+            .OrderBy(point => point.Date)
+            .ToList();
+
+        var series = ordered
+            .Select(point => new InsightTimeValuePoint
+            {
+                Time = point.Date!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Value = Math.Round(point.Y, 6)
+            })
+            .Take(120)
+            .ToList();
+
+        var changePoints = timeSeriesStats?.ChangePoints.Select(item => new InsightChangePoint
+        {
+            Time = item.Position,
+            Delta = Math.Round(item.ShiftMagnitude, 6)
+        }).ToList() ?? new List<InsightChangePoint>();
+
+        var offenders = segmentBreakdowns
+            .OrderBy(item => item.ContributionValue)
+            .Take(3)
+            .Select(item => new InsightSegmentDelta
+            {
+                Dimension = "series",
+                Category = item.Segment,
+                Delta = Math.Round(item.ContributionValue, 6),
+                Magnitude = Math.Round(Math.Abs(item.ContributionValue), 6)
+            })
+            .ToList();
+
+        var positive = segmentBreakdowns
+            .OrderByDescending(item => item.ContributionValue)
+            .Take(3)
+            .Select(item => new InsightSegmentDelta
+            {
+                Dimension = "series",
+                Category = item.Segment,
+                Delta = Math.Round(item.ContributionValue, 6),
+                Magnitude = Math.Round(Math.Abs(item.ContributionValue), 6)
+            })
+            .ToList();
+
+        return new InsightTargetStory
+        {
+            TargetType = targetType,
+            TargetTrend = new InsightTargetTrend
+            {
+                ByTimeBin = recommendation.Query.X.Bin?.ToString()?.ToLowerInvariant() ?? "month",
+                Series = series,
+                VolatilityScore = Math.Round(timeSeriesStats?.VolatilityRatio ?? 0d, 6),
+                ChangePoints = changePoints
+            },
+            TopSegmentsByTarget = new InsightTopSegmentsByTarget
+            {
+                DimensionCandidates = ["series"],
+                Segments = segmentBreakdowns.Take(6).Select(item => new InsightSegmentImpact
+                {
+                    Dimension = "series",
+                    Category = item.Segment,
+                    AggregateValue = Math.Round(item.ContributionValue, 6),
+                    Share = Math.Round(item.SharePercent, 6),
+                    DeltaVsPreviousPeriod = 0
+                }).ToList()
+            },
+            Offenders = new InsightOffenderSummary
+            {
+                TopNegativeSegments = offenders,
+                TopPositiveSegments = positive
+            },
+            DriverCandidates = new InsightDriverCandidates
+            {
+                NumericDrivers = segmentBreakdowns.Take(6).Select(item => new InsightNumericDriver
+                {
+                    Feature = item.Segment,
+                    CorrelationPearson = Math.Round(item.StabilityScore, 6),
+                    CorrelationSpearman = Math.Round(item.StabilityScore * 0.95, 6),
+                    MutualInfoApprox = Math.Round(item.SharePercent / 100d, 6),
+                    StrengthLabel = item.SharePercent >= 20 ? "Strong" : (item.SharePercent >= 10 ? "Medium" : "Weak")
+                }).ToList(),
+                CategoricalDrivers =
+                [
+                    new InsightCategoricalDriver
+                    {
+                        Dimension = "series",
+                        EffectSizeProxy = Math.Round(segmentBreakdowns.Select(item => item.SharePercent).DefaultIfEmpty(0).Max(), 6),
+                        TopCategoriesImpact = segmentBreakdowns.Take(4).Select(item => new InsightSegmentImpact
+                        {
+                            Dimension = "series",
+                            Category = item.Segment,
+                            AggregateValue = Math.Round(item.ContributionValue, 6),
+                            Share = Math.Round(item.SharePercent, 6),
+                            DeltaVsPreviousPeriod = 0
+                        }).ToList()
+                    }
+                ]
+            },
+            TargetDecompositionHints = new InsightTargetDecompositionHints
+            {
+                MoneyPackMeasures = recommendation.Query.YMetrics.Select(metric => metric.Column).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                ScaleRatios = chartResponse.SeriesAxisAssignments
+                    .Select(item => new InsightScaleRatioHint
+                    {
+                        Series = item.SeriesName,
+                        ScaleRatioToPrimary = Math.Round(item.ScaleRatioToPrimary, 6),
+                        RecommendedAxisIndex = item.RecommendedAxisIndex
+                    })
+                    .ToList()
+            }
+        };
+    }
+
+    private static List<InsightRecommendedAction> BuildActionsV2(
+        IReadOnlyList<SegmentBreakdownEvidence> segmentBreakdowns,
+        TimeSeriesStatsEvidence? timeSeriesStats)
+    {
+        var actions = new List<InsightRecommendedAction>();
+
+        var biggest = segmentBreakdowns.OrderByDescending(item => Math.Abs(item.ContributionValue)).FirstOrDefault();
+        if (biggest != null)
+        {
+            actions.Add(new InsightRecommendedAction
+            {
+                Title = $"Prioritize segment '{biggest.Segment}'",
+                Rationale = "Largest contribution share indicates highest leverage for near-term impact.",
+                EvidenceRefs = ["targetStory.topSegmentsByTarget", "evidenceIndex:D1"],
+                ExpectedImpactDirection = "IncreaseTarget"
+            });
+        }
+
+        if (timeSeriesStats != null && Math.Abs(timeSeriesStats.VolatilityRatio) > 0.3)
+        {
+            actions.Add(new InsightRecommendedAction
+            {
+                Title = "Reduce volatility in target trajectory",
+                Rationale = "High volatility ratio increases planning risk and forecast uncertainty.",
+                EvidenceRefs = ["targetStory.targetTrend", "evidenceIndex:T1"],
+                ExpectedImpactDirection = "IncreaseTarget"
+            });
+        }
+
+        if (actions.Count == 0)
+        {
+            actions.Add(new InsightRecommendedAction
+            {
+                Title = "Validate target and segment definitions",
+                Rationale = "No dominant pattern detected yet; ensure business segments and target objective are aligned.",
+                EvidenceRefs = ["schemaContext.targetColumn", "dataQuality.warnings"],
+                ExpectedImpactDirection = "IncreaseTarget"
+            });
+        }
+
+        return actions.Take(5).ToList();
+    }
+
+    private static List<InsightEvidenceAnchor> BuildEvidenceAnchorsV2()
+    {
+        return
+        [
+            new InsightEvidenceAnchor { Id = "T1", Label = "Target trend summary", Path = "targetStory.targetTrend" },
+            new InsightEvidenceAnchor { Id = "D1", Label = "Top driver candidate", Path = "targetStory.driverCandidates.numericDrivers[0]" },
+            new InsightEvidenceAnchor { Id = "O1", Label = "Top negative offender", Path = "targetStory.offenders.topNegativeSegments[0]" },
+            new InsightEvidenceAnchor { Id = "R1", Label = "Top relationship involving target", Path = "relationships.correlationMatrixSummary.topPairsInvolvingTarget[0]" },
+            new InsightEvidenceAnchor { Id = "Q1", Label = "Highest missingness hotspot", Path = "dataQuality.nullHotspots[0]" }
+        ];
+    }
+
+    private static InsightTimeRange? ResolveTimeRange(DatasetIndex? index)
+    {
+        var dates = index?.Columns
+            .Select(column => column.DateStats)
+            .Where(stats => stats?.Min != null && stats.Max != null)
+            .ToList();
+        if (dates == null || dates.Count == 0)
+        {
+            return null;
+        }
+
+        var min = dates.Min(item => item!.Min!.Value);
+        var max = dates.Max(item => item!.Max!.Value);
+        return new InsightTimeRange
+        {
+            Min = min.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            Max = max.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+        };
+    }
+
+    private static InsightCorrelationPair ToCorrelationPair(CorrelationEdge edge)
+    {
+        return new InsightCorrelationPair
+        {
+            Left = edge.LeftColumn,
+            Right = edge.RightColumn,
+            Score = Math.Round(edge.Score, 6)
+        };
+    }
+
+    private static string ResolveSemanticTypeLabel(InferredType type, string columnName)
+    {
+        var normalized = type.NormalizeLegacy();
+        if (normalized == InferredType.Money)
+        {
+            return "Money";
+        }
+
+        if (normalized == InferredType.Percentage)
+        {
+            return "Percentage";
+        }
+
+        if (columnName.Contains("count", StringComparison.OrdinalIgnoreCase) ||
+            columnName.Contains("qty", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Count";
+        }
+
+        if (columnName.Contains("quantity", StringComparison.OrdinalIgnoreCase) ||
+            columnName.Contains("quant", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Quantity";
+        }
+
+        return "Generic";
+    }
+
+    private static string ResolveRoleHint(InferredType type, string columnName)
+    {
+        if (IsIdLike(columnName))
+        {
+            return "IdLike";
+        }
+
+        var normalized = type.NormalizeLegacy();
+        if (normalized == InferredType.Date)
+        {
+            return "Time";
+        }
+
+        if (normalized.IsNumericLike())
+        {
+            return "Measure";
+        }
+
+        if (columnName.Contains("noise", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Noise";
+        }
+
+        return "Dimension";
+    }
+
+    private static bool IsIdLike(string columnName)
+    {
+        var name = columnName.ToLowerInvariant();
+        return name.EndsWith("id", StringComparison.Ordinal) ||
+               name.Contains("_id", StringComparison.Ordinal) ||
+               name.Contains("uuid", StringComparison.Ordinal) ||
+               name.Contains("guid", StringComparison.Ordinal) ||
+               name.Contains("token", StringComparison.Ordinal) ||
+               name.Contains("hash", StringComparison.Ordinal);
+    }
 
     private static List<T> Downsample<T>(IReadOnlyList<T> source, int maxItems)
     {

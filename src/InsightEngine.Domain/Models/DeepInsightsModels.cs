@@ -1,4 +1,5 @@
 namespace InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.Insights;
 
 public class DeepInsightsRequest
 {
@@ -112,6 +113,7 @@ public class EvidencePackResult
 public class EvidencePack
 {
     public string EvidenceVersion { get; set; } = "v1";
+    public string PackVersion { get; set; } = "2.0";
     public Guid DatasetId { get; set; }
     public string RecommendationId { get; set; } = string.Empty;
     public string QueryHash { get; set; } = string.Empty;
@@ -122,6 +124,7 @@ public class EvidencePack
     public ForecastPack ForecastPack { get; set; } = new();
     public WhatIfConclusionPack? WhatIfConclusionPack { get; set; }
     public List<EvidenceFact> Facts { get; set; } = new();
+    public InsightPackV2? InsightPackV2 { get; set; }
     public List<AggregatedSamplePoint> AggregatedSample { get; set; } = new();
     public int SerializedBytes { get; set; }
     public bool Truncated { get; set; }
