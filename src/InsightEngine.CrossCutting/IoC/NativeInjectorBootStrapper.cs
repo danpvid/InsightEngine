@@ -9,6 +9,7 @@ using InsightEngine.Infra.Data.Context;
 using InsightEngine.Infra.Data.Repositories;
 using InsightEngine.Infra.Data.Services;
 using InsightEngine.Infra.Data.Services.FormulaDiscovery;
+using InsightEngine.Infra.Data.Services.FormulaInference;
 using InsightEngine.Infra.Data.UoW;
 using InsightEngine.Infra.ExternalService.Services;
 using MediatR;
@@ -93,6 +94,7 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<FeatureSelector>();
         services.AddScoped<FormulaCandidateRankingService>();
         services.AddScoped<IFormulaDiscoveryService, FormulaDiscoveryService>();
+        services.AddScoped<IFormulaInferenceEngine, FormulaInferenceEngine>();
         services.AddScoped<InsightEngine.Domain.Services.RecommendationEngine>();
         services.AddScoped<ILLMContextBuilder, LLMContextBuilder>();
         services.AddScoped<IEvidencePackService, EvidencePackService>();
