@@ -57,6 +57,66 @@ public class InsightPackAskResult
     public string Answer { get; set; } = string.Empty;
     public List<string> Caveats { get; set; } = new();
     public List<DeepInsightCitation> Citations { get; set; } = new();
+    public InsightAskStructuredResponse? AnswerJson { get; set; }
+    public List<InsightResolvedEvidence> EvidenceResolved { get; set; } = new();
     public AiGenerationMeta Meta { get; set; } = new();
     public SemanticInsightPack Pack { get; set; } = new();
+}
+
+public class InsightAskStructuredResponse
+{
+    public List<string> ExecutiveSummary { get; set; } = new();
+    public List<InsightAskFinding> KeyFindings { get; set; } = new();
+    public InsightAskDriverGroups TopDrivers { get; set; } = new();
+    public List<InsightAskOffender> Offenders { get; set; } = new();
+    public List<InsightAskRecommendation> Recommendations { get; set; } = new();
+    public List<string> Caveats { get; set; } = new();
+    public List<string> FollowUpQuestions { get; set; } = new();
+}
+
+public class InsightAskFinding
+{
+    public string Title { get; set; } = string.Empty;
+    public string Explanation { get; set; } = string.Empty;
+    public List<string> Evidence { get; set; } = new();
+    public string Confidence { get; set; } = "Medium";
+}
+
+public class InsightAskDriverGroups
+{
+    public List<InsightAskDriver> Negative { get; set; } = new();
+    public List<InsightAskDriver> Positive { get; set; } = new();
+}
+
+public class InsightAskDriver
+{
+    public string Name { get; set; } = string.Empty;
+    public string Why { get; set; } = string.Empty;
+    public List<string> Evidence { get; set; } = new();
+    public string Confidence { get; set; } = "Medium";
+}
+
+public class InsightAskOffender
+{
+    public string Name { get; set; } = string.Empty;
+    public string Impact { get; set; } = string.Empty;
+    public List<string> Evidence { get; set; } = new();
+    public string Confidence { get; set; } = "Medium";
+}
+
+public class InsightAskRecommendation
+{
+    public string Action { get; set; } = string.Empty;
+    public string ExpectedImpact { get; set; } = "IncreaseTarget";
+    public string Why { get; set; } = string.Empty;
+    public List<string> Evidence { get; set; } = new();
+    public string Risk { get; set; } = string.Empty;
+}
+
+public class InsightResolvedEvidence
+{
+    public string EvidenceId { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Path { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
 }

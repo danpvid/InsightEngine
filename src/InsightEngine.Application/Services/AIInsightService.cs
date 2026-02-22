@@ -8,6 +8,7 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Services;
 using InsightEngine.Domain.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -518,6 +519,12 @@ public class AIInsightService : IAIInsightService
 
         var pack = packResult.Data.Pack;
         var language = NormalizeLanguage(request.Language);
+        var promptSpec = InsightPromptBuilder.BuildInsightAskPrompt(
+            pack,
+            request.Question,
+            language,
+            BuildAskFilterSummary(request));
+
         var llmRequest = new LLMRequest
         {
             DatasetId = request.DatasetId,
@@ -526,8 +533,8 @@ public class AIInsightService : IAIInsightService
             FeatureKind = $"insights-ask-{language}",
             PromptVersion = $"{LLMPromptVersion.Value}-{pack.EvidenceVersion}",
             ResponseFormat = LLMResponseFormat.Json,
-            SystemPrompt = BuildInsightPackAskSystemPrompt(language),
-            UserPrompt = BuildInsightPackAskUserPrompt(request.Question, language),
+            SystemPrompt = promptSpec.SystemPrompt,
+            UserPrompt = promptSpec.UserPrompt,
             ContextObjects = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["insightPack"] = pack
@@ -535,13 +542,62 @@ public class AIInsightService : IAIInsightService
         };
 
         var llmResult = await _llmClient.GenerateJsonAsync(llmRequest, cancellationToken);
-        if (llmResult.IsSuccess && llmResult.Data != null)
+        var rawPayload = llmResult.Data?.Json ?? llmResult.Data?.Text;
+        var parsedStructured = TryParseInsightPackStructuredAnswer(rawPayload, out _);
+
+        if (parsedStructured == null && llmResult.IsSuccess && llmResult.Data != null && !string.IsNullOrWhiteSpace(rawPayload))
         {
-            var parsed = TryParseInsightPackAnswer(llmResult.Data.Json ?? llmResult.Data.Text);
-            if (parsed != null)
+            var repairRequest = new LLMRequest
             {
-                parsed.Pack = pack;
-                parsed.Meta = new AiGenerationMeta
+                DatasetId = request.DatasetId,
+                RecommendationId = request.RecommendationId,
+                QueryHash = pack.QueryHash,
+                FeatureKind = $"insights-ask-repair-{language}",
+                PromptVersion = $"{LLMPromptVersion.Value}-{pack.EvidenceVersion}-repair",
+                ResponseFormat = LLMResponseFormat.Json,
+                SystemPrompt = "You are a strict JSON repair assistant. Return valid JSON only.",
+                UserPrompt = InsightPromptBuilder.BuildRepairPrompt(rawPayload),
+                ContextObjects = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["insightPack"] = pack
+                }
+            };
+
+            var repairResult = await _llmClient.GenerateJsonAsync(repairRequest, cancellationToken);
+            if (repairResult.IsSuccess && repairResult.Data != null)
+            {
+                rawPayload = repairResult.Data.Json ?? repairResult.Data.Text;
+                parsedStructured = TryParseInsightPackStructuredAnswer(rawPayload, out _);
+            }
+        }
+
+        if (parsedStructured != null && llmResult.Data != null)
+        {
+            var resolvedEvidence = ResolveEvidence(parsedStructured, pack);
+            var citations = resolvedEvidence.Select(item => new DeepInsightCitation
+            {
+                EvidenceId = item.EvidenceId,
+                ShortClaim = item.Label
+            }).ToList();
+
+            var caveats = parsedStructured.Caveats.Take(8).ToList();
+            if (string.Equals(pack.PercentageScaleHint, "unknown", StringComparison.OrdinalIgnoreCase) &&
+                !caveats.Any(item => item.Contains("scale", StringComparison.OrdinalIgnoreCase) || item.Contains("escala", StringComparison.OrdinalIgnoreCase)))
+            {
+                caveats.Add(IsPortuguese(language)
+                    ? "Escala percentual desconhecida: confirme se os valores estão em 0-1 ou 0-100."
+                    : "Percentage scale is unknown: confirm whether values are in 0-1 or 0-100.");
+            }
+
+            return Result.Success(new InsightPackAskResult
+            {
+                Answer = parsedStructured.ExecutiveSummary.FirstOrDefault() ?? string.Empty,
+                Caveats = caveats,
+                Citations = citations,
+                AnswerJson = parsedStructured,
+                EvidenceResolved = resolvedEvidence,
+                Pack = pack,
+                Meta = new AiGenerationMeta
                 {
                     Provider = llmResult.Data.Provider,
                     Model = llmResult.Data.ModelId,
@@ -549,9 +605,8 @@ public class AIInsightService : IAIInsightService
                     CacheHit = llmResult.Data.CacheHit,
                     FallbackUsed = false,
                     ValidationStatus = "ok"
-                };
-                return Result.Success(parsed);
-            }
+                }
+            });
         }
 
         var caveat = pack.PercentageScaleHint switch
@@ -578,6 +633,8 @@ public class AIInsightService : IAIInsightService
                 EvidenceId = f.EvidenceId,
                 ShortClaim = f.ShortClaim
             }).ToList(),
+            AnswerJson = null,
+            EvidenceResolved = ResolveEvidenceFromFacts(pack),
             Meta = new AiGenerationMeta
             {
                 Provider = llmResult.Data?.Provider ?? LLMProvider.None,
@@ -1426,43 +1483,12 @@ If information is missing from context, keep fields null instead of guessing.
             BuildOutputLanguageInstruction(language));
     }
 
-    private static string BuildInsightPackAskSystemPrompt(string language)
+    private static InsightAskStructuredResponse? TryParseInsightPackStructuredAnswer(string? payload, out string? validationError)
     {
-        return """
-You answer data questions using only the provided insightPack context.
-Never assume access to raw rows.
-Never invent metrics or percentages.
-Return JSON only.
-"""
-        + Environment.NewLine
-        + BuildOutputLanguageInstruction(language);
-    }
-
-    private static string BuildInsightPackAskUserPrompt(string question, string language)
-    {
-        return string.Join('\n',
-            "Question:",
-            question,
-            string.Empty,
-            "Return JSON with this schema:",
-            "{",
-            "  \"answer\": \"string\",",
-            "  \"caveats\": [\"string\"],",
-            "  \"citations\": [",
-            "    {",
-            "      \"evidenceId\": \"string\",",
-            "      \"shortClaim\": \"string\"",
-            "    }",
-            "  ]",
-            "}",
-            string.Empty,
-            BuildOutputLanguageInstruction(language));
-    }
-
-    private static InsightPackAskResult? TryParseInsightPackAnswer(string? payload)
-    {
+        validationError = null;
         if (string.IsNullOrWhiteSpace(payload))
         {
+            validationError = "empty payload";
             return null;
         }
 
@@ -1472,66 +1498,367 @@ Return JSON only.
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
             {
+                validationError = "root is not object";
                 return null;
             }
 
-            var answer = root.TryGetProperty("answer", out var answerEl)
-                ? answerEl.GetString()
-                : null;
-            if (string.IsNullOrWhiteSpace(answer))
+            var executiveSummary = ReadStringArray(root, "executiveSummary", 6);
+            if (executiveSummary.Count == 0)
             {
+                validationError = "missing executiveSummary";
                 return null;
             }
 
-            var caveats = new List<string>();
-            if (root.TryGetProperty("caveats", out var caveatsEl) && caveatsEl.ValueKind == JsonValueKind.Array)
+            var keyFindings = new List<InsightAskFinding>();
+            if (root.TryGetProperty("keyFindings", out var keyFindingsEl) && keyFindingsEl.ValueKind == JsonValueKind.Array)
             {
-                foreach (var item in caveatsEl.EnumerateArray())
+                foreach (var finding in keyFindingsEl.EnumerateArray())
                 {
-                    var value = item.GetString();
-                    if (!string.IsNullOrWhiteSpace(value))
-                    {
-                        caveats.Add(value.Trim());
-                    }
-                }
-            }
-
-            var citations = new List<DeepInsightCitation>();
-            if (root.TryGetProperty("citations", out var citationsEl) && citationsEl.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var citation in citationsEl.EnumerateArray())
-                {
-                    if (citation.ValueKind != JsonValueKind.Object)
+                    if (finding.ValueKind != JsonValueKind.Object)
                     {
                         continue;
                     }
 
-                    var id = citation.TryGetProperty("evidenceId", out var idEl) ? idEl.GetString() : null;
-                    var claim = citation.TryGetProperty("shortClaim", out var claimEl) ? claimEl.GetString() : null;
-                    if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(claim))
+                    var title = finding.TryGetProperty("title", out var titleEl) ? titleEl.GetString() : null;
+                    var explanation = finding.TryGetProperty("explanation", out var explanationEl) ? explanationEl.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(explanation))
                     {
                         continue;
                     }
 
-                    citations.Add(new DeepInsightCitation
+                    keyFindings.Add(new InsightAskFinding
                     {
-                        EvidenceId = id.Trim(),
-                        ShortClaim = claim.Trim()
+                        Title = title.Trim(),
+                        Explanation = explanation.Trim(),
+                        Evidence = ReadStringArray(finding, "evidence", 10),
+                        Confidence = NormalizeConfidence(finding.TryGetProperty("confidence", out var confidenceEl) ? confidenceEl.GetString() : null)
                     });
                 }
             }
 
-            return new InsightPackAskResult
+            if (keyFindings.Count == 0)
             {
-                Answer = answer.Trim(),
-                Caveats = caveats.Take(6).ToList(),
-                Citations = citations.Take(12).ToList()
+                validationError = "missing keyFindings";
+                return null;
+            }
+
+            var topDrivers = new InsightAskDriverGroups();
+            if (root.TryGetProperty("topDrivers", out var topDriversEl) && topDriversEl.ValueKind == JsonValueKind.Object)
+            {
+                topDrivers.Negative = ReadDriverArray(topDriversEl, "negative");
+                topDrivers.Positive = ReadDriverArray(topDriversEl, "positive");
+            }
+
+            var offenders = new List<InsightAskOffender>();
+            if (root.TryGetProperty("offenders", out var offendersEl) && offendersEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var offender in offendersEl.EnumerateArray())
+                {
+                    if (offender.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    var name = offender.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        continue;
+                    }
+
+                    offenders.Add(new InsightAskOffender
+                    {
+                        Name = name.Trim(),
+                        Impact = offender.TryGetProperty("impact", out var impactEl) ? (impactEl.GetString() ?? string.Empty).Trim() : string.Empty,
+                        Evidence = ReadStringArray(offender, "evidence", 8),
+                        Confidence = NormalizeConfidence(offender.TryGetProperty("confidence", out var confidenceEl) ? confidenceEl.GetString() : null)
+                    });
+                }
+            }
+
+            var recommendations = new List<InsightAskRecommendation>();
+            if (root.TryGetProperty("recommendations", out var recommendationsEl) && recommendationsEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var recommendation in recommendationsEl.EnumerateArray())
+                {
+                    if (recommendation.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    var action = recommendation.TryGetProperty("action", out var actionEl) ? actionEl.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(action))
+                    {
+                        continue;
+                    }
+
+                    recommendations.Add(new InsightAskRecommendation
+                    {
+                        Action = action.Trim(),
+                        ExpectedImpact = recommendation.TryGetProperty("expectedImpact", out var expectedImpactEl)
+                            ? (expectedImpactEl.GetString() ?? "IncreaseTarget").Trim()
+                            : "IncreaseTarget",
+                        Why = recommendation.TryGetProperty("why", out var whyEl) ? (whyEl.GetString() ?? string.Empty).Trim() : string.Empty,
+                        Evidence = ReadStringArray(recommendation, "evidence", 8),
+                        Risk = recommendation.TryGetProperty("risk", out var riskEl) ? (riskEl.GetString() ?? string.Empty).Trim() : string.Empty
+                    });
+                }
+            }
+
+            var structured = new InsightAskStructuredResponse
+            {
+                ExecutiveSummary = executiveSummary,
+                KeyFindings = keyFindings.Take(10).ToList(),
+                TopDrivers = topDrivers,
+                Offenders = offenders.Take(8).ToList(),
+                Recommendations = recommendations.Take(8).ToList(),
+                Caveats = ReadStringArray(root, "caveats", 10),
+                FollowUpQuestions = ReadStringArray(root, "followUpQuestions", 8)
             };
+
+            if (!HasEvidenceReferences(structured))
+            {
+                validationError = "missing evidence anchors";
+                return null;
+            }
+
+            return structured;
         }
         catch (JsonException)
         {
+            validationError = "invalid json";
             return null;
         }
+    }
+
+    private static bool HasEvidenceReferences(InsightAskStructuredResponse structured)
+    {
+        var hasFindingsEvidence = structured.KeyFindings.Any(item => item.Evidence.Count > 0);
+        var hasRecommendationEvidence = structured.Recommendations.Any(item => item.Evidence.Count > 0);
+        var hasDriverEvidence = structured.TopDrivers.Negative.Any(item => item.Evidence.Count > 0) ||
+                                structured.TopDrivers.Positive.Any(item => item.Evidence.Count > 0);
+        return hasFindingsEvidence || hasRecommendationEvidence || hasDriverEvidence;
+    }
+
+    private static List<InsightAskDriver> ReadDriverArray(JsonElement topDriversEl, string propertyName)
+    {
+        var output = new List<InsightAskDriver>();
+        if (!topDriversEl.TryGetProperty(propertyName, out var arr) || arr.ValueKind != JsonValueKind.Array)
+        {
+            return output;
+        }
+
+        foreach (var driver in arr.EnumerateArray())
+        {
+            if (driver.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = driver.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            output.Add(new InsightAskDriver
+            {
+                Name = name.Trim(),
+                Why = driver.TryGetProperty("why", out var whyEl) ? (whyEl.GetString() ?? string.Empty).Trim() : string.Empty,
+                Evidence = ReadStringArray(driver, "evidence", 8),
+                Confidence = NormalizeConfidence(driver.TryGetProperty("confidence", out var confidenceEl) ? confidenceEl.GetString() : null)
+            });
+        }
+
+        return output.Take(8).ToList();
+    }
+
+    private static List<string> ReadStringArray(JsonElement root, string propertyName, int max)
+    {
+        var output = new List<string>();
+        if (!root.TryGetProperty(propertyName, out var arr) || arr.ValueKind != JsonValueKind.Array)
+        {
+            return output;
+        }
+
+        foreach (var item in arr.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            var value = item.GetString();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            output.Add(value.Trim());
+            if (output.Count >= max)
+            {
+                break;
+            }
+        }
+
+        return output;
+    }
+
+    private static string NormalizeConfidence(string? value)
+    {
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            "high" => "High",
+            "low" => "Low",
+            _ => "Medium"
+        };
+    }
+
+    private static List<InsightResolvedEvidence> ResolveEvidence(
+        InsightAskStructuredResponse structured,
+        SemanticInsightPack pack)
+    {
+        var ids = CollectEvidenceIds(structured).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList();
+        var factsById = pack.Facts.ToDictionary(item => item.EvidenceId, StringComparer.OrdinalIgnoreCase);
+        var anchorsById = (pack.PackV2?.EvidenceIndex ?? new List<InsightEngine.Domain.Models.Insights.InsightEvidenceAnchor>())
+            .ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
+
+        var resolved = new List<InsightResolvedEvidence>();
+        foreach (var id in ids)
+        {
+            if (factsById.TryGetValue(id, out var fact))
+            {
+                resolved.Add(new InsightResolvedEvidence
+                {
+                    EvidenceId = id,
+                    Label = fact.ShortClaim,
+                    Path = $"facts:{id}",
+                    Value = fact.Value
+                });
+                continue;
+            }
+
+            if (anchorsById.TryGetValue(id, out var anchor))
+            {
+                resolved.Add(new InsightResolvedEvidence
+                {
+                    EvidenceId = id,
+                    Label = anchor.Label,
+                    Path = anchor.Path,
+                    Value = ResolveAnchorValue(anchor.Id, pack)
+                });
+            }
+        }
+
+        return resolved;
+    }
+
+    private static string ResolveAnchorValue(string anchorId, SemanticInsightPack pack)
+    {
+        var v2 = pack.PackV2;
+        if (v2 == null)
+        {
+            return "not available";
+        }
+
+        return anchorId.ToUpperInvariant() switch
+        {
+            "T1" => v2.TargetStory?.TargetTrend.Series.Count > 0
+                ? $"{v2.TargetStory.TargetTrend.ByTimeBin}, points={v2.TargetStory.TargetTrend.Series.Count}, volatility={v2.TargetStory.TargetTrend.VolatilityScore:0.###}"
+                : "target trend not available",
+            "D1" => v2.TargetStory?.DriverCandidates.NumericDrivers.FirstOrDefault() is { } driver
+                ? $"{driver.Feature} (pearson={driver.CorrelationPearson:0.###}, spearman={driver.CorrelationSpearman:0.###})"
+                : "driver not available",
+            "O1" => v2.TargetStory?.Offenders.TopNegativeSegments.FirstOrDefault() is { } offender
+                ? $"{offender.Dimension}:{offender.Category} delta={offender.Delta:0.###}"
+                : "offender not available",
+            "R1" => v2.Relationships.CorrelationMatrixSummary.TopPairsInvolvingTarget.FirstOrDefault() is { } rel
+                ? $"{rel.Left} vs {rel.Right} score={rel.Score:0.###}"
+                : "relationship not available",
+            "Q1" => v2.DataQuality.NullHotspots.FirstOrDefault() is { } q
+                ? $"{q.Column} nullRate={q.NullRate:0.###}"
+                : "quality hotspot not available",
+            _ => "anchor available without scalar summary"
+        };
+    }
+
+    private static IEnumerable<string> CollectEvidenceIds(InsightAskStructuredResponse structured)
+    {
+        foreach (var finding in structured.KeyFindings)
+        {
+            foreach (var id in finding.Evidence)
+            {
+                yield return id;
+            }
+        }
+
+        foreach (var item in structured.TopDrivers.Negative)
+        {
+            foreach (var id in item.Evidence)
+            {
+                yield return id;
+            }
+        }
+
+        foreach (var item in structured.TopDrivers.Positive)
+        {
+            foreach (var id in item.Evidence)
+            {
+                yield return id;
+            }
+        }
+
+        foreach (var offender in structured.Offenders)
+        {
+            foreach (var id in offender.Evidence)
+            {
+                yield return id;
+            }
+        }
+
+        foreach (var recommendation in structured.Recommendations)
+        {
+            foreach (var id in recommendation.Evidence)
+            {
+                yield return id;
+            }
+        }
+    }
+
+    private static List<InsightResolvedEvidence> ResolveEvidenceFromFacts(SemanticInsightPack pack)
+    {
+        return pack.Facts.Take(10).Select(item => new InsightResolvedEvidence
+        {
+            EvidenceId = item.EvidenceId,
+            Label = item.ShortClaim,
+            Path = $"facts:{item.EvidenceId}",
+            Value = item.Value
+        }).ToList();
+    }
+
+    private static string? BuildAskFilterSummary(InsightPackAskRequest request)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(request.TimeBin))
+        {
+            parts.Add($"timeBin={request.TimeBin}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Aggregation))
+        {
+            parts.Add($"aggregation={request.Aggregation}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.GroupBy))
+        {
+            parts.Add($"groupBy={request.GroupBy}");
+        }
+
+        if (request.Filters.Count > 0)
+        {
+            parts.Add($"filters={request.Filters.Count}");
+        }
+
+        return parts.Count == 0 ? null : string.Join(", ", parts);
     }
 
     private static string InferPercentageScaleHint(EvidencePack pack)

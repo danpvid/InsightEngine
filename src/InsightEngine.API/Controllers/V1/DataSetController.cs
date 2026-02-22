@@ -1523,8 +1523,10 @@ OFFSET {offset};
         return ResponseResult(Result.Success(new
         {
             answer = result.Data!.Answer,
+            answerJson = result.Data.AnswerJson,
             caveats = result.Data.Caveats,
             citations = result.Data.Citations,
+            evidenceResolved = result.Data.EvidenceResolved,
             pack = result.Data.Pack,
             meta = result.Data.Meta
         }));
