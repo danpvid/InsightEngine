@@ -127,6 +127,19 @@
   flex-wrap: wrap;
 }
 
+.formula-expression {
+  word-break: break-word;
+  white-space: normal;
+  text-align: right;
+}
+
+.formula-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .explore-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;

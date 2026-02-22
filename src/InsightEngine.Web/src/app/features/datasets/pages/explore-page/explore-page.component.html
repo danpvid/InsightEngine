@@ -142,6 +142,47 @@
                     </ul>
                   </mat-card-content>
                 </mat-card>
+
+                <mat-card class="overview-card">
+                  <mat-card-header>
+                    <mat-card-title>Target Formula Suggestion</mat-card-title>
+                  </mat-card-header>
+                  <mat-card-content>
+                    <div *ngIf="formulaSuggestionExpression; else noFormulaSuggestion">
+                      <div class="kv-row">
+                        <span>Expression</span>
+                        <strong class="formula-expression">{{ formulaSuggestionExpression }}</strong>
+                      </div>
+                      <div class="kv-row">
+                        <span>Confidence</span>
+                        <strong>{{ formulaSuggestionConfidence }}</strong>
+                      </div>
+                      <div class="kv-row" *ngIf="formulaSuggestionUsedColumns.length > 0">
+                        <span>Used Columns</span>
+                        <strong>{{ formulaSuggestionUsedColumns.join(', ') }}</strong>
+                      </div>
+                    </div>
+
+                    <ng-template #noFormulaSuggestion>
+                      <div class="muted">No target formula suggestion available yet.</div>
+                    </ng-template>
+
+                    <div class="formula-actions">
+                      <button mat-flat-button color="primary" (click)="acceptTargetFormulaSuggestion()" [disabled]="!formulaSuggestionExpression || formulaActionLoading">
+                        <mat-icon>check</mat-icon>
+                        Accept
+                      </button>
+                      <button mat-stroked-button color="primary" (click)="editTargetFormulaSuggestion()" [disabled]="!canRunFormulaInferenceAgain || formulaActionLoading">
+                        <mat-icon>edit</mat-icon>
+                        Edit
+                      </button>
+                      <button mat-stroked-button color="primary" (click)="runFormulaInferenceAgain()" [disabled]="!canRunFormulaInferenceAgain || formulaActionLoading">
+                        <mat-icon>{{ formulaActionLoading ? 'hourglass_top' : 'refresh' }}</mat-icon>
+                        Run Again
+                      </button>
+                    </div>
+                  </mat-card-content>
+                </mat-card>
               </div>
               <ng-template #noOverview>
                 <div class="tab-placeholder">{{ 'explore.overviewPlaceholder' | translate }}</div>

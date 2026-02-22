@@ -104,6 +104,7 @@ export class ExplorePageComponent implements OnInit {
   selectedSavedViewId: string = '';
   activeFilters: string[] = [];
   pinnedFieldNames: string[] = [];
+  formulaActionLoading: boolean = false;
 
   readonly availableTypeFilters: string[] = ['Number', 'Date', 'String', 'Category', 'Boolean'];
   readonly correlationMethods: string[] = ['All', 'Pearson', 'Spearman', 'CramersV', 'EtaSquared', 'MutualInformation'];
@@ -147,6 +148,22 @@ export class ExplorePageComponent implements OnInit {
 
   get canViewRecommendations(): boolean {
     return !!this.datasetId && !!this.datasetName;
+  }
+
+  get formulaSuggestionExpression(): string {
+    return this.index?.targetFormulaSuggestion?.bestCandidateExpressionText?.trim() || '';
+  }
+
+  get formulaSuggestionConfidence(): string {
+    return this.index?.targetFormulaSuggestion?.confidence || 'Low';
+  }
+
+  get formulaSuggestionUsedColumns(): string[] {
+    return this.index?.targetFormulaSuggestion?.usedColumns || [];
+  }
+
+  get canRunFormulaInferenceAgain(): boolean {
+    return !!this.index?.targetColumn && !!this.datasetId;
   }
 
   get currentLanguage(): string {
@@ -755,6 +772,62 @@ export class ExplorePageComponent implements OnInit {
     });
   }
 
+  acceptTargetFormulaSuggestion(): void {
+    const expression = this.formulaSuggestionExpression;
+    const targetColumn = this.index?.targetColumn;
+
+    if (!expression || !targetColumn) {
+      this.toast.info('No formula suggestion available to accept.');
+      return;
+    }
+
+    this.runFormulaInference({
+      targetColumn,
+      mode: 'Manual',
+      manualExpression: expression
+    }, 'Formula suggestion accepted.');
+  }
+
+  editTargetFormulaSuggestion(): void {
+    const targetColumn = this.index?.targetColumn;
+    const currentExpression = this.formulaSuggestionExpression;
+
+    if (!targetColumn) {
+      this.toast.info('Target column is not available for formula inference.');
+      return;
+    }
+
+    const editedExpression = window.prompt('Edit formula expression', currentExpression || targetColumn);
+    if (editedExpression == null) {
+      return;
+    }
+
+    const normalizedExpression = editedExpression.trim();
+    if (!normalizedExpression) {
+      this.toast.info('Formula expression cannot be empty.');
+      return;
+    }
+
+    this.runFormulaInference({
+      targetColumn,
+      mode: 'Manual',
+      manualExpression: normalizedExpression
+    }, 'Formula updated and applied.');
+  }
+
+  runFormulaInferenceAgain(): void {
+    const targetColumn = this.index?.targetColumn;
+    if (!targetColumn) {
+      this.toast.info('Target column is not configured.');
+      return;
+    }
+
+    this.runFormulaInference({
+      targetColumn,
+      mode: 'Auto'
+    }, 'Formula inference completed.');
+  }
+
   exportIndexJson(): void {
     if (!this.index) {
       return;
@@ -895,6 +968,35 @@ export class ExplorePageComponent implements OnInit {
         this.indexErrorMessage = this.indexStatus?.message || 'Metadata index is not available yet.';
       }
     });
+  }
+
+  private runFormulaInference(
+    payload: {
+      targetColumn: string;
+      mode?: 'Auto' | 'Manual';
+      manualExpression?: string;
+    },
+    successMessage: string
+  ): void {
+    if (!this.datasetId || this.formulaActionLoading) {
+      return;
+    }
+
+    this.formulaActionLoading = true;
+    this.datasetApi.runFormulaInference(this.datasetId, payload)
+      .pipe(finalize(() => {
+        this.formulaActionLoading = false;
+      }))
+      .subscribe({
+        next: () => {
+          this.toast.success(successMessage);
+          this.metadataIndexApi.clearDatasetCache(this.datasetId);
+          this.loadIndex(true);
+        },
+        error: (err) => {
+          this.toast.error(HttpErrorUtil.extractErrorMessage(err));
+        }
+      });
   }
 
   private ensureFieldSelection(): void {

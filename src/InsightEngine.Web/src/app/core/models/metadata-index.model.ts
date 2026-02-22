@@ -33,6 +33,9 @@ export interface DatasetIndex {
   datasetId: string;
   builtAtUtc: string;
   version: string;
+  schemaConfirmed?: boolean;
+  targetColumn?: string | null;
+  ignoredColumnsCount?: number;
   rowCount: number;
   columnCount: number;
   quality: DatasetQualityIndex;
@@ -42,6 +45,42 @@ export interface DatasetIndex {
   tags: DatasetTag[];
   stats?: GlobalStatsIndex | null;
   limits: IndexLimits;
+  formulaInference?: FormulaInferenceIndexEntry | null;
+  targetFormulaSuggestion?: TargetFormulaSuggestionIndexEntry | null;
+}
+
+export interface FormulaInferenceIndexEntry {
+  updatedAtUtc: string;
+  result: FormulaInferenceResult;
+}
+
+export interface FormulaInferenceResult {
+  status: 'NotRun' | 'Running' | 'Completed' | 'Failed';
+  generatedAt: string;
+  targetColumn: string;
+  candidates: FormulaExpression[];
+  numericCandidateColumns: string[];
+  meta: Record<string, unknown>;
+  warnings: string[];
+}
+
+export interface FormulaExpression {
+  expressionText: string;
+  targetColumn: string;
+  usedColumns: string[];
+  depth: number;
+  operatorsUsed: string[];
+  epsilonMaxAbsError: number;
+  sampleRowsTested: number;
+  rowsFailed: number;
+  confidence: 'Low' | 'Medium' | 'High' | 'DeterministicLike';
+  notes?: string | null;
+}
+
+export interface TargetFormulaSuggestionIndexEntry {
+  bestCandidateExpressionText: string;
+  confidence: 'Low' | 'Medium' | 'High' | 'DeterministicLike';
+  usedColumns: string[];
 }
 
 export interface ColumnIndex {

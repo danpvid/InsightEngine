@@ -205,6 +205,32 @@ export class DatasetApiService {
     return this.http.get<ApiResponse<FormulaDiscoveryResult>>(url);
   }
 
+  runFormulaInference(
+    datasetId: string,
+    payload: {
+      targetColumn: string;
+      mode?: 'Auto' | 'Manual';
+      manualExpression?: string;
+      options?: {
+        maxColumns?: number;
+        maxDepth?: number;
+        epsilonAbs?: number;
+        includePercentageColumns?: boolean;
+      };
+    }
+  ): Observable<ApiResponse<any>> {
+    return this.http.post<ApiResponse<any>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/formula-inference/run`,
+      payload
+    );
+  }
+
+  getFormulaInference(datasetId: string): Observable<ApiResponse<any>> {
+    return this.http.get<ApiResponse<any>>(
+      `${this.baseUrl}/api/v1/datasets/${datasetId}/formula-inference`
+    );
+  }
+
   /**
    * Get chart data for a specific recommendation with optional dynamic parameters
    */
