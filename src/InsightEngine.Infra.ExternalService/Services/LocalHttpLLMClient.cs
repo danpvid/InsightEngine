@@ -49,16 +49,12 @@ public class LocalHttpLLMClient : ILLMClient
     {
         var settings = _settingsMonitor.CurrentValue;
         var sw = Stopwatch.StartNew();
-        var timeout = TimeSpan.FromSeconds(Math.Max(1, settings.TimeoutSeconds));
 
         try
         {
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(timeout);
-
             var baseUrl = NormalizeBaseUrl(settings.LocalHttp.BaseUrl);
             var endpoint = baseUrl.AppendPathSegment("api/generate");
-            var resolvedModel = await ResolveModelAsync(baseUrl, settings.LocalHttp, timeoutCts.Token);
+            var resolvedModel = await ResolveModelAsync(baseUrl, settings.LocalHttp, cancellationToken);
             var payload = BuildPayload(request, settings, responseFormat, resolvedModel);
 
             _logger.LogInformation(
@@ -72,8 +68,8 @@ public class LocalHttpLLMClient : ILLMClient
 
             var responseContent = await _flurlClient
                 .Request(endpoint)
-                .WithTimeout(timeout)
-                .PostJsonAsync(payload, cancellationToken: timeoutCts.Token)
+                .WithTimeout(TimeSpan.FromMilliseconds(-1))
+                .PostJsonAsync(payload, cancellationToken: cancellationToken)
                 .ReceiveString();
 
             var parsed = ParseResponse(responseContent);
@@ -146,9 +142,22 @@ public class LocalHttpLLMClient : ILLMClient
 
     private static string NormalizeBaseUrl(string baseUrl)
     {
-        return string.IsNullOrWhiteSpace(baseUrl)
+        var normalized = string.IsNullOrWhiteSpace(baseUrl)
             ? "http://localhost:11434"
             : baseUrl.TrimEnd('/');
+
+        if (Uri.TryCreate(normalized, UriKind.Absolute, out var uri) &&
+            string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            var builder = new UriBuilder(uri)
+            {
+                Host = "127.0.0.1"
+            };
+
+            return builder.Uri.ToString().TrimEnd('/');
+        }
+
+        return normalized;
     }
 
     private static Dictionary<string, object?> BuildPayload(
