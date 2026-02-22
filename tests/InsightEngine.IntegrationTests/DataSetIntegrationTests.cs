@@ -275,4 +275,100 @@ public class DataSetIntegrationTests : IAsyncLifetime
         finalizeData.GetProperty("targetColumn").GetString().Should().Be("sales");
         finalizeData.GetProperty("schemaVersion").GetInt32().Should().Be(1);
     }
+
+    [Fact]
+    public async Task FormulaInference_RunAndGetEndpoints_ShouldReturnPersistedMetadata()
+    {
+        var csv = "unit_price,quantity,total\n10,2,20\n12,3,36\n15,4,60\n8,5,40\n7,6,42\n";
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client, csv, "formula-run.csv");
+
+        var buildResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/index:build",
+            new
+            {
+                maxColumnsForCorrelation = 10,
+                topKEdgesPerColumn = 5,
+                sampleRows = 5000,
+                includeStringPatterns = true,
+                includeDistributions = true
+            });
+        buildResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var runResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/formula-inference/run",
+            new
+            {
+                targetColumn = "total",
+                mode = "Auto",
+                options = new
+                {
+                    maxColumns = 3,
+                    maxDepth = 2,
+                    epsilonAbs = 0.0001,
+                    includePercentageColumns = false
+                }
+            });
+
+        runResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var runPayload = JsonDocument.Parse(await runResponse.Content.ReadAsStringAsync());
+        var runData = runPayload.RootElement.GetProperty("data");
+        runData.GetProperty("targetColumn").GetString().Should().Be("total");
+        runData.TryGetProperty("formulaInference", out var formulaInferenceElement).Should().BeTrue();
+        formulaInferenceElement.ValueKind.Should().NotBe(JsonValueKind.Null);
+
+        var getResponse = await _client.GetAsync($"/api/v1/datasets/{datasetId}/formula-inference");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var getPayload = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+        var getData = getPayload.RootElement.GetProperty("data");
+        getData.TryGetProperty("formulaInference", out var persistedInference).Should().BeTrue();
+        persistedInference.ValueKind.Should().NotBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task FinalizeImport_WithFormulaInferenceEnabled_ShouldTriggerInferenceFlow()
+    {
+        var csv = "unit_price,quantity,total\n10,2,20\n12,3,36\n15,4,60\n8,5,40\n7,6,42\n";
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client, csv, "formula-finalize.csv");
+
+        var buildResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/index:build",
+            new
+            {
+                maxColumnsForCorrelation = 10,
+                topKEdgesPerColumn = 5,
+                sampleRows = 5000,
+                includeStringPatterns = true,
+                includeDistributions = true
+            });
+        buildResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var finalizeResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/finalize",
+            new
+            {
+                targetColumn = "total",
+                ignoredColumns = Array.Empty<string>(),
+                columnTypeOverrides = new Dictionary<string, string>(),
+                currencyCode = "BRL",
+                formulaInference = new
+                {
+                    enabled = true,
+                    maxColumns = 3,
+                    maxDepth = 2,
+                    epsilonAbs = 0.0001,
+                    includePercentageColumns = false
+                }
+            });
+
+        finalizeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var finalizeJson = JsonDocument.Parse(await finalizeResponse.Content.ReadAsStringAsync());
+        var data = finalizeJson.RootElement.GetProperty("data");
+        data.GetProperty("targetColumn").GetString().Should().Be("total");
+        data.TryGetProperty("formulaInference", out var formulaInference).Should().BeTrue();
+        formulaInference.GetProperty("triggered").GetBoolean().Should().BeTrue();
+        formulaInference.GetProperty("status").GetString().Should().Be("completed");
+    }
 }
