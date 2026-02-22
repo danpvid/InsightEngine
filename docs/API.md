@@ -10,6 +10,7 @@
 - [Endpoints](#endpoints)
   - [Auth](#1-auth-endpoints)
   - [Datasets](#2-dataset-endpoints)
+  - [Formula Inference](#22-formula-inference-optional)
   - [Charts](#3-chart-endpoints)
   - [Insights V2](#4-insights-v2-endpoints)
 - [Data Models](#data-models)
@@ -1198,6 +1199,88 @@ curl -X POST "https://localhost:5000/api/v1/charts/scatter" \
 
 ---
 
+### 2.2 Formula Inference (Optional)
+
+Formula inference is deterministic and optional. It can be executed explicitly or triggered in the import finalize flow.
+
+#### 2.2.1 Run Formula Inference
+
+**Endpoint:** `POST /api/v1/datasets/{id}/formula-inference/run`
+
+**Request Body (Auto mode):**
+```json
+{
+  "targetColumn": "total",
+  "mode": "Auto",
+  "options": {
+    "maxColumns": 3,
+    "maxDepth": 2,
+    "epsilonAbs": 0.0001,
+    "includePercentageColumns": false
+  }
+}
+```
+
+**Request Body (Manual mode):**
+```json
+{
+  "targetColumn": "total",
+  "mode": "Manual",
+  "manualExpression": "unit_price * quantity"
+}
+```
+
+**Notes:**
+- `mode` accepts `Auto` or `Manual`
+- In `Manual`, expression is validated against known/non-ignored columns
+- In `Auto`, candidates are numeric columns (excluding target)
+
+#### 2.2.2 Get Formula Inference Metadata
+
+**Endpoint:** `GET /api/v1/datasets/{id}/formula-inference`
+
+**Response 200 OK (summary):**
+```json
+{
+  "success": true,
+  "data": {
+    "formulaInference": {
+      "status": "Completed",
+      "targetColumn": "total"
+    },
+    "selectedFormula": {
+      "source": "Manual"
+    }
+  }
+}
+```
+
+#### 2.2.3 Trigger in Finalize Import
+
+**Endpoint:** `POST /api/v1/datasets/{id}/finalize`
+
+`formulaInference` is optional and preserves backward compatibility.
+
+```json
+{
+  "targetColumn": "total",
+  "ignoredColumns": [],
+  "columnTypeOverrides": {},
+  "currencyCode": "BRL",
+  "formulaInference": {
+    "enabled": true,
+    "maxColumns": 3,
+    "maxDepth": 2,
+    "epsilonAbs": 0.0001,
+    "includePercentageColumns": false
+  }
+}
+```
+
+When enabled, response includes a `formulaInference` block with `triggered` and execution `status`.
+
+---
+
 ## 📚 Additional Resources
 
 ### Related Documentation
@@ -1272,6 +1355,15 @@ Server logs include this ID for end-to-end tracing.
 ---
 
 ## 📝 Changelog
+
+### v1.1 - 2026-02-22
+
+**Added:**
+- Deterministic formula inference endpoints:
+  - `POST /api/v1/datasets/{id}/formula-inference/run`
+  - `GET /api/v1/datasets/{id}/formula-inference`
+- Optional formula inference trigger in finalize import (`/datasets/{id}/finalize`)
+- Manual formula validation and `selectedFormula` metadata persistence
 
 ### v1.0 - 2026-02-14 (Day 6)
 
