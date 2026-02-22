@@ -171,6 +171,8 @@ export interface AiGenerationMeta {
   evidenceBytes?: number;
   outputBytes?: number;
   validationStatus?: string;
+  packVersion?: string;
+  confidenceScore?: number;
 }
 
 export interface ExplainChartResponse {
@@ -209,6 +211,7 @@ export interface DeepInsightsRequest extends AiSummaryRequest {
   horizon?: number;
   sensitiveMode?: boolean;
   includeEvidence?: boolean;
+  outputMode?: 'Executive' | 'DeepDive';
 }
 
 export interface DeepInsightsResponse {
@@ -340,10 +343,25 @@ export interface InsightPackAskRequest extends SemanticInsightPackRequest {
   question: string;
 }
 
+export interface InsightAskStructuredResponse {
+  executiveSummary?: string[];
+  caveats?: string[];
+}
+
+export interface InsightResolvedEvidence {
+  evidenceId: string;
+  label: string;
+  path: string;
+  value: string;
+}
+
 export interface InsightPackAskResponse {
   answer: string;
   caveats: string[];
   citations: DeepInsightCitation[];
+  answerJson?: InsightAskStructuredResponse | null;
+  evidenceResolved?: InsightResolvedEvidence[];
+  packVersion?: string;
   pack: SemanticInsightPack;
   meta: AiGenerationMeta;
 }

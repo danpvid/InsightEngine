@@ -350,6 +350,10 @@
     flex: 1;
   }
 
+  .ask-mode-field {
+    min-width: 160px;
+  }
+
   .ask-plan-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -251,6 +251,13 @@
               <mat-label>{{ 'chartViewer.askLabel' | translate }}</mat-label>
               <input matInput [(ngModel)]="askQuestion" [placeholder]="'chartViewer.askPlaceholder' | translate" />
             </mat-form-field>
+            <mat-form-field appearance="outline" class="ask-mode-field">
+              <mat-label>Output mode</mat-label>
+              <mat-select [(ngModel)]="insightOutputMode">
+                <mat-option value="DeepDive">DeepDive</mat-option>
+                <mat-option value="Executive">Executive</mat-option>
+              </mat-select>
+            </mat-form-field>
             <button mat-flat-button color="primary" (click)="submitAskQuestion()" [disabled]="askLoading">
               {{ askLoading ? ('chartViewer.analyzing' | translate) : ('chartViewer.ask' | translate) }}
             </button>
@@ -287,7 +294,31 @@
 
           <div class="insight-subsection" *ngIf="insightAskResult as semanticAnswer">
             <h4>Insight Pack Answer</h4>
+            <div class="insight-chips">
+              <mat-chip color="primary" selected *ngIf="semanticAnswer.packVersion || semanticAnswer.meta.packVersion">
+                pack: {{ semanticAnswer.packVersion || semanticAnswer.meta.packVersion }}
+              </mat-chip>
+              <mat-chip color="primary" selected *ngIf="semanticAnswer.meta.confidenceScore !== undefined && semanticAnswer.meta.confidenceScore !== null">
+                confidence: {{ semanticAnswer.meta.confidenceScore | number:'1.2-2' }}
+              </mat-chip>
+              <mat-chip color="warn" selected *ngIf="semanticAnswer.meta.fallbackUsed">
+                fallback
+              </mat-chip>
+              <mat-chip color="accent" selected *ngIf="semanticAnswer.meta.validationStatus">
+                validation: {{ semanticAnswer.meta.validationStatus }}
+              </mat-chip>
+            </div>
             <p>{{ semanticAnswer.answer }}</p>
+
+            <div class="insight-subsection" *ngIf="semanticAnswer.evidenceResolved?.length">
+              <h4>Evidence resolved</h4>
+              <ul class="insight-bullets">
+                <li *ngFor="let item of semanticAnswer.evidenceResolved | slice:0:8">
+                  <strong>{{ item.evidenceId }}</strong> — {{ item.label }} ({{ item.path }}): {{ item.value }}
+                </li>
+              </ul>
+            </div>
+
             <ul class="insight-bullets" *ngIf="semanticAnswer.caveats?.length">
               <li *ngFor="let caveat of semanticAnswer.caveats">{{ caveat }}</li>
             </ul>

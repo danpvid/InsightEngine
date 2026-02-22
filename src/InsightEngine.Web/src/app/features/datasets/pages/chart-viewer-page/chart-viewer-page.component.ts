@@ -176,6 +176,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   semanticPack: SemanticInsightPackResponse | null = null;
   semanticPackLoading: boolean = false;
   semanticPackError: string | null = null;
+  insightOutputMode: 'Executive' | 'DeepDive' = 'DeepDive';
   insightAskResult: InsightPackAskResponse | null = null;
   insightAskLoading: boolean = false;
   insightAskError: string | null = null;
@@ -239,7 +240,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   selectedMetric: string = '';
   selectedMetricsY: string[] = [];
   separateYAxes: boolean = false;
-  metricAxisOverride: Record<string, 0 | 1> = {};
+  metricAxisOverride: Partial<Record<string, 0 | 1>> = {};
   metricToAdd: string = '';
   selectedXAxis: string = '';
   selectedGroupBy: string = '';
@@ -1476,7 +1477,8 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       ...basePayload,
       horizon: this.deepInsightsHorizon,
       sensitiveMode: this.deepInsightsSensitiveMode,
-      includeEvidence: true
+      includeEvidence: true,
+      outputMode: this.insightOutputMode
     };
 
     if (this.deepInsightsUseScenario) {
@@ -3634,7 +3636,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const nextOverrides: Record<string, 0 | 1> = {};
+    const nextOverrides: Partial<Record<string, 0 | 1>> = {};
     for (const assignment of assignments) {
       nextOverrides[assignment.columnName] = (assignment.yAxisIndex === 1 ? 1 : 0);
     }
@@ -3643,7 +3645,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   private applyRecommendedAxisOverrides(): void {
-    const nextOverrides: Record<string, 0 | 1> = { ...this.metricAxisOverride };
+    const nextOverrides: Partial<Record<string, 0 | 1>> = { ...this.metricAxisOverride };
     for (const assignment of this.seriesAssignmentsFromMeta) {
       nextOverrides[assignment.columnName] = (assignment.recommendedAxisIndex === 1 ? 1 : 0);
     }
