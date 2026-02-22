@@ -131,7 +131,7 @@
         <div class="chart-details" *ngIf="rec.includedColumns?.length">
           <div class="detail-row">
             <mat-icon>dataset</mat-icon>
-            <span><strong>Columns</strong> {{ rec.includedColumns.slice(0, 4).join(', ') }}</span>
+            <span><strong>Columns</strong> {{ (rec.includedColumns ?? []).slice(0, 4).join(', ') }}</span>
           </div>
         </div>
 

@@ -130,7 +130,198 @@ mat-card {
 .controls-card, .data-grid-card, .simulation-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
 .controls-card .controls-section, .simulation-card .simulation-ops-header { padding: 8px 0; }
 .data-grid-card .data-grid-table-wrapper { overflow: auto; max-height: 460px; border: 1px solid var(--border); border-radius: 8px; }
-.simulation-card .simulation-operation { padding: 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
+
+.simulation-card .mat-mdc-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.simulation-card .simulation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.simulation-card .simulation-grid .mat-mdc-form-field,
+.simulation-card .simulation-operation .mat-mdc-form-field {
+  width: 100%;
+}
+
+.simulation-card .simulation-ops-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.simulation-card .simulation-ops-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.simulation-card .inline-filters-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.simulation-card .simulation-operation {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.simulation-card .simulation-operation-preview {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.simulation-card .simulation-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.simulation-card .simulation-error {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  background: var(--chip-bg);
+  font-size: 12px;
+}
+
+.simulation-card .simulation-result {
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.simulation-card .delta-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.simulation-card .delta-cards mat-card {
+  margin-bottom: 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: none;
+  padding: 10px;
+}
+
+.simulation-card .delta-title {
+  font-size: 11px;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.simulation-card .delta-value {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.simulation-card .simulation-chart-wrapper {
+  min-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 8px;
+}
+
+.simulation-card .simulation-chart {
+  height: 400px;
+}
+
+.simulation-card .simulation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.simulation-card .insight-subsection h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.simulation-card .insight-bullets {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.simulation-card .bullet-with-action {
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+@media (max-width: 1200px) {
+  .simulation-card .simulation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .simulation-card .simulation-operation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .simulation-card .simulation-operation-preview {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .simulation-card .simulation-grid,
+  .simulation-card .simulation-operation,
+  .simulation-card .delta-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .simulation-card .simulation-chart-wrapper {
+    min-height: 360px;
+  }
+
+  .simulation-card .simulation-chart {
+    height: 340px;
+  }
+
+  .simulation-card .bullet-with-action {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
 
 /* Chart-card / drilldown (extracted) */
 .chart-card { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; }

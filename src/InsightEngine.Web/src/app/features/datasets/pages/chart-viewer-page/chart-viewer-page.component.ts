@@ -2536,7 +2536,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
     const useLine = dimensions.every(dim => /\d{4}[-/]\d{2}[-/]\d{2}/.test(dim) || /^\d{6,8}$/.test(dim));
     const chartType = useLine ? 'line' : 'bar';
 
-    return {
+    const option: EChartsOption = {
       title: {
         text: 'Baseline vs Simulado',
         subtext: `${result.targetMetric} por ${result.targetDimension}`
@@ -2582,6 +2582,9 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
         }
       ]
     };
+
+    this.applyThemeToEchartsOption(option as Record<string, unknown>);
+    return option;
   }
 
   private onSimulationChartClick(event: unknown): void {
