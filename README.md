@@ -257,12 +257,65 @@ Principais endpoints:
 - `POST /api/v1/datasets/{id}/charts/{recommendationId}/explain` - explicacao estruturada
 - `POST /api/v1/datasets/{id}/charts/{recommendationId}/deep-insights` - narrativa analitica profunda com citacoes de evidencias
 - `POST /api/v1/datasets/{id}/ask` - pergunta NL -> analysis plan (sem SQL execution)
-- `POST /api/v1/datasets/{id}/insights/pack` - gera Semantic Insight Pack (drivers/correlations/facts) sem expor linhas brutas
-- `POST /api/v1/datasets/{id}/insights/ask` - responde pergunta usando apenas Insight Pack + citacoes
+- `POST /api/v1/datasets/{id}/insights/pack` - gera Insight Pack v2 sem expor linhas brutas
+- `GET /api/v1/datasets/{id}/insights/pack` - gera Insight Pack v2 via query params (idempotente para debug/manual testing)
+- `POST /api/v1/datasets/{id}/insights/ask` - responde pergunta usando apenas Insight Pack + evidencias resolvidas
 - `POST /api/v1/datasets/{id}/simulate` - simulacao
 - `POST /api/v1/datasets/cleanup` - cleanup manual (dev/admin)
 - `GET /health` e `GET /health/ready`
 - `POST /api/v1/auth/login` - login demo JWT
+
+## Insights v2 (Pack + Ask)
+
+Objetivo: respostas de negocio acionaveis, auditaveis e seguras por design.
+
+Principios nao-negociaveis:
+- Sem envio de linhas brutas para LLM.
+- Toda afirmacao numerica deve estar ancorada em evidencia (`evidenceId`).
+- Linguagem causal e sanitizada para associacao/correlacao quando necessario.
+- Escala percentual preservada em raw scale (0-1, 0-100, ou unknown).
+
+### Fluxo recomendado
+1. Gerar pack (`/insights/pack`) com filtros/timeframe/segmentacao.
+2. Fazer pergunta (`/insights/ask`) com `outputMode` (`DeepDive` ou `Executive`).
+3. Renderizar `answer`, `answerJson`, `evidenceResolved`, `meta.confidenceScore` e `meta.validationStatus`.
+
+### Exemplo: gerar Insight Pack v2
+```bash
+curl -X POST "http://localhost:5000/api/v1/datasets/{datasetId}/insights/pack" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recommendationId": "rec_001",
+    "aggregation": "Sum",
+    "timeBin": "Month",
+    "metricY": "sales",
+    "groupBy": "region",
+    "outputMode": "DeepDive"
+  }'
+```
+
+### Exemplo: ask com modo Executive
+```bash
+curl -X POST "http://localhost:5000/api/v1/datasets/{datasetId}/insights/ask" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recommendationId": "rec_001",
+    "question": "Quais acoes priorizar para melhorar o target no proximo mes?",
+    "aggregation": "Sum",
+    "timeBin": "Month",
+    "metricY": "sales",
+    "groupBy": "region",
+    "outputMode": "Executive"
+  }'
+```
+
+### Campos principais da resposta de ask v2
+- `answer`: resposta textual curta para exibicao imediata.
+- `answerJson`: estrutura padronizada (executiveSummary, findings, drivers, recommendations).
+- `evidenceResolved`: evidencias resolvidas (`evidenceId`, `label`, `path`, `value`) para auditoria UI.
+- `packVersion`: versao do pack utilizada na resposta.
+- `meta.confidenceScore`: score agregado (0-1) considerando cobertura de evidencia e confianca declarada.
+- `meta.validationStatus`: `ok`, `ok_sanitized` ou `fallback`.
 
 ## Exemplos de resposta
 
@@ -387,6 +440,36 @@ Principais endpoints:
     "explainability": {
       "evidenceUsedCount": 14,
       "topEvidenceIdsUsed": ["TS_TREND_SLOPE", "DIST_MEAN_METRIC"]
+    }
+  }
+}
+```
+
+### Insight Pack Ask v2 (resumido)
+```json
+{
+  "success": true,
+  "data": {
+    "answer": "As principais oportunidades estao associadas a segmentos com maior share e estabilidade.",
+    "answerJson": {
+      "executiveSummary": ["..."],
+      "caveats": ["..."]
+    },
+    "evidenceResolved": [
+      {
+        "evidenceId": "D1",
+        "label": "Driver candidate",
+        "path": "packV2.targetStory.driverCandidates.numericDrivers[0]",
+        "value": "price (pearson=0.42, spearman=0.39)"
+      }
+    ],
+    "packVersion": "2.0",
+    "meta": {
+      "provider": "LocalHttp",
+      "model": "llama3.2",
+      "validationStatus": "ok_sanitized",
+      "confidenceScore": 0.78,
+      "fallbackUsed": false
     }
   }
 }

@@ -11,6 +11,7 @@
   - [Auth](#1-auth-endpoints)
   - [Datasets](#2-dataset-endpoints)
   - [Charts](#3-chart-endpoints)
+  - [Insights V2](#4-insights-v2-endpoints)
 - [Data Models](#data-models)
 - [Error Handling](#error-handling)
 - [Security and Limits](#security-and-limits)
@@ -228,6 +229,130 @@ curl -X POST "https://localhost:5000/api/v1/datasets" \
   -H "Authorization: Bearer {token}" \
   -F "file=@samples/ecommerce_sales.csv"
 ```
+
+---
+
+## 4. Insights V2 Endpoints
+
+Insights v2 provides an evidence-first flow:
+- Build/retrieve compact pack with aggregated evidence only (no raw rows).
+- Ask natural-language questions grounded exclusively in pack evidence.
+- Return explainable evidence references (`evidenceResolved`) and confidence metadata.
+
+### 4.1 Build Insight Pack v2 (POST)
+
+**Endpoint:** `POST /api/v1/datasets/{id}/insights/pack`
+
+**Request Body (summary):**
+```json
+{
+  "recommendationId": "rec_001",
+  "aggregation": "Sum",
+  "timeBin": "Month",
+  "metricY": "sales",
+  "groupBy": "region",
+  "month": "2026-01",
+  "dateFrom": "2026-01-01",
+  "dateTo": "2026-01-31",
+  "segmentColumn": "region",
+  "segmentValue": "South",
+  "outputMode": "DeepDive",
+  "filters": ["region|Eq|South"]
+}
+```
+
+**Response 200 OK (summary):**
+```json
+{
+  "success": true,
+  "data": {
+    "version": "2.0",
+    "pack": {
+      "datasetId": "...",
+      "recommendationId": "rec_001",
+      "evidenceVersion": "v2"
+    },
+    "packV2": {
+      "datasetSummary": { "rowCount": 12450 },
+      "targetStory": {},
+      "actions": {}
+    },
+    "meta": {
+      "provider": "None",
+      "model": "deterministic-pack",
+      "packVersion": "2.0"
+    }
+  }
+}
+```
+
+### 4.2 Get Insight Pack v2 (GET)
+
+**Endpoint:** `GET /api/v1/datasets/{id}/insights/pack`
+
+Use query parameters equivalent to the POST body (`recommendationId`, `aggregation`, `timeBin`, `metricY`, `groupBy`, `month`, `dateFrom`, `dateTo`, `segmentColumn`, `segmentValue`, `outputMode`, `filters`).
+
+Returns the same shape as POST.
+
+### 4.3 Ask with Insight Pack v2
+
+**Endpoint:** `POST /api/v1/datasets/{id}/insights/ask`
+
+**Request Body (summary):**
+```json
+{
+  "recommendationId": "rec_001",
+  "question": "Which actions should be prioritized next month?",
+  "aggregation": "Sum",
+  "timeBin": "Month",
+  "metricY": "sales",
+  "groupBy": "region",
+  "outputMode": "Executive",
+  "filters": ["region|Eq|South"]
+}
+```
+
+**Response 200 OK (summary):**
+```json
+{
+  "success": true,
+  "data": {
+    "answer": "Prioritize high-share and stable segments first.",
+    "answerJson": {
+      "executiveSummary": ["..."],
+      "caveats": ["..."]
+    },
+    "caveats": ["Causal wording was rewritten..."],
+    "citations": [{ "evidenceId": "D1", "shortClaim": "Driver candidate" }],
+    "evidenceResolved": [
+      {
+        "evidenceId": "D1",
+        "label": "Driver candidate",
+        "path": "packV2.targetStory.driverCandidates.numericDrivers[0]",
+        "value": "price (pearson=0.42, spearman=0.39)"
+      }
+    ],
+    "packVersion": "2.0",
+    "meta": {
+      "provider": "LocalHttp",
+      "model": "llama3.2",
+      "validationStatus": "ok_sanitized",
+      "confidenceScore": 0.78,
+      "fallbackUsed": false
+    }
+  }
+}
+```
+
+### 4.4 Validation and safety notes
+
+- `outputMode` supports `DeepDive` and `Executive`.
+- `validationStatus` can be:
+  - `ok`: valid structured answer.
+  - `ok_sanitized`: answer required anti-causality rewrite.
+  - `fallback`: deterministic fallback due to invalid/unavailable LLM output.
+- `confidenceScore` is a bounded aggregate score (`0.05` to `0.98`) based on evidence coverage and declared confidence.
+- `packVersion` allows client-side compatibility checks.
 
 ---
 
