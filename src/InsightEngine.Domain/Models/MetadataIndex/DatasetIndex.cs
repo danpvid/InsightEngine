@@ -24,6 +24,7 @@ public class DatasetIndex
     public IndexLimits Limits { get; set; } = new();
     public FormulaDiscoveryIndexEntry? FormulaDiscovery { get; set; }
     public FormulaInferenceIndexEntry? FormulaInference { get; set; }
+    public SelectedFormulaIndexEntry? SelectedFormula { get; set; }
 }
 
 public class FormulaDiscoveryIndexEntry
@@ -37,6 +38,13 @@ public class FormulaInferenceIndexEntry
 {
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public FormulaInferenceResult Result { get; set; } = new();
+}
+
+public class SelectedFormulaIndexEntry
+{
+    public DateTimeOffset SelectedAtUtc { get; set; }
+    public string Source { get; set; } = "Manual";
+    public FormulaExpression Formula { get; set; } = new();
 }
 
 public class ColumnIndex

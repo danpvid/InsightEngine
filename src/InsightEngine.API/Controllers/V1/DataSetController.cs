@@ -6,6 +6,9 @@ using InsightEngine.Domain.Core.Notifications;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.Formulas;
+using InsightEngine.Domain.Models.ImportSchema;
+using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Settings;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -32,9 +35,13 @@ public class DataSetController : BaseController
     private readonly IAIInsightService _aiInsightService;
     private readonly IDataSetCleanupService _dataSetCleanupService;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IDataSetSchemaStore _schemaStore;
+    private readonly IIndexStore _indexStore;
+    private readonly IFormulaInferenceEngine _formulaInferenceEngine;
     private readonly ILogger<DataSetController> _logger;
     private readonly IWebHostEnvironment _environment;
     private readonly InsightEngineSettings _runtimeSettings;
+    private readonly FormulaInferenceSettings _formulaInferenceSettings;
     private const int RawRangeDistinctThreshold = 20;
     private int RawTopValuesLimit => Math.Clamp(_runtimeSettings.RawTopValuesLimit, 3, 50);
     private int RawTopRangesLimit => Math.Clamp(_runtimeSettings.RawTopRangesLimit, 3, 20);
@@ -45,20 +52,28 @@ public class DataSetController : BaseController
         IAIInsightService aiInsightService,
         IDataSetCleanupService dataSetCleanupService,
         IFileStorageService fileStorageService,
+        IDataSetSchemaStore schemaStore,
+        IIndexStore indexStore,
+        IFormulaInferenceEngine formulaInferenceEngine,
         IDomainNotificationHandler notificationHandler,
         IMediator mediator,
         ILogger<DataSetController> logger,
         IWebHostEnvironment environment,
-        IOptions<InsightEngineSettings> runtimeSettings)
+        IOptions<InsightEngineSettings> runtimeSettings,
+        IOptions<FormulaInferenceSettings> formulaInferenceSettings)
         : base(notificationHandler, mediator)
     {
         _dataSetApplicationService = dataSetApplicationService;
         _aiInsightService = aiInsightService;
         _dataSetCleanupService = dataSetCleanupService;
         _fileStorageService = fileStorageService;
+        _schemaStore = schemaStore;
+        _indexStore = indexStore;
+        _formulaInferenceEngine = formulaInferenceEngine;
         _logger = logger;
         _environment = environment;
         _runtimeSettings = runtimeSettings.Value;
+        _formulaInferenceSettings = formulaInferenceSettings.Value;
     }
 
     /// <summary>
@@ -657,6 +672,213 @@ public class DataSetController : BaseController
         }
     }
 
+    [HttpPost("{id:guid}/formula-inference/run")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> RunFormulaInference(Guid id, [FromBody] FormulaInferenceRunRequest request)
+    {
+        try
+        {
+            if (request is null)
+            {
+                return ErrorResponse(StatusCodes.Status400BadRequest, "validation_error", "Invalid request body.");
+            }
+
+            var schema = await _schemaStore.LoadAsync(id);
+            var index = await _indexStore.LoadAsync(id);
+            if (schema is null && index is null)
+            {
+                return ErrorResponse(StatusCodes.Status404NotFound, "not_found", "Dataset metadata not found.");
+            }
+
+            var knownColumns = BuildKnownColumns(schema, index);
+            if (knownColumns.Count == 0)
+            {
+                return ErrorResponse(StatusCodes.Status400BadRequest, "validation_error", "No columns available for formula inference.");
+            }
+
+            var targetColumn = request.TargetColumn?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(targetColumn))
+            {
+                return ErrorResponse(StatusCodes.Status400BadRequest, "validation_error", "targetColumn is required.");
+            }
+
+            if (!knownColumns.TryGetValue(targetColumn, out var targetInfo))
+            {
+                return ErrorResponse(StatusCodes.Status400BadRequest, "validation_error", $"Target column '{targetColumn}' was not found.");
+            }
+
+            if (targetInfo.IsIgnored)
+            {
+                return ErrorResponse(StatusCodes.Status400BadRequest, "validation_error", "Target column cannot be ignored.");
+            }
+
+            if (!targetInfo.Type.IsNumericLike())
+            {
+                return ErrorResponse(StatusCodes.Status400BadRequest, "validation_error", "Target column must be numeric.");
+            }
+
+            var normalizedMode = (request.Mode ?? "Auto").Trim();
+            if (!normalizedMode.Equals("Manual", StringComparison.OrdinalIgnoreCase)
+                && !normalizedMode.Equals("Auto", StringComparison.OrdinalIgnoreCase))
+            {
+                return ErrorResponse(StatusCodes.Status400BadRequest, "validation_error", "mode must be 'Auto' or 'Manual'.");
+            }
+
+            if (index is null)
+            {
+                return ErrorResponse(StatusCodes.Status404NotFound, "not_found", "Dataset index not found.");
+            }
+
+            if (normalizedMode.Equals("Manual", StringComparison.OrdinalIgnoreCase))
+            {
+                var expression = request.ManualExpression?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(expression))
+                {
+                    return ErrorResponse(StatusCodes.Status400BadRequest, "validation_error", "manualExpression is required in Manual mode.");
+                }
+
+                var ignoredColumns = knownColumns
+                    .Where(item => item.Value.IsIgnored)
+                    .Select(item => item.Key)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var parseResult = TryParseManualExpression(expression, knownColumns.Keys, ignoredColumns);
+                if (!parseResult.IsValid)
+                {
+                    return ErrorResponse(StatusCodes.Status400BadRequest, parseResult.Errors.ToList(), "validation_error");
+                }
+
+                var selected = new FormulaExpression
+                {
+                    ExpressionText = expression,
+                    TargetColumn = targetInfo.Name,
+                    UsedColumns = parseResult.UsedColumns.ToArray(),
+                    Depth = parseResult.Depth,
+                    OperatorsUsed = parseResult.OperatorsUsed.ToArray(),
+                    EpsilonMaxAbsError = 0,
+                    SampleRowsTested = 0,
+                    RowsFailed = 0,
+                    Confidence = FormulaConfidence.Medium,
+                    Notes = "manual formula"
+                };
+
+                index.SelectedFormula = new SelectedFormulaIndexEntry
+                {
+                    SelectedAtUtc = DateTimeOffset.UtcNow,
+                    Source = "Manual",
+                    Formula = selected
+                };
+
+                await _indexStore.SaveAsync(index);
+
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        mode = "Manual",
+                        targetColumn = targetInfo.Name,
+                        selectedFormula = index.SelectedFormula,
+                        formulaInference = index.FormulaInference?.Result
+                    }
+                });
+            }
+
+            var includePercentageColumns = request.Options?.IncludePercentageColumns ?? false;
+            var candidateColumns = knownColumns.Values
+                .Where(column => !column.IsIgnored)
+                .Where(column => !string.Equals(column.Name, targetInfo.Name, StringComparison.OrdinalIgnoreCase))
+                .Where(column => column.Type.IsNumericLike())
+                .Where(column => includePercentageColumns || column.Type.NormalizeLegacy() != InferredType.Percentage)
+                .Select(column => column.Name)
+                .ToArray();
+
+            var settingsOverride = new FormulaInferenceSettings
+            {
+                EnabledDefault = _formulaInferenceSettings.EnabledDefault,
+                MaxColumns = request.Options?.MaxColumns ?? _formulaInferenceSettings.MaxColumns,
+                MaxDepth = request.Options?.MaxDepth ?? _formulaInferenceSettings.MaxDepth,
+                MaxCandidatesReturned = _formulaInferenceSettings.MaxCandidatesReturned,
+                SearchBudgetMs = _formulaInferenceSettings.SearchBudgetMs,
+                InitialSampleRows = _formulaInferenceSettings.InitialSampleRows,
+                ValidationSampleRows = _formulaInferenceSettings.ValidationSampleRows,
+                EpsilonAbs = request.Options?.EpsilonAbs ?? _formulaInferenceSettings.EpsilonAbs,
+                EpsilonAbsRelaxed = _formulaInferenceSettings.EpsilonAbsRelaxed,
+                DivisionZeroEpsilon = _formulaInferenceSettings.DivisionZeroEpsilon,
+                AllowConstants = false,
+                AllowColumnReuse = _formulaInferenceSettings.AllowColumnReuse,
+                BeamWidth = _formulaInferenceSettings.BeamWidth
+            };
+
+            var inference = await _formulaInferenceEngine.InferAsync(
+                id,
+                targetInfo.Name,
+                candidateColumns,
+                settingsOverride,
+                HttpContext.RequestAborted);
+
+            index = await _indexStore.LoadAsync(id);
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    mode = "Auto",
+                    targetColumn = targetInfo.Name,
+                    result = inference,
+                    selectedFormula = index?.SelectedFormula,
+                    formulaInference = index?.FormulaInference?.Result ?? inference
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error running formula inference for dataset {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Failed to run formula inference.");
+        }
+    }
+
+    [HttpGet("{id:guid}/formula-inference")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetFormulaInference(Guid id)
+    {
+        try
+        {
+            var index = await _indexStore.LoadAsync(id);
+            if (index is null)
+            {
+                return ErrorResponse(StatusCodes.Status404NotFound, "not_found", "Dataset index not found.");
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    formulaInference = index.FormulaInference?.Result,
+                    selectedFormula = index.SelectedFormula
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving formula inference for dataset {DatasetId}", id);
+            return ErrorResponse(
+                StatusCodes.Status500InternalServerError,
+                "internal_error",
+                "Failed to retrieve formula inference metadata.");
+        }
+    }
+
     [HttpGet("{id:guid}/facets")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -797,6 +1019,214 @@ FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause
                 "internal_error",
                 "Erro ao carregar facetas do dataset.");
         }
+    }
+
+    private static Dictionary<string, FormulaColumnInfo> BuildKnownColumns(DatasetImportSchema? schema, DatasetIndex? index)
+    {
+        var result = new Dictionary<string, FormulaColumnInfo>(StringComparer.OrdinalIgnoreCase);
+
+        if (schema is not null)
+        {
+            foreach (var column in schema.Columns)
+            {
+                result[column.Name] = new FormulaColumnInfo(
+                    column.Name,
+                    column.ConfirmedType.NormalizeLegacy(),
+                    column.IsIgnored);
+            }
+        }
+
+        if (index is not null)
+        {
+            foreach (var column in index.Columns)
+            {
+                if (!result.ContainsKey(column.Name))
+                {
+                    result[column.Name] = new FormulaColumnInfo(
+                        column.Name,
+                        column.InferredType.NormalizeLegacy(),
+                        false);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static ManualFormulaParseResult TryParseManualExpression(
+        string expression,
+        IEnumerable<string> knownColumns,
+        HashSet<string> ignoredColumns)
+    {
+        var known = new HashSet<string>(knownColumns, StringComparer.OrdinalIgnoreCase);
+        var errors = new List<string>();
+        var usedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var operators = new List<FormulaOperator>();
+
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return ManualFormulaParseResult.Invalid(["manualExpression is required."]);
+        }
+
+        var expectingOperand = true;
+        var depth = 0;
+        var maxDepth = 0;
+
+        for (var i = 0; i < expression.Length;)
+        {
+            var c = expression[i];
+
+            if (char.IsWhiteSpace(c))
+            {
+                i++;
+                continue;
+            }
+
+            if (c == '(')
+            {
+                if (!expectingOperand)
+                {
+                    errors.Add("Unexpected '(' token.");
+                    break;
+                }
+
+                depth++;
+                maxDepth = Math.Max(maxDepth, depth);
+                i++;
+                continue;
+            }
+
+            if (c == ')')
+            {
+                if (expectingOperand)
+                {
+                    errors.Add("Unexpected ')' token.");
+                    break;
+                }
+
+                depth--;
+                if (depth < 0)
+                {
+                    errors.Add("Unbalanced parentheses.");
+                    break;
+                }
+
+                i++;
+                continue;
+            }
+
+            if (c is '+' or '-' or '*' or '/')
+            {
+                if (expectingOperand)
+                {
+                    errors.Add("Unexpected operator token.");
+                    break;
+                }
+
+                operators.Add(c switch
+                {
+                    '+' => FormulaOperator.Add,
+                    '-' => FormulaOperator.Subtract,
+                    '*' => FormulaOperator.Multiply,
+                    _ => FormulaOperator.Divide
+                });
+
+                expectingOperand = true;
+                i++;
+                continue;
+            }
+
+            string token;
+            if (c == '[')
+            {
+                var close = expression.IndexOf(']', i + 1);
+                if (close <= i + 1)
+                {
+                    errors.Add("Invalid bracketed column token.");
+                    break;
+                }
+
+                token = expression[(i + 1)..close].Trim();
+                i = close + 1;
+            }
+            else if (char.IsLetter(c) || c == '_')
+            {
+                var start = i;
+                i++;
+                while (i < expression.Length && (char.IsLetterOrDigit(expression[i]) || expression[i] is '_' or '.'))
+                {
+                    i++;
+                }
+
+                token = expression[start..i].Trim();
+            }
+            else
+            {
+                errors.Add($"Invalid token '{c}'.");
+                break;
+            }
+
+            if (!expectingOperand)
+            {
+                errors.Add("Missing operator between operands.");
+                break;
+            }
+
+            if (!known.Contains(token))
+            {
+                errors.Add($"Unknown column '{token}' in expression.");
+                continue;
+            }
+
+            if (ignoredColumns.Contains(token))
+            {
+                errors.Add($"Ignored column '{token}' cannot be used in expression.");
+                continue;
+            }
+
+            usedColumns.Add(token);
+            expectingOperand = false;
+        }
+
+        if (depth != 0)
+        {
+            errors.Add("Unbalanced parentheses.");
+        }
+
+        if (expectingOperand)
+        {
+            errors.Add("Expression cannot end with an operator.");
+        }
+
+        if (usedColumns.Count == 0)
+        {
+            errors.Add("Expression must reference at least one valid column.");
+        }
+
+        if (errors.Count > 0)
+        {
+            return ManualFormulaParseResult.Invalid(errors);
+        }
+
+        return new ManualFormulaParseResult(
+            true,
+            usedColumns.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList(),
+            operators,
+            Math.Max(1, maxDepth + (operators.Count > 0 ? 1 : 0)),
+            Array.Empty<string>());
+    }
+
+    private sealed record FormulaColumnInfo(string Name, InferredType Type, bool IsIgnored);
+
+    private sealed record ManualFormulaParseResult(
+        bool IsValid,
+        IReadOnlyList<string> UsedColumns,
+        IReadOnlyList<FormulaOperator> OperatorsUsed,
+        int Depth,
+        IReadOnlyList<string> Errors)
+    {
+        public static ManualFormulaParseResult Invalid(IReadOnlyList<string> errors)
+            => new(false, Array.Empty<string>(), Array.Empty<FormulaOperator>(), 0, errors);
     }
 
     [HttpGet("{id:guid}/rows")]

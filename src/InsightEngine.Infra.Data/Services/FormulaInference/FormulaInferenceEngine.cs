@@ -347,7 +347,7 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
         var ranked = index.Columns
             .Where(column => !string.Equals(column.Name, targetColumn, StringComparison.OrdinalIgnoreCase))
             .Where(column => column.InferredType.IsNumericLike())
-            .Where(column => column.InferredType.NormalizeLegacy() != InferredType.Percentage)
+            .Where(column => allowed is not null || column.InferredType.NormalizeLegacy() != InferredType.Percentage)
             .Where(column => allowed is null || allowed.Contains(column.Name))
             .Select(column => new RankedColumn(
                 column.Name,
