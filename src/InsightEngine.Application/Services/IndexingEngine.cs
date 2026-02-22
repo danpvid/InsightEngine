@@ -1,7 +1,9 @@
 ﻿using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
+using InsightEngine.Domain.Models.Formulas;
 using InsightEngine.Domain.Models.MetadataIndex;
+using InsightEngine.Domain.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace InsightEngine.Application.Services;
@@ -16,6 +18,7 @@ public class IndexingEngine : IIndexingEngine
     private readonly IDuckDbMetadataAnalyzer _metadataAnalyzer;
     private readonly ISemanticTagger _semanticTagger;
     private readonly IIndexStore _indexStore;
+    private readonly IFormulaInferenceEngine _formulaInferenceEngine;
     private readonly ILogger<IndexingEngine> _logger;
 
     public IndexingEngine(
@@ -25,6 +28,7 @@ public class IndexingEngine : IIndexingEngine
         IDuckDbMetadataAnalyzer metadataAnalyzer,
         ISemanticTagger semanticTagger,
         IIndexStore indexStore,
+        IFormulaInferenceEngine formulaInferenceEngine,
         ILogger<IndexingEngine> logger)
     {
         _dataSetRepository = dataSetRepository;
@@ -33,6 +37,7 @@ public class IndexingEngine : IIndexingEngine
         _metadataAnalyzer = metadataAnalyzer;
         _semanticTagger = semanticTagger;
         _indexStore = indexStore;
+        _formulaInferenceEngine = formulaInferenceEngine;
         _logger = logger;
     }
 
@@ -174,6 +179,7 @@ public class IndexingEngine : IIndexingEngine
             };
 
             await _indexStore.SaveAsync(datasetIndex, cancellationToken);
+            await TryRunFormulaInferenceForIndexBuildAsync(datasetId, datasetIndex, cancellationToken);
             await _indexStore.SaveStatusAsync(new DatasetIndexStatus
             {
                 DatasetId = datasetId,
@@ -199,6 +205,145 @@ public class IndexingEngine : IIndexingEngine
 
             throw;
         }
+    }
+
+    private async Task TryRunFormulaInferenceForIndexBuildAsync(
+        Guid datasetId,
+        DatasetIndex datasetIndex,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(datasetIndex.TargetColumn))
+        {
+            datasetIndex.FormulaInference = BuildSkippedInferenceResult(
+                datasetIndex.TargetColumn,
+                "Target column is not configured for this dataset.");
+            datasetIndex.TargetFormulaSuggestion = null;
+            await _indexStore.SaveAsync(datasetIndex, cancellationToken);
+            return;
+        }
+
+        var targetColumn = datasetIndex.Columns.FirstOrDefault(column =>
+            string.Equals(column.Name, datasetIndex.TargetColumn, StringComparison.OrdinalIgnoreCase));
+
+        if (targetColumn is null)
+        {
+            datasetIndex.FormulaInference = BuildSkippedInferenceResult(
+                datasetIndex.TargetColumn,
+                "Target column was not found in indexed columns.");
+            datasetIndex.TargetFormulaSuggestion = null;
+            await _indexStore.SaveAsync(datasetIndex, cancellationToken);
+            return;
+        }
+
+        if (!targetColumn.InferredType.IsNumericLike())
+        {
+            datasetIndex.FormulaInference = BuildSkippedInferenceResult(
+                targetColumn.Name,
+                "Target column must be numeric for formula inference.");
+            datasetIndex.TargetFormulaSuggestion = null;
+            await _indexStore.SaveAsync(datasetIndex, cancellationToken);
+            return;
+        }
+
+        var numericCandidates = datasetIndex.Columns
+            .Where(column =>
+                !string.Equals(column.Name, targetColumn.Name, StringComparison.OrdinalIgnoreCase)
+                && column.InferredType.IsNumericLike())
+            .Select(column => column.Name)
+            .ToList();
+
+        if (numericCandidates.Count < 2)
+        {
+            datasetIndex.FormulaInference = BuildSkippedInferenceResult(
+                targetColumn.Name,
+                "At least 2 numeric candidate columns are required.");
+            datasetIndex.TargetFormulaSuggestion = null;
+            await _indexStore.SaveAsync(datasetIndex, cancellationToken);
+            return;
+        }
+
+        try
+        {
+            var inferenceResult = await _formulaInferenceEngine.InferAsync(
+                datasetId,
+                targetColumn.Name,
+                numericCandidates,
+                new FormulaInferenceSettings
+                {
+                    EnabledDefault = true,
+                    MaxColumns = 10,
+                    MaxDepth = 5,
+                    MaxCandidatesReturned = 5,
+                    SearchBudgetMs = 2500,
+                    InitialSampleRows = 300,
+                    ValidationSampleRows = 2000,
+                    EpsilonAbs = 1e-6,
+                    EpsilonAbsRelaxed = 1e-3,
+                    DivisionZeroEpsilon = 1e-12,
+                    AllowConstants = false,
+                    AllowColumnReuse = false,
+                    BeamWidth = 200
+                },
+                cancellationToken);
+
+            datasetIndex.FormulaInference = new FormulaInferenceIndexEntry
+            {
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+                Result = inferenceResult
+            };
+            datasetIndex.TargetFormulaSuggestion = BuildTargetFormulaSuggestion(inferenceResult);
+
+            await _indexStore.SaveAsync(datasetIndex, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Index-time formula inference failed for dataset {DatasetId}", datasetId);
+            datasetIndex.FormulaInference = BuildSkippedInferenceResult(
+                targetColumn.Name,
+                "Formula inference failed during index build.");
+            datasetIndex.TargetFormulaSuggestion = null;
+            await _indexStore.SaveAsync(datasetIndex, cancellationToken);
+        }
+    }
+
+    private static FormulaInferenceIndexEntry BuildSkippedInferenceResult(string? targetColumn, string warning)
+    {
+        return new FormulaInferenceIndexEntry
+        {
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+            Result = new FormulaInferenceResult
+            {
+                Status = FormulaInferenceStatus.NotRun,
+                GeneratedAt = DateTimeOffset.UtcNow,
+                TargetColumn = targetColumn ?? string.Empty,
+                Warnings = [warning],
+                Meta = new Dictionary<string, object?>
+                {
+                    ["trigger"] = "index-build"
+                }
+            }
+        };
+    }
+
+    private static TargetFormulaSuggestionIndexEntry? BuildTargetFormulaSuggestion(FormulaInferenceResult inferenceResult)
+    {
+        var bestCandidate = inferenceResult.Candidates
+            .OrderByDescending(candidate => candidate.Confidence)
+            .ThenBy(candidate => candidate.UsedColumns.Length)
+            .ThenBy(candidate => candidate.Depth)
+            .FirstOrDefault();
+
+        if (bestCandidate is null)
+        {
+            return null;
+        }
+
+        return new TargetFormulaSuggestionIndexEntry
+        {
+            BestCandidateExpressionText = bestCandidate.ExpressionText,
+            Confidence = bestCandidate.Confidence,
+            UsedColumns = bestCandidate.UsedColumns
+        };
     }
 
     private static IndexBuildOptions NormalizeOptions(IndexBuildOptions options)

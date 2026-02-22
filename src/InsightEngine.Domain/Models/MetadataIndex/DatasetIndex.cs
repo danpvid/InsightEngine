@@ -24,6 +24,7 @@ public class DatasetIndex
     public IndexLimits Limits { get; set; } = new();
     public FormulaDiscoveryIndexEntry? FormulaDiscovery { get; set; }
     public FormulaInferenceIndexEntry? FormulaInference { get; set; }
+    public TargetFormulaSuggestionIndexEntry? TargetFormulaSuggestion { get; set; }
     public SelectedFormulaIndexEntry? SelectedFormula { get; set; }
 }
 
@@ -38,6 +39,13 @@ public class FormulaInferenceIndexEntry
 {
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public FormulaInferenceResult Result { get; set; } = new();
+}
+
+public class TargetFormulaSuggestionIndexEntry
+{
+    public string BestCandidateExpressionText { get; set; } = string.Empty;
+    public FormulaConfidence Confidence { get; set; } = FormulaConfidence.Low;
+    public string[] UsedColumns { get; set; } = [];
 }
 
 public class SelectedFormulaIndexEntry
