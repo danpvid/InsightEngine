@@ -1,7 +1,7 @@
 import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgxEchartsModule } from 'ngx-echarts';
 import { ECharts, EChartsOption } from 'echarts';
 import { catchError, forkJoin, map, of, Subscription } from 'rxjs';
@@ -134,6 +134,7 @@ interface FormulaPredictionPoint {
   imports: [
     CommonModule,
     FormsModule,
+    RouterLink,
     TranslatePipe,
     NgxEchartsModule,
     ...MATERIAL_MODULES,
@@ -679,7 +680,11 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   get newDatasetLink(): string[] {
-    return ['/', this.currentLanguage, 'datasets', 'new'];
+    return ['/', this.currentLanguage, 'datasets'];
+  }
+
+  get exploreLink(): string[] {
+    return ['/', this.currentLanguage, 'datasets', this.datasetId, 'explore'];
   }
 
   get recommendationsLink(): string[] {
@@ -687,7 +692,7 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   }
 
   get newDatasetHref(): string {
-    return `/${this.currentLanguage}/datasets/new`;
+    return `/${this.currentLanguage}/datasets`;
   }
 
   get recommendationsHref(): string {

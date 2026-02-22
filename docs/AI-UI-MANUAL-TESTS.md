@@ -34,3 +34,18 @@ Because of that, AI feature UI checks are verified manually for now.
 - Chart still renders when AI endpoints fail or LLM is disabled.
 - No full-page reload happens when AI actions are triggered.
 - Existing exploration controls remain usable after Apply Plan.
+
+## E2E sanity checks — navigation + breadcrumb
+
+1. Open `/{lang}/datasets` and verify breadcrumb shows only `Dataset` (active, non-clickable).
+2. Open one dataset in Explore (`/{lang}/datasets/{datasetId}/explore`) and verify breadcrumb:
+   - `Dataset > Explore`
+   - `Dataset` is clickable, `Explore` is active non-clickable.
+3. Click **Next: Recommendations** and verify URL and breadcrumb:
+   - `/{lang}/datasets/{datasetId}/recommendations`
+   - `Dataset > Explore > Recommendations`
+   - `Dataset` and `Explore` clickable, `Recommendations` active.
+4. Click a recommendation card (or **Open chart**) and verify URL and breadcrumb:
+   - `/{lang}/datasets/{datasetId}/charts/{recommendationId}`
+   - `Dataset > Explore > Recommendations > Chart`
+   - first three items clickable, `Chart` active non-clickable.

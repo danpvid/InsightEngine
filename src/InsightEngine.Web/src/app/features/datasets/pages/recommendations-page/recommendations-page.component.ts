@@ -76,7 +76,7 @@ export class RecommendationsPageComponent implements OnInit, OnDestroy {
   }
 
   get newDatasetLink(): string[] {
-    return ['/', this.currentLanguage, 'datasets', 'new'];
+    return ['/', this.currentLanguage, 'datasets'];
   }
 
   get exploreLink(): string[] {

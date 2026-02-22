@@ -1,18 +1,23 @@
 <div class="container-wide" style="max-width:none;width:100%;">
   <nav class="breadcrumb">
-    <a class="breadcrumb-item" [attr.href]="newDatasetHref">
+    <a class="breadcrumb-item" [routerLink]="newDatasetLink">
       <mat-icon>upload_file</mat-icon>
-      {{ 'common.datasets' | translate }}
+      Dataset
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
-    <a class="breadcrumb-item" [attr.href]="recommendationsHref">
+    <a class="breadcrumb-item" [routerLink]="exploreLink">
+      <mat-icon>travel_explore</mat-icon>
+      Explore
+    </a>
+    <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
+    <a class="breadcrumb-item" [routerLink]="recommendationsLink">
       <mat-icon>auto_awesome</mat-icon>
-      {{ 'recommendations.breadcrumb' | translate }}
+      Recommendations
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
     <span class="breadcrumb-item active">
       <mat-icon>bar_chart</mat-icon>
-      {{ 'chartViewer.chart' | translate }}
+      Chart
     </span>
   </nav>
 

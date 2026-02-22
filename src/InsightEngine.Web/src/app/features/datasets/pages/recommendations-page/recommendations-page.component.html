@@ -2,12 +2,17 @@
   <nav class="breadcrumb">
     <a [routerLink]="newDatasetLink" class="breadcrumb-item">
       <mat-icon>upload_file</mat-icon>
-      <span>{{ 'common.datasets' | translate }}</span>
+      <span>Dataset</span>
+    </a>
+    <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
+    <a [routerLink]="exploreLink" class="breadcrumb-item">
+      <mat-icon>travel_explore</mat-icon>
+      <span>Explore</span>
     </a>
     <mat-icon class="breadcrumb-separator">chevron_right</mat-icon>
     <span class="breadcrumb-item active">
       <mat-icon>auto_awesome</mat-icon>
-      <span>{{ 'recommendations.breadcrumb' | translate }}</span>
+      <span>Recommendations</span>
     </span>
   </nav>
 
