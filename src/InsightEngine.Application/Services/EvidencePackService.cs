@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -1180,14 +1181,86 @@ public class EvidencePackService : IEvidencePackService
         List<SegmentBreakdownEvidence> segmentBreakdowns,
         DatasetQualityEvidence quality)
     {
+        var totalSw = Stopwatch.StartNew();
+        var limits = ResolveComputationLimits(index);
+
+        var schemaSw = Stopwatch.StartNew();
         var schemaColumns = BuildSchemaColumns(profile, schema);
         var ignoredColumns = schema?.Columns.Where(c => c.IsIgnored).Select(c => c.Name).ToList()
             ?? profile.Columns.Where(c => c.IsIgnored).Select(c => c.Name).ToList();
         var targetColumn = schema?.TargetColumn ?? profile.TargetColumn;
+        schemaSw.Stop();
+
+        var relationshipsSw = Stopwatch.StartNew();
+        var relationships = BuildRelationshipsV2(index, targetColumn, points);
+        relationshipsSw.Stop();
+
+        var actions = new List<InsightRecommendedAction>();
+        InsightTargetStory? targetStory = null;
+        var targetSw = Stopwatch.StartNew();
+        if (!string.IsNullOrWhiteSpace(targetColumn))
+        {
+            targetStory = BuildTargetStoryV2(
+                targetColumn!,
+                schemaColumns,
+                points,
+                timeSeriesStats,
+                segmentBreakdowns,
+                recommendation,
+                chartResponse,
+                index,
+                limits.TopNumericColumns,
+                limits.TopDimensions);
+            actions = BuildActionsV2(targetStory, segmentBreakdowns, timeSeriesStats);
+        }
+        else
+        {
+            actions = BuildActionsV2(null, segmentBreakdowns, timeSeriesStats);
+        }
+
+        targetSw.Stop();
+
+        totalSw.Stop();
 
         var v2 = new InsightPackV2
         {
             Version = "2.0",
+            Meta = new InsightPackComputationMeta
+            {
+                TotalMs = totalSw.ElapsedMilliseconds,
+                LimitsApplied = new InsightComputationLimits
+                {
+                    TopNumericColumns = limits.TopNumericColumns,
+                    TopDimensions = limits.TopDimensions
+                },
+                QueryGroups =
+                [
+                    new InsightQueryGroupTiming
+                    {
+                        Group = "chartExecution",
+                        DuckDbMs = chartResponse.ExecutionResult.DuckDbMs,
+                        ProcessingMs = 0
+                    },
+                    new InsightQueryGroupTiming
+                    {
+                        Group = "schemaContext",
+                        DuckDbMs = 0,
+                        ProcessingMs = schemaSw.ElapsedMilliseconds
+                    },
+                    new InsightQueryGroupTiming
+                    {
+                        Group = "relationships",
+                        DuckDbMs = 0,
+                        ProcessingMs = relationshipsSw.ElapsedMilliseconds
+                    },
+                    new InsightQueryGroupTiming
+                    {
+                        Group = "targetStory",
+                        DuckDbMs = 0,
+                        ProcessingMs = targetSw.ElapsedMilliseconds
+                    }
+                ]
+            },
             DatasetSummary = new InsightDatasetSummary
             {
                 DatasetId = request.DatasetId,
@@ -1208,22 +1281,12 @@ public class EvidencePackService : IEvidencePackService
                 Columns = schemaColumns
             },
             DataQuality = BuildDataQualityV2(profile, schema, index, quality),
-            Relationships = BuildRelationshipsV2(index, targetColumn),
-            Actions = BuildActionsV2(segmentBreakdowns, timeSeriesStats),
+            Relationships = relationships,
+            Actions = actions,
             EvidenceIndex = BuildEvidenceAnchorsV2()
         };
 
-        if (!string.IsNullOrWhiteSpace(targetColumn))
-        {
-            v2.TargetStory = BuildTargetStoryV2(
-                targetColumn!,
-                schemaColumns,
-                points,
-                timeSeriesStats,
-                segmentBreakdowns,
-                recommendation,
-                chartResponse);
-        }
+        v2.TargetStory = targetStory;
 
         return v2;
     }
@@ -1243,6 +1306,7 @@ public class EvidencePackService : IEvidencePackService
                     SemanticType = ResolveSemanticTypeLabel(column.ConfirmedType, column.Name),
                     RoleHint = ResolveRoleHint(column.ConfirmedType, column.Name),
                     PercentageScaleHint = column.PercentageScaleHint?.ToString(),
+                    PercentageDisplayExamples = BuildPercentageDisplayExamples(column.PercentageScaleHint),
                     FormattingHints = BuildFormattingHints(column.ConfirmedType, column.CurrencyCode, profileCol)
                 };
             }).ToList();
@@ -1258,6 +1322,7 @@ public class EvidencePackService : IEvidencePackService
                 SemanticType = ResolveSemanticTypeLabel(confirmed, column.Name),
                 RoleHint = ResolveRoleHint(confirmed, column.Name),
                 PercentageScaleHint = column.PercentageScaleHint?.ToString(),
+                PercentageDisplayExamples = BuildPercentageDisplayExamples(column.PercentageScaleHint),
                 FormattingHints = BuildFormattingHints(confirmed, column.CurrencyCode, column)
             };
         }).ToList();
@@ -1393,7 +1458,10 @@ public class EvidencePackService : IEvidencePackService
         }).ToList();
     }
 
-    private static InsightRelationshipsContext BuildRelationshipsV2(DatasetIndex? index, string? targetColumn)
+    private static InsightRelationshipsContext BuildRelationshipsV2(
+        DatasetIndex? index,
+        string? targetColumn,
+        IReadOnlyList<SeriesPoint> points)
     {
         var edges = index?.Correlations?.Edges ?? [];
         var topPositive = edges.Where(e => e.Score > 0).OrderByDescending(e => e.Score).Take(8).ToList();
@@ -1407,6 +1475,8 @@ public class EvidencePackService : IEvidencePackService
                 .Take(8)
                 .ToList();
 
+        var seasonality = BuildSeasonalityHints(points);
+
         return new InsightRelationshipsContext
         {
             CorrelationMatrixSummary = new InsightCorrelationMatrixSummary
@@ -1416,23 +1486,20 @@ public class EvidencePackService : IEvidencePackService
                 TopPairsInvolvingTarget = targetPairs.Select(ToCorrelationPair).ToList()
             },
             FunctionalDependenciesHints = BuildFunctionalDependencies(index),
-            TimeSeasonalityHints = new InsightTimeSeasonalityHints
-            {
-                WeekdayVsWeekendImpact = "Pending computation in v2 metrics stage",
-                MonthOfYearEffect = "Pending computation in v2 metrics stage"
-            }
+            TimeSeasonalityHints = seasonality
         };
     }
 
     private static List<InsightFunctionalDependencyHint> BuildFunctionalDependencies(DatasetIndex? index)
     {
-        if (index?.Columns?.Count == 0)
+        var columns = index?.Columns;
+        if (columns == null || columns.Count == 0)
         {
             return [];
         }
 
-        var idLike = index.Columns.Where(c => IsIdLike(c.Name)).ToList();
-        var categories = index.Columns.Where(c => c.InferredType is InferredType.Category or InferredType.String).Take(8).ToList();
+        var idLike = columns.Where(c => IsIdLike(c.Name)).ToList();
+        var categories = columns.Where(c => c.InferredType is InferredType.Category or InferredType.String).Take(8).ToList();
         var hints = new List<InsightFunctionalDependencyHint>();
         foreach (var cat in categories)
         {
@@ -1461,7 +1528,10 @@ public class EvidencePackService : IEvidencePackService
         TimeSeriesStatsEvidence? timeSeriesStats,
         List<SegmentBreakdownEvidence> segmentBreakdowns,
         ChartRecommendation recommendation,
-        ChartExecutionResponse chartResponse)
+        ChartExecutionResponse chartResponse,
+        DatasetIndex? index,
+        int topNumericColumns,
+        int topDimensions)
     {
         var targetSchema = schemaColumns.FirstOrDefault(c => string.Equals(c.Name, targetColumn, StringComparison.OrdinalIgnoreCase));
         var targetType = targetSchema?.SemanticType switch
@@ -1471,107 +1541,85 @@ public class EvidencePackService : IEvidencePackService
             _ => "Other"
         };
 
-        var ordered = points
-            .Where(point => point.Date != null)
-            .OrderBy(point => point.Date)
-            .ToList();
+        var targetGoal = "Maximize";
+        var bestTimeBin = ChooseBestTimeBin(points);
+        var binnedSeries = BuildBinnedSeries(points, bestTimeBin, 120);
+        var changePoints = ComputeTopDeltas(binnedSeries, 5);
 
-        var series = ordered
-            .Select(point => new InsightTimeValuePoint
-            {
-                Time = point.Date!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                Value = Math.Round(point.Y, 6)
-            })
-            .Take(120)
-            .ToList();
+        var dimensionCandidates = ResolveDimensionCandidates(recommendation, topDimensions);
+        var segmentDeltas = BuildSegmentDeltas(points, bestTimeBin, dimensionCandidates.FirstOrDefault() ?? "series", 8);
 
-        var changePoints = timeSeriesStats?.ChangePoints.Select(item => new InsightChangePoint
-        {
-            Time = item.Position,
-            Delta = Math.Round(item.ShiftMagnitude, 6)
-        }).ToList() ?? new List<InsightChangePoint>();
+        var volatilityScore = timeSeriesStats?.VolatilityRatio ?? ComputeVolatilityFromSeries(binnedSeries.Select(s => s.Value).ToList());
 
-        var offenders = segmentBreakdowns
-            .OrderBy(item => item.ContributionValue)
+        var topNegative = segmentDeltas
+            .OrderBy(item => item.DeltaVsPreviousPeriod)
             .Take(3)
             .Select(item => new InsightSegmentDelta
             {
-                Dimension = "series",
-                Category = item.Segment,
-                Delta = Math.Round(item.ContributionValue, 6),
-                Magnitude = Math.Round(Math.Abs(item.ContributionValue), 6)
+                Dimension = item.Dimension,
+                Category = item.Category,
+                Delta = Math.Round(item.DeltaVsPreviousPeriod, 6),
+                Magnitude = Math.Round(Math.Abs(item.DeltaVsPreviousPeriod), 6)
             })
             .ToList();
 
-        var positive = segmentBreakdowns
-            .OrderByDescending(item => item.ContributionValue)
+        var topPositive = segmentDeltas
+            .OrderByDescending(item => item.DeltaVsPreviousPeriod)
             .Take(3)
             .Select(item => new InsightSegmentDelta
             {
-                Dimension = "series",
-                Category = item.Segment,
-                Delta = Math.Round(item.ContributionValue, 6),
-                Magnitude = Math.Round(Math.Abs(item.ContributionValue), 6)
+                Dimension = item.Dimension,
+                Category = item.Category,
+                Delta = Math.Round(item.DeltaVsPreviousPeriod, 6),
+                Magnitude = Math.Round(Math.Abs(item.DeltaVsPreviousPeriod), 6)
             })
+            .ToList();
+
+        var offenders = targetGoal == "Maximize"
+            ? topNegative
+            : topPositive;
+        var boosters = targetGoal == "Maximize"
+            ? topPositive
+            : topNegative;
+
+        var numericDrivers = BuildNumericDrivers(index, schemaColumns, targetColumn, topNumericColumns);
+        var categoricalDrivers = BuildCategoricalDrivers(segmentDeltas, binnedSeries, topDimensions);
+
+        var moneyPackMeasures = recommendation.Query.YMetrics
+            .Select(metric => metric.Column)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(metric => schemaColumns.Any(c => string.Equals(c.Name, metric, StringComparison.OrdinalIgnoreCase) && c.SemanticType == "Money"))
             .ToList();
 
         return new InsightTargetStory
         {
             TargetType = targetType,
+            TargetOptimizationGoal = targetGoal,
             TargetTrend = new InsightTargetTrend
             {
-                ByTimeBin = recommendation.Query.X.Bin?.ToString()?.ToLowerInvariant() ?? "month",
-                Series = series,
-                VolatilityScore = Math.Round(timeSeriesStats?.VolatilityRatio ?? 0d, 6),
+                ByTimeBin = bestTimeBin,
+                Series = binnedSeries,
+                VolatilityScore = Math.Round(volatilityScore, 6),
                 ChangePoints = changePoints
             },
             TopSegmentsByTarget = new InsightTopSegmentsByTarget
             {
-                DimensionCandidates = ["series"],
-                Segments = segmentBreakdowns.Take(6).Select(item => new InsightSegmentImpact
-                {
-                    Dimension = "series",
-                    Category = item.Segment,
-                    AggregateValue = Math.Round(item.ContributionValue, 6),
-                    Share = Math.Round(item.SharePercent, 6),
-                    DeltaVsPreviousPeriod = 0
-                }).ToList()
+                DimensionCandidates = dimensionCandidates,
+                Segments = segmentDeltas.Take(8).ToList()
             },
             Offenders = new InsightOffenderSummary
             {
                 TopNegativeSegments = offenders,
-                TopPositiveSegments = positive
+                TopPositiveSegments = boosters
             },
             DriverCandidates = new InsightDriverCandidates
             {
-                NumericDrivers = segmentBreakdowns.Take(6).Select(item => new InsightNumericDriver
-                {
-                    Feature = item.Segment,
-                    CorrelationPearson = Math.Round(item.StabilityScore, 6),
-                    CorrelationSpearman = Math.Round(item.StabilityScore * 0.95, 6),
-                    MutualInfoApprox = Math.Round(item.SharePercent / 100d, 6),
-                    StrengthLabel = item.SharePercent >= 20 ? "Strong" : (item.SharePercent >= 10 ? "Medium" : "Weak")
-                }).ToList(),
-                CategoricalDrivers =
-                [
-                    new InsightCategoricalDriver
-                    {
-                        Dimension = "series",
-                        EffectSizeProxy = Math.Round(segmentBreakdowns.Select(item => item.SharePercent).DefaultIfEmpty(0).Max(), 6),
-                        TopCategoriesImpact = segmentBreakdowns.Take(4).Select(item => new InsightSegmentImpact
-                        {
-                            Dimension = "series",
-                            Category = item.Segment,
-                            AggregateValue = Math.Round(item.ContributionValue, 6),
-                            Share = Math.Round(item.SharePercent, 6),
-                            DeltaVsPreviousPeriod = 0
-                        }).ToList()
-                    }
-                ]
+                NumericDrivers = numericDrivers,
+                CategoricalDrivers = categoricalDrivers
             },
             TargetDecompositionHints = new InsightTargetDecompositionHints
             {
-                MoneyPackMeasures = recommendation.Query.YMetrics.Select(metric => metric.Column).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                MoneyPackMeasures = moneyPackMeasures,
                 ScaleRatios = chartResponse.SeriesAxisAssignments
                     .Select(item => new InsightScaleRatioHint
                     {
@@ -1585,10 +1633,23 @@ public class EvidencePackService : IEvidencePackService
     }
 
     private static List<InsightRecommendedAction> BuildActionsV2(
+        InsightTargetStory? targetStory,
         IReadOnlyList<SegmentBreakdownEvidence> segmentBreakdowns,
         TimeSeriesStatsEvidence? timeSeriesStats)
     {
         var actions = new List<InsightRecommendedAction>();
+
+        var topOffender = targetStory?.Offenders.TopNegativeSegments.FirstOrDefault();
+        if (topOffender != null)
+        {
+            actions.Add(new InsightRecommendedAction
+            {
+                Title = $"Address offender '{topOffender.Category}'",
+                Rationale = "Largest negative recent delta indicates likely drag on target performance.",
+                EvidenceRefs = ["targetStory.offenders.topNegativeSegments[0]", "evidenceIndex:O1"],
+                ExpectedImpactDirection = "IncreaseTarget"
+            });
+        }
 
         var biggest = segmentBreakdowns.OrderByDescending(item => Math.Abs(item.ContributionValue)).FirstOrDefault();
         if (biggest != null)
@@ -1657,6 +1718,328 @@ public class EvidencePackService : IEvidencePackService
             Min = min.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             Max = max.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
         };
+    }
+
+    private static InsightComputationLimits ResolveComputationLimits(DatasetIndex? index)
+    {
+        var topNumeric = Math.Clamp(index?.Limits?.TopKEdgesPerColumn ?? 8, 5, 12);
+        var topDimensions = 3;
+        return new InsightComputationLimits
+        {
+            TopNumericColumns = topNumeric,
+            TopDimensions = topDimensions
+        };
+    }
+
+    private static List<string> BuildPercentageDisplayExamples(PercentageScaleHint? hint)
+    {
+        return hint switch
+        {
+            PercentageScaleHint.ZeroToOne => ["0.17 -> 17%", "0.845 -> 84.5%"],
+            PercentageScaleHint.ZeroToHundred => ["17 -> 17%", "84.5 -> 84.5%"],
+            _ => ["Unknown scale: confirm whether values are 0-1 or 0-100 before strong conclusions"]
+        };
+    }
+
+    private static InsightTimeSeasonalityHints BuildSeasonalityHints(IReadOnlyList<SeriesPoint> points)
+    {
+        var dated = points.Where(point => point.Date != null).ToList();
+        if (dated.Count < 14)
+        {
+            return new InsightTimeSeasonalityHints
+            {
+                WeekdayVsWeekendImpact = "NotAvailable",
+                MonthOfYearEffect = "NotAvailable"
+            };
+        }
+
+        var weekday = dated.Where(point => point.Date!.Value.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday).Select(point => point.Y).ToList();
+        var weekend = dated.Where(point => point.Date!.Value.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday).Select(point => point.Y).ToList();
+        var weekdayAvg = weekday.Count == 0 ? 0 : weekday.Average();
+        var weekendAvg = weekend.Count == 0 ? 0 : weekend.Average();
+        var impact = Math.Abs(weekdayAvg) < 1e-9 ? 0 : ((weekendAvg - weekdayAvg) / Math.Abs(weekdayAvg)) * 100d;
+
+        var monthGroups = dated
+            .GroupBy(point => new { point.Date!.Value.Year, point.Date.Value.Month })
+            .OrderBy(group => group.Key.Year)
+            .ThenBy(group => group.Key.Month)
+            .ToList();
+
+        var monthEffect = "NotAvailable";
+        if (monthGroups.Count >= 6)
+        {
+            var averages = monthGroups.Select(group => group.Average(item => item.Y)).ToList();
+            var min = averages.Min();
+            var max = averages.Max();
+            var mean = averages.Average();
+            var amplitude = Math.Abs(mean) < 1e-9 ? 0 : ((max - min) / Math.Abs(mean)) * 100d;
+            monthEffect = $"Monthly amplitude ~{amplitude:0.##}% across {monthGroups.Count} months";
+        }
+
+        return new InsightTimeSeasonalityHints
+        {
+            WeekdayVsWeekendImpact = $"Weekend vs weekday impact: {impact:0.##}%",
+            MonthOfYearEffect = monthEffect
+        };
+    }
+
+    private static string ChooseBestTimeBin(IReadOnlyList<SeriesPoint> points)
+    {
+        var dates = points.Where(point => point.Date != null).Select(point => point.Date!.Value.Date).OrderBy(date => date).ToList();
+        if (dates.Count < 8)
+        {
+            return "month";
+        }
+
+        var spanDays = Math.Max(1, (dates[^1] - dates[0]).TotalDays);
+        var density = dates.Count / spanDays;
+
+        if (spanDays <= 90 && density >= 0.7)
+        {
+            return "day";
+        }
+
+        if (spanDays <= 540)
+        {
+            return "week";
+        }
+
+        return "month";
+    }
+
+    private static List<InsightTimeValuePoint> BuildBinnedSeries(
+        IReadOnlyList<SeriesPoint> points,
+        string timeBin,
+        int maxPoints)
+    {
+        var grouped = points
+            .Where(point => point.Date != null)
+            .GroupBy(point => AlignDateToBin(point.Date!.Value, timeBin))
+            .OrderBy(group => group.Key)
+            .Select(group => new InsightTimeValuePoint
+            {
+                Time = group.Key.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Value = Math.Round(group.Sum(item => item.Y), 6)
+            })
+            .ToList();
+
+        if (grouped.Count <= maxPoints)
+        {
+            return grouped;
+        }
+
+        return Downsample(grouped, maxPoints);
+    }
+
+    private static DateTime AlignDateToBin(DateTime date, string timeBin)
+    {
+        var day = date.Date;
+        return timeBin.ToLowerInvariant() switch
+        {
+            "day" => day,
+            "week" => day.AddDays(-(int)day.DayOfWeek),
+            "month" => new DateTime(day.Year, day.Month, 1),
+            _ => new DateTime(day.Year, day.Month, 1)
+        };
+    }
+
+    private static List<InsightChangePoint> ComputeTopDeltas(IReadOnlyList<InsightTimeValuePoint> series, int topN)
+    {
+        var deltas = new List<InsightChangePoint>();
+        for (var i = 1; i < series.Count; i++)
+        {
+            deltas.Add(new InsightChangePoint
+            {
+                Time = series[i].Time,
+                Delta = Math.Round(series[i].Value - series[i - 1].Value, 6)
+            });
+        }
+
+        return deltas
+            .OrderByDescending(item => Math.Abs(item.Delta))
+            .Take(topN)
+            .ToList();
+    }
+
+    private static List<InsightSegmentImpact> BuildSegmentDeltas(
+        IReadOnlyList<SeriesPoint> points,
+        string timeBin,
+        string dimension,
+        int topK)
+    {
+        var dated = points.Where(point => point.Date != null).ToList();
+        if (dated.Count < 4)
+        {
+            return [];
+        }
+
+        var currentBucket = dated.Max(point => AlignDateToBin(point.Date!.Value, timeBin));
+        var previousBucket = timeBin switch
+        {
+            "day" => currentBucket.AddDays(-1),
+            "week" => currentBucket.AddDays(-7),
+            _ => currentBucket.AddMonths(-1)
+        };
+
+        var currentBySegment = dated
+            .Where(point => AlignDateToBin(point.Date!.Value, timeBin) == currentBucket)
+            .GroupBy(point => point.Series)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Y), StringComparer.OrdinalIgnoreCase);
+
+        var previousBySegment = dated
+            .Where(point => AlignDateToBin(point.Date!.Value, timeBin) == previousBucket)
+            .GroupBy(point => point.Series)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Y), StringComparer.OrdinalIgnoreCase);
+
+        var totalCurrent = Math.Max(1e-9, currentBySegment.Values.Sum(value => Math.Abs(value)));
+        var segments = currentBySegment.Keys
+            .Concat(previousBySegment.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(segment =>
+            {
+                var current = currentBySegment.GetValueOrDefault(segment, 0);
+                var previous = previousBySegment.GetValueOrDefault(segment, 0);
+                return new InsightSegmentImpact
+                {
+                    Dimension = dimension,
+                    Category = segment,
+                    AggregateValue = Math.Round(current, 6),
+                    Share = Math.Round((Math.Abs(current) / totalCurrent) * 100d, 6),
+                    DeltaVsPreviousPeriod = Math.Round(current - previous, 6)
+                };
+            })
+            .OrderByDescending(item => Math.Abs(item.AggregateValue))
+            .Take(topK)
+            .ToList();
+
+        return segments;
+    }
+
+    private static List<string> ResolveDimensionCandidates(ChartRecommendation recommendation, int topDimensions)
+    {
+        var result = new List<string>();
+        if (!string.IsNullOrWhiteSpace(recommendation.Query.Series?.Column))
+        {
+            result.Add(recommendation.Query.Series.Column);
+        }
+
+        if (!string.IsNullOrWhiteSpace(recommendation.Query.X.Column) && recommendation.Query.X.Role == AxisRole.Category)
+        {
+            result.Add(recommendation.Query.X.Column);
+        }
+
+        if (result.Count == 0)
+        {
+            result.Add("series");
+        }
+
+        return result.Distinct(StringComparer.OrdinalIgnoreCase).Take(topDimensions).ToList();
+    }
+
+    private static double ComputeVolatilityFromSeries(IReadOnlyList<double> values)
+    {
+        if (values.Count < 2)
+        {
+            return 0;
+        }
+
+        var mean = values.Average();
+        if (Math.Abs(mean) < 1e-9)
+        {
+            return 0;
+        }
+
+        return ComputeStdDev(values) / Math.Abs(mean);
+    }
+
+    private static List<InsightNumericDriver> BuildNumericDrivers(
+        DatasetIndex? index,
+        IReadOnlyList<InsightSchemaColumn> schemaColumns,
+        string targetColumn,
+        int topNumericColumns)
+    {
+        if (index?.Correlations?.Edges == null || index.Correlations.Edges.Count == 0)
+        {
+            return [];
+        }
+
+        var numericNames = new HashSet<string>(
+            schemaColumns
+                .Where(column => column.ConfirmedType is "Money" or "Percentage" or "Integer" or "Decimal")
+                .Select(column => column.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        var involved = index.Correlations.Edges
+            .Where(edge =>
+                string.Equals(edge.LeftColumn, targetColumn, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(edge.RightColumn, targetColumn, StringComparison.OrdinalIgnoreCase))
+            .Where(edge =>
+            {
+                var other = string.Equals(edge.LeftColumn, targetColumn, StringComparison.OrdinalIgnoreCase)
+                    ? edge.RightColumn
+                    : edge.LeftColumn;
+                return numericNames.Contains(other);
+            })
+            .GroupBy(edge => string.Equals(edge.LeftColumn, targetColumn, StringComparison.OrdinalIgnoreCase)
+                ? edge.RightColumn
+                : edge.LeftColumn,
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var pearson = group.FirstOrDefault(edge => edge.Method == CorrelationMethod.Pearson)?.Score ?? group.First().Score;
+                var spearman = group.FirstOrDefault(edge => edge.Method == CorrelationMethod.Spearman)?.Score ?? pearson;
+                var mi = group.FirstOrDefault(edge => edge.Method == CorrelationMethod.MutualInformation)?.Score ?? (Math.Abs(pearson) * 0.5);
+                var abs = Math.Max(Math.Abs(pearson), Math.Abs(spearman));
+                return new InsightNumericDriver
+                {
+                    Feature = group.Key,
+                    CorrelationPearson = Math.Round(pearson, 6),
+                    CorrelationSpearman = Math.Round(spearman, 6),
+                    MutualInfoApprox = Math.Round(Math.Abs(mi), 6),
+                    StrengthLabel = abs >= 0.6 ? "Strong" : (abs >= 0.3 ? "Medium" : "Weak")
+                };
+            })
+            .OrderByDescending(driver => Math.Max(Math.Abs(driver.CorrelationPearson), Math.Abs(driver.CorrelationSpearman)))
+            .Take(topNumericColumns)
+            .ToList();
+
+        return involved;
+    }
+
+    private static List<InsightCategoricalDriver> BuildCategoricalDrivers(
+        IReadOnlyList<InsightSegmentImpact> segmentDeltas,
+        IReadOnlyList<InsightTimeValuePoint> targetSeries,
+        int topDimensions)
+    {
+        if (segmentDeltas.Count == 0)
+        {
+            return [];
+        }
+
+        var baselineValues = targetSeries.Select(item => item.Value).ToList();
+        var baselineStd = ComputeStdDev(baselineValues);
+        if (baselineStd < 1e-9)
+        {
+            baselineStd = 1;
+        }
+
+        return segmentDeltas
+            .GroupBy(item => item.Dimension, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var categories = group.OrderByDescending(item => Math.Abs(item.DeltaVsPreviousPeriod)).Take(5).ToList();
+                var max = categories.Max(item => item.AggregateValue);
+                var min = categories.Min(item => item.AggregateValue);
+                return new InsightCategoricalDriver
+                {
+                    Dimension = group.Key,
+                    EffectSizeProxy = Math.Round((max - min) / baselineStd, 6),
+                    TopCategoriesImpact = categories
+                };
+            })
+            .OrderByDescending(driver => Math.Abs(driver.EffectSizeProxy))
+            .Take(topDimensions)
+            .ToList();
     }
 
     private static InsightCorrelationPair ToCorrelationPair(CorrelationEdge edge)

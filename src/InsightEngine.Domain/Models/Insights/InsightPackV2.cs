@@ -3,6 +3,7 @@ namespace InsightEngine.Domain.Models.Insights;
 public class InsightPackV2
 {
     public string Version { get; set; } = "2.0";
+    public InsightPackComputationMeta Meta { get; set; } = new();
     public InsightDatasetSummary DatasetSummary { get; set; } = new();
     public InsightSchemaContext SchemaContext { get; set; } = new();
     public InsightDataQualityContext DataQuality { get; set; } = new();
@@ -48,7 +49,28 @@ public class InsightSchemaColumn
     public string SemanticType { get; set; } = "Generic";
     public string RoleHint { get; set; } = "Dimension";
     public string? PercentageScaleHint { get; set; }
+    public List<string> PercentageDisplayExamples { get; set; } = new();
     public InsightFormattingHints FormattingHints { get; set; } = new();
+}
+
+public class InsightPackComputationMeta
+{
+    public long TotalMs { get; set; }
+    public List<InsightQueryGroupTiming> QueryGroups { get; set; } = new();
+    public InsightComputationLimits LimitsApplied { get; set; } = new();
+}
+
+public class InsightQueryGroupTiming
+{
+    public string Group { get; set; } = string.Empty;
+    public long DuckDbMs { get; set; }
+    public long ProcessingMs { get; set; }
+}
+
+public class InsightComputationLimits
+{
+    public int TopNumericColumns { get; set; } = 8;
+    public int TopDimensions { get; set; } = 3;
 }
 
 public class InsightFormattingHints
@@ -92,6 +114,7 @@ public class InsightInconsistentFormat
 public class InsightTargetStory
 {
     public string TargetType { get; set; } = "Other";
+    public string TargetOptimizationGoal { get; set; } = "Maximize";
     public InsightTargetTrend TargetTrend { get; set; } = new();
     public InsightTopSegmentsByTarget TopSegmentsByTarget { get; set; } = new();
     public InsightOffenderSummary Offenders { get; set; } = new();
