@@ -21,6 +21,10 @@
       <mat-icon>travel_explore</mat-icon>
       {{ 'recommendations.openExplore' | translate }}
     </button>
+    <a mat-button color="primary" [routerLink]="exploreLink">
+      <mat-icon>arrow_back</mat-icon>
+      Back to Explore
+    </a>
   </div>
 
   <mat-card class="dataset-info-card">
@@ -173,9 +177,9 @@
       </mat-card-content>
 
       <mat-card-actions>
-        <button mat-raised-button color="primary" class="open-chart-btn">
+        <button mat-raised-button color="primary" class="open-chart-btn" (click)="openChart(rec, $event)">
           <mat-icon>visibility</mat-icon>
-          {{ 'recommendations.openChart' | translate }}
+          Open chart
         </button>
       </mat-card-actions>
     </mat-card>

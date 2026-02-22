@@ -160,6 +160,11 @@ export class RecommendationsPageComponent implements OnInit, OnDestroy {
     this.router.navigate(['/', this.currentLanguage, 'datasets', this.datasetId, 'charts', recommendation.id]);
   }
 
+  openChart(recommendation: ChartRecommendation, event?: Event): void {
+    event?.stopPropagation();
+    this.viewChart(recommendation);
+  }
+
   getChartTypeColor(chartType: string): string {
     const colors: Record<string, string> = {
       Line: 'primary',
