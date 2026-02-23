@@ -51,6 +51,7 @@ export class DatasetUploadPageComponent implements OnInit {
 
   isDragging: boolean = false;
   uploadProgress: number = 0;
+  showPipelineOverlay: boolean = false;
   runtimeConfig: RuntimeConfig | null = null;
   uploadMaxBytes: number = 20 * 1024 * 1024;
 
@@ -184,6 +185,7 @@ export class DatasetUploadPageComponent implements OnInit {
     }
 
     this.loading = true;
+    this.showPipelineOverlay = true;
     this.error = null;
     this.uploadProgress = 0;
     const uploadStart = performance.now();
@@ -203,6 +205,7 @@ export class DatasetUploadPageComponent implements OnInit {
             this.toast.success(this.languageService.translate('upload.successDatasetUploaded'));
             this.router.navigate(['/', this.currentLanguage, 'datasets', progressEvent.response.data.datasetId, 'import-preview']);
           } else if (progressEvent.response.errors && progressEvent.response.errors.length > 0) {
+            this.showPipelineOverlay = false;
             const first = progressEvent.response.errors[0];
             this.error = {
               code: first.code,
@@ -216,6 +219,7 @@ export class DatasetUploadPageComponent implements OnInit {
       },
       error: (err) => {
         this.loading = false;
+        this.showPipelineOverlay = false;
         this.uploadProgress = 0;
         this.logDevTiming('dataset-upload-error', uploadStart);
         this.error = HttpErrorUtil.extractApiError(err) || {
@@ -330,6 +334,37 @@ export class DatasetUploadPageComponent implements OnInit {
 
     const mb = this.uploadMaxBytes / (1024 * 1024);
     return `${mb.toFixed(0)}MB`;
+  }
+
+  getPipelineState(step: 'upload' | 'processing' | 'indexing' | 'recommendations'): 'done' | 'active' | 'pending' {
+    if (step === 'upload') {
+      return this.loading ? 'active' : 'done';
+    }
+
+    return 'pending';
+  }
+
+  getPipelineIcon(step: 'upload' | 'processing' | 'indexing' | 'recommendations'): string {
+    const state = this.getPipelineState(step);
+    if (state === 'done') {
+      return 'check_circle';
+    }
+
+    if (state === 'active') {
+      return 'hourglass_top';
+    }
+
+    return 'radio_button_unchecked';
+  }
+
+  getUploadStepLabel(): string {
+    if (!this.loading) {
+      return this.languageService.translate('pipeline.done');
+    }
+
+    return this.uploadProgress > 0
+      ? this.languageService.translate('pipeline.uploadProgress', { progress: this.uploadProgress })
+      : this.languageService.translate('pipeline.current');
   }
 
   private logDevTiming(event: string, startedAt: number, extra?: Record<string, unknown>): void {

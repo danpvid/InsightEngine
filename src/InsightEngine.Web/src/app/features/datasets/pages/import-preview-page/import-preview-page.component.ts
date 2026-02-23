@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DatasetApiService } from '../../../../core/services/dataset-api.service';
+import { MetadataIndexApiService } from '../../../../core/services/metadata-index-api.service';
 import { ToastService } from '../../../../core/services/toast.service';
 import { HttpErrorUtil } from '../../../../core/util/http-error.util';
 import { MATERIAL_MODULES } from '../../../../shared/material/material.imports';
@@ -32,13 +33,18 @@ import { TranslatePipe } from '../../../../core/pipes/translate.pipe';
   styleUrls: ['./import-preview-page.component.scss']
 })
 export class ImportPreviewPageComponent implements OnInit {
+  private readonly pipelineOrder: Array<'upload' | 'processing' | 'indexing' | 'recommendations'> = ['upload', 'processing', 'indexing', 'recommendations'];
+
   datasetId = '';
   loading = false;
   finalizing = false;
   error: ApiError | null = null;
+  showPipelineOverlay = false;
+  currentPipelineStep: 'processing' | 'indexing' | 'recommendations' = 'processing';
 
   preview: ImportPreviewResponse | null = null;
   targetColumn = '';
+  uniqueKeyColumn = '';
   currencyCode = 'BRL';
 
   ignoredColumns = new Set<string>();
@@ -48,6 +54,7 @@ export class ImportPreviewPageComponent implements OnInit {
     private route: ActivatedRoute,
     private router: Router,
     private datasetApi: DatasetApiService,
+    private metadataIndexApi: MetadataIndexApiService,
     private toast: ToastService,
     private languageService: LanguageService
   ) {}
@@ -68,6 +75,10 @@ export class ImportPreviewPageComponent implements OnInit {
     return this.preview.columns
       .map(column => column.name)
       .filter(name => !this.ignoredColumns.has(name));
+  }
+
+  get uniqueKeyCandidates(): string[] {
+    return this.preview?.suggestedUniqueKeyCandidates ?? [];
   }
 
   ngOnInit(): void {
@@ -138,13 +149,17 @@ export class ImportPreviewPageComponent implements OnInit {
     }
 
     const payload: FinalizeImportRequest = {
+      importMode: 'with-index',
       targetColumn: this.targetColumn || null,
+      uniqueKeyColumn: this.uniqueKeyColumn || null,
       ignoredColumns: [...this.ignoredColumns],
       columnTypeOverrides: this.buildTypeOverrides(),
       currencyCode: (this.currencyCode || 'BRL').trim().toUpperCase()
     };
 
     this.finalizing = true;
+    this.showPipelineOverlay = true;
+    this.currentPipelineStep = 'processing';
     this.error = null;
 
     this.datasetApi.finalizeImport(this.datasetId, payload).subscribe({
@@ -152,6 +167,7 @@ export class ImportPreviewPageComponent implements OnInit {
         this.finalizing = false;
 
         if (!response.success) {
+          this.showPipelineOverlay = false;
           this.error = {
             code: response.errors?.[0]?.code || 'IMPORT_FINALIZE_ERROR',
             message: response.errors?.[0]?.message || this.languageService.translate('importPreview.errorFinalize')
@@ -160,16 +176,91 @@ export class ImportPreviewPageComponent implements OnInit {
         }
 
         this.toast.success(this.languageService.translate('importPreview.success'));
-        this.router.navigate(['/', this.currentLanguage, 'datasets', this.datasetId, 'recommendations']);
+        this.startIndexBuildAndOpenRecommendations();
       },
       error: (err) => {
         this.finalizing = false;
+        this.showPipelineOverlay = false;
         this.error = HttpErrorUtil.extractApiError(err) || {
           code: 'IMPORT_FINALIZE_ERROR',
           message: HttpErrorUtil.extractErrorMessage(err)
         };
       }
     });
+  }
+
+  private startIndexBuildAndOpenRecommendations(): void {
+    this.currentPipelineStep = 'indexing';
+    this.metadataIndexApi.buildIndex(this.datasetId).subscribe({
+      next: () => {
+        this.currentPipelineStep = 'recommendations';
+        this.datasetApi.getRecommendations(this.datasetId).subscribe({
+          next: () => {
+            this.router.navigate(['/', this.currentLanguage, 'datasets', this.datasetId, 'recommendations']);
+          },
+          error: () => {
+            this.router.navigate(['/', this.currentLanguage, 'datasets', this.datasetId, 'recommendations']);
+          }
+        });
+      },
+      error: (err) => {
+        this.showPipelineOverlay = false;
+        this.toast.error(HttpErrorUtil.extractErrorMessage(err));
+      }
+    });
+  }
+
+  getPipelineState(step: 'upload' | 'processing' | 'indexing' | 'recommendations'): 'done' | 'active' | 'pending' {
+    const currentIndex = this.pipelineOrder.indexOf(this.currentPipelineStep);
+    const targetIndex = this.pipelineOrder.indexOf(step);
+
+    if (targetIndex < currentIndex) {
+      return 'done';
+    }
+
+    if (targetIndex === currentIndex) {
+      return 'active';
+    }
+
+    return 'pending';
+  }
+
+  getPipelineIcon(step: 'upload' | 'processing' | 'indexing' | 'recommendations'): string {
+    const state = this.getPipelineState(step);
+    if (state === 'done') {
+      return 'check_circle';
+    }
+
+    if (state === 'active') {
+      return 'hourglass_top';
+    }
+
+    return 'radio_button_unchecked';
+  }
+
+  getPipelineStepDescription(step: 'upload' | 'processing' | 'indexing' | 'recommendations'): string {
+    const state = this.getPipelineState(step);
+    if (state === 'done') {
+      return this.languageService.translate('pipeline.done');
+    }
+
+    if (state === 'pending') {
+      return this.languageService.translate('pipeline.waiting');
+    }
+
+    if (step === 'processing') {
+      return this.languageService.translate('pipeline.processingHint');
+    }
+
+    if (step === 'indexing') {
+      return this.languageService.translate('pipeline.indexingHint');
+    }
+
+    if (step === 'recommendations') {
+      return this.languageService.translate('pipeline.recommendationsHint');
+    }
+
+    return this.languageService.translate('pipeline.done');
   }
 
   trackByColumnName(_: number, column: ImportPreviewColumn): string {
@@ -179,6 +270,9 @@ export class ImportPreviewPageComponent implements OnInit {
   private initializeSelection(preview: ImportPreviewResponse): void {
     this.ignoredColumns = new Set(preview.suggestedIgnoredCandidates || []);
     this.targetColumn = preview.suggestedTargetCandidates?.[0] || '';
+    this.uniqueKeyColumn = preview.suggestedUniqueKeyCandidates?.length === 1
+      ? preview.suggestedUniqueKeyCandidates[0]
+      : '';
     this.currencyCode =
       preview.columns.find(column => !!column.hints.currencyCode)?.hints.currencyCode ||
       'BRL';

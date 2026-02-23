@@ -30,6 +30,18 @@
             <mat-label>{{ 'importPreview.currencyCode' | translate }}</mat-label>
             <input matInput [(ngModel)]="currencyCode" maxlength="3" />
           </mat-form-field>
+
+          <mat-form-field appearance="outline" *ngIf="uniqueKeyCandidates.length > 0">
+            <mat-label>{{ 'importPreview.uniqueKeyColumn' | translate }}</mat-label>
+            <mat-select [(ngModel)]="uniqueKeyColumn">
+              <mat-option value="">{{ 'importPreview.uniqueKeyNone' | translate }}</mat-option>
+              <mat-option
+                *ngFor="let columnName of uniqueKeyCandidates"
+                [value]="columnName">
+                {{ columnName }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
         </div>
 
         <div class="columns-table-wrap">
@@ -117,4 +129,52 @@
       </button>
     </mat-card-actions>
   </mat-card>
+</div>
+
+<div class="pipeline-overlay" *ngIf="showPipelineOverlay">
+  <div class="pipeline-window" role="status" aria-live="polite">
+    <div class="pipeline-header">
+      <mat-icon>autorenew</mat-icon>
+      <div>
+        <h3>{{ 'pipeline.title' | translate }}</h3>
+        <p>{{ 'pipeline.subtitle' | translate }}</p>
+      </div>
+    </div>
+
+    <div class="pipeline-steps">
+      <div class="pipeline-step" [class.active]="getPipelineState('upload') === 'active'" [class.done]="getPipelineState('upload') === 'done'">
+        <mat-icon>{{ getPipelineIcon('upload') }}</mat-icon>
+        <div>
+          <strong>{{ 'pipeline.stepUpload' | translate }}</strong>
+          <small>{{ getPipelineStepDescription('upload') }}</small>
+        </div>
+      </div>
+
+      <div class="pipeline-step" [class.active]="getPipelineState('processing') === 'active'" [class.done]="getPipelineState('processing') === 'done'">
+        <mat-icon>{{ getPipelineIcon('processing') }}</mat-icon>
+        <div>
+          <strong>{{ 'pipeline.stepProcessing' | translate }}</strong>
+          <small>{{ getPipelineStepDescription('processing') }}</small>
+        </div>
+      </div>
+
+      <div class="pipeline-step" [class.active]="getPipelineState('indexing') === 'active'" [class.done]="getPipelineState('indexing') === 'done'">
+        <mat-icon>{{ getPipelineIcon('indexing') }}</mat-icon>
+        <div>
+          <strong>{{ 'pipeline.stepIndexing' | translate }}</strong>
+          <small>{{ getPipelineStepDescription('indexing') }}</small>
+        </div>
+      </div>
+
+      <div class="pipeline-step" [class.active]="getPipelineState('recommendations') === 'active'" [class.done]="getPipelineState('recommendations') === 'done'">
+        <mat-icon>{{ getPipelineIcon('recommendations') }}</mat-icon>
+        <div>
+          <strong>{{ 'pipeline.stepRecommendations' | translate }}</strong>
+          <small>{{ getPipelineStepDescription('recommendations') }}</small>
+        </div>
+      </div>
+    </div>
+
+    <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+  </div>
 </div>

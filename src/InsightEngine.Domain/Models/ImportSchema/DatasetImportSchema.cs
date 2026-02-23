@@ -8,6 +8,7 @@ public class DatasetImportSchema
     public int SchemaVersion { get; set; } = 1;
     public bool SchemaConfirmed { get; set; } = true;
     public string? TargetColumn { get; set; }
+    public string? UniqueKeyColumn { get; set; }
     public string CurrencyCode { get; set; } = "BRL";
     public DateTime FinalizedAtUtc { get; set; } = DateTime.UtcNow;
     public List<DatasetImportSchemaColumn> Columns { get; set; } = new();

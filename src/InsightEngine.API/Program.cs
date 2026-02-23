@@ -2,10 +2,13 @@ using InsightEngine.API.Configuration;
 using InsightEngine.API.Middleware;
 using InsightEngine.API.Models;
 using InsightEngine.API.Services;
+using InsightEngine.API.Validators;
 using InsightEngine.CrossCutting.IoC;
 using InsightEngine.Domain.Settings;
 using InsightEngine.Infra.Data.Context;
 using DuckDB.NET.Data;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
@@ -21,6 +24,7 @@ var runtimeSettingsSection = builder.Configuration.GetSection(InsightEngineSetti
 var runtimeSettings = runtimeSettingsSection.Get<InsightEngineSettings>() ?? new InsightEngineSettings();
 builder.Services.Configure<InsightEngineSettings>(runtimeSettingsSection);
 builder.Services.Configure<LLMSettings>(builder.Configuration.GetSection(LLMSettings.SectionName));
+builder.Services.Configure<InsightEngineFeatures>(builder.Configuration.GetSection(InsightEngineFeatures.SectionName));
 
 // Configurar Kestrel para suportar uploads com limite centralizado
 builder.Services.Configure<KestrelServerOptions>(options =>
@@ -37,6 +41,7 @@ builder.Services.Configure<FormOptions>(options =>
 });
 
 // Add services to the container.
+builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -85,6 +90,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     };
 });
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddValidatorsFromAssemblyContaining<AiChartRequestValidator>();
 
 // Configure API Versioning
 builder.Services.AddApiVersioning(options =>

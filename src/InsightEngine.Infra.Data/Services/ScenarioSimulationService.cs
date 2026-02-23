@@ -16,15 +16,18 @@ namespace InsightEngine.Infra.Data.Services;
 public class ScenarioSimulationService : IScenarioSimulationService
 {
     private readonly IFileStorageService _fileStorageService;
+    private readonly IIndexStore _indexStore;
     private readonly ScenarioSimulationSettings _settings;
     private readonly ILogger<ScenarioSimulationService> _logger;
 
     public ScenarioSimulationService(
         IFileStorageService fileStorageService,
+        IIndexStore indexStore,
         IOptions<ScenarioSimulationSettings> settings,
         ILogger<ScenarioSimulationService> logger)
     {
         _fileStorageService = fileStorageService;
+        _indexStore = indexStore;
         _settings = settings.Value;
         _logger = logger;
     }
@@ -79,9 +82,25 @@ public class ScenarioSimulationService : IScenarioSimulationService
             TargetMetric = metricColumn.Name,
             TargetDimension = dimensionColumn.Name,
             Aggregation = request.Aggregation,
+            PropagateTargetFormula = request.PropagateTargetFormula,
             Filters = normalizedFilters,
             Operations = normalizedOperations
         };
+
+        string? appliedFormulaExpression = null;
+        if (normalizedRequest.PropagateTargetFormula)
+        {
+            var index = await _indexStore.LoadAsync(datasetId, ct);
+            var selectedFormula = index?.SelectedFormula?.Formula;
+            var inferredFormula = index?.FormulaInference?.Result?.Candidates?.FirstOrDefault();
+            var formula = selectedFormula ?? inferredFormula;
+
+            if (formula is not null
+                && string.Equals(formula.TargetColumn, normalizedRequest.TargetMetric, StringComparison.OrdinalIgnoreCase))
+            {
+                appliedFormulaExpression = formula.ExpressionText;
+            }
+        }
 
         var queryHash = QueryHashHelper.ComputeScenarioQueryHash(normalizedRequest, datasetId);
 
@@ -146,6 +165,7 @@ public class ScenarioSimulationService : IScenarioSimulationService
                 DatasetId = datasetId,
                 TargetMetric = normalizedRequest.TargetMetric,
                 TargetDimension = normalizedRequest.TargetDimension,
+                AppliedFormulaExpression = appliedFormulaExpression,
                 QueryHash = queryHash,
                 RowCountReturned = deltaSeries.Count,
                 DuckDbMs = sw.ElapsedMilliseconds,

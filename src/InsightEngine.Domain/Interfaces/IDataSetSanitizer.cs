@@ -6,4 +6,9 @@ public interface IDataSetSanitizer
         string csvPath,
         IReadOnlyCollection<string> ignoredColumns,
         CancellationToken cancellationToken = default);
+
+    Task<long> AddSequentialKeyColumnAsync(
+        string csvPath,
+        string keyColumnName,
+        CancellationToken cancellationToken = default);
 }

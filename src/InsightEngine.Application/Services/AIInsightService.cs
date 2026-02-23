@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using FluentValidation;
+using InsightEngine.Application.Insights;
 using InsightEngine.Domain.Constants;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
@@ -37,20 +39,38 @@ public class AIInsightService : IAIInsightService
     private readonly ILLMContextBuilder _contextBuilder;
     private readonly IEvidencePackService _evidencePackService;
     private readonly ILLMClient _llmClient;
+    private readonly IIndexStore _indexStore;
+    private readonly IRecommendationEngineV2 _recommendationEngineV2;
+    private readonly LlmInsightComposerV2 _llmInsightComposerV2;
+    private readonly IValidator<DeepInsightsRequest> _deepInsightsRequestValidator;
+    private readonly IValidator<InsightPackAskRequest> _insightPackAskRequestValidator;
     private readonly IOptionsMonitor<LLMSettings> _settingsMonitor;
+    private readonly IOptionsMonitor<InsightEngineFeatures> _featureSettingsMonitor;
     private readonly ILogger<AIInsightService> _logger;
 
     public AIInsightService(
         ILLMContextBuilder contextBuilder,
         IEvidencePackService evidencePackService,
         ILLMClient llmClient,
+        IIndexStore indexStore,
+        IRecommendationEngineV2 recommendationEngineV2,
+        LlmInsightComposerV2 llmInsightComposerV2,
+        IValidator<DeepInsightsRequest> deepInsightsRequestValidator,
+        IValidator<InsightPackAskRequest> insightPackAskRequestValidator,
         IOptionsMonitor<LLMSettings> settingsMonitor,
+        IOptionsMonitor<InsightEngineFeatures> featureSettingsMonitor,
         ILogger<AIInsightService> logger)
     {
         _contextBuilder = contextBuilder;
         _evidencePackService = evidencePackService;
         _llmClient = llmClient;
+        _indexStore = indexStore;
+        _recommendationEngineV2 = recommendationEngineV2;
+        _llmInsightComposerV2 = llmInsightComposerV2;
+        _deepInsightsRequestValidator = deepInsightsRequestValidator;
+        _insightPackAskRequestValidator = insightPackAskRequestValidator;
         _settingsMonitor = settingsMonitor;
+        _featureSettingsMonitor = featureSettingsMonitor;
         _logger = logger;
     }
 
@@ -283,6 +303,12 @@ public class AIInsightService : IAIInsightService
         DeepInsightsRequest request,
         CancellationToken cancellationToken = default)
     {
+        var validation = await _deepInsightsRequestValidator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+        {
+            return Result.Failure<DeepInsightsResult>(validation.Errors.Select(error => error.ErrorMessage).ToList());
+        }
+
         var stopwatch = Stopwatch.StartNew();
         var language = NormalizeLanguage(request.Language);
         var budgetCheck = TryConsumeDeepInsightsBudget(request);
@@ -303,6 +329,23 @@ public class AIInsightService : IAIInsightService
             ["evidencePack"] = evidencePack
         };
 
+        var systemPrompt = BuildDeepInsightsSystemPrompt(language);
+        var userPrompt = BuildDeepInsightsUserPrompt(language);
+
+        if (_featureSettingsMonitor.CurrentValue.LlmStructuredInsightsV2Enabled)
+        {
+            var index = await _indexStore.LoadAsync(request.DatasetId, cancellationToken);
+            if (index is not null)
+            {
+                var profile = BuildProfileFromIndex(index);
+                var recommendations = _recommendationEngineV2.Generate(profile, index);
+                var composed = _llmInsightComposerV2.Compose(index, recommendations, language, profile.IgnoredColumns);
+                systemPrompt = composed.SystemPrompt;
+                userPrompt = composed.UserPrompt;
+                context["structuredInsightsV2Payload"] = composed.PayloadJson;
+            }
+        }
+
         var llmRequest = new LLMRequest
         {
             DatasetId = request.DatasetId,
@@ -311,8 +354,8 @@ public class AIInsightService : IAIInsightService
             FeatureKind = $"deep-insights-{language}",
             PromptVersion = $"{LLMPromptVersion.Value}-{evidencePack.EvidenceVersion}",
             ResponseFormat = LLMResponseFormat.Json,
-            SystemPrompt = BuildDeepInsightsSystemPrompt(language),
-            UserPrompt = BuildDeepInsightsUserPrompt(language),
+            SystemPrompt = systemPrompt,
+            UserPrompt = userPrompt,
             ContextObjects = context
         };
 
@@ -502,6 +545,12 @@ public class AIInsightService : IAIInsightService
         InsightPackAskRequest request,
         CancellationToken cancellationToken = default)
     {
+        var dtoValidation = await _insightPackAskRequestValidator.ValidateAsync(request, cancellationToken);
+        if (!dtoValidation.IsValid)
+        {
+            return Result.Failure<InsightPackAskResult>(dtoValidation.Errors.Select(error => error.ErrorMessage).ToList());
+        }
+
         if (request.DatasetId == Guid.Empty)
         {
             return Result.Failure<InsightPackAskResult>("DatasetId is required.");
@@ -1068,6 +1117,32 @@ Rules:
 """
         + Environment.NewLine
         + BuildOutputLanguageInstruction(language);
+    }
+
+    private static Domain.ValueObjects.DatasetProfile BuildProfileFromIndex(Domain.Models.MetadataIndex.DatasetIndex index)
+    {
+        var profile = new Domain.ValueObjects.DatasetProfile
+        {
+            DatasetId = index.DatasetId,
+            RowCount = (int)Math.Min(int.MaxValue, Math.Max(0, index.RowCount)),
+            SampleSize = index.Limits.SampleRows,
+            TargetColumn = index.TargetColumn,
+            SchemaConfirmed = index.SchemaConfirmed,
+            Columns = index.Columns.Select(column => new Domain.ValueObjects.ColumnProfile
+            {
+                Name = column.Name,
+                InferredType = column.InferredType,
+                ConfirmedType = column.InferredType,
+                NullRate = column.NullRate,
+                DistinctCount = (int)Math.Min(int.MaxValue, Math.Max(0, column.DistinctCount)),
+                TopValues = column.TopValues.ToList(),
+                Min = column.NumericStats?.Min,
+                Mean = column.NumericStats?.Mean,
+                Max = column.NumericStats?.Max
+            }).ToList()
+        };
+
+        return profile;
     }
 
     private BudgetDecision TryConsumeDeepInsightsBudget(DeepInsightsRequest request)

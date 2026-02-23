@@ -156,6 +156,12 @@ public class CsvProfiler : ICsvProfiler
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var uniqueKeyCandidates = columnStats
+            .Where(stats => stats.IsSampleUniqueCandidate(rowCount))
+            .Select(stats => stats.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         return new ImportPreviewResponse
         {
             TempUploadId = datasetId.ToString(),
@@ -163,7 +169,8 @@ public class CsvProfiler : ICsvProfiler
             Columns = previewColumns,
             SampleRows = sampleRows,
             SuggestedTargetCandidates = targetCandidates,
-            SuggestedIgnoredCandidates = ignoredCandidates
+            SuggestedIgnoredCandidates = ignoredCandidates,
+            SuggestedUniqueKeyCandidates = uniqueKeyCandidates
         };
     }
 
@@ -349,6 +356,21 @@ public class CsvProfiler : ICsvProfiler
             var nameHint = ContainsHint(Name, IgnoredNameHints);
 
             return almostConstant || (nearUnique && nameHint);
+        }
+
+        public bool IsSampleUniqueCandidate(int totalRows)
+        {
+            if (totalRows <= 0)
+            {
+                return false;
+            }
+
+            if (_nullCount > 0)
+            {
+                return false;
+            }
+
+            return _distinctTrackingActive && _distinctValues.Count == totalRows;
         }
 
         private InferredType InferType(int nonNull, int totalRows)

@@ -146,6 +146,7 @@ public class DataSetApplicationService : IDataSetApplicationService
         var command = new FinalizeDataSetImportCommand(datasetId)
         {
             TargetColumn = request.TargetColumn,
+            UniqueKeyColumn = request.UniqueKeyColumn,
             IgnoredColumns = request.IgnoredColumns ?? new List<string>(),
             ColumnTypeOverrides = request.ColumnTypeOverrides ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             CurrencyCode = string.IsNullOrWhiteSpace(request.CurrencyCode) ? "BRL" : request.CurrencyCode
@@ -163,6 +164,7 @@ public class DataSetApplicationService : IDataSetApplicationService
             DatasetId = data.DatasetId,
             SchemaVersion = data.SchemaVersion,
             TargetColumn = data.TargetColumn,
+            UniqueKeyColumn = data.UniqueKeyColumn,
             IgnoredColumnsCount = data.IgnoredColumnsCount,
             StoredColumnsCount = data.StoredColumnsCount,
             CurrencyCode = data.CurrencyCode
@@ -238,6 +240,7 @@ public class DataSetApplicationService : IDataSetApplicationService
             SchemaVersion = 1,
             SchemaConfirmed = false,
             TargetColumn = targetColumn,
+            UniqueKeyColumn = null,
             CurrencyCode = "BRL",
             FinalizedAtUtc = DateTime.UtcNow,
             Columns = columns

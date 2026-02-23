@@ -2,7 +2,9 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Services;
+using InsightEngine.Domain.Settings;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -17,7 +19,10 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICsvProfiler _csvProfiler;
     private readonly IDataSetSchemaStore _schemaStore;
+    private readonly IIndexStore _indexStore;
     private readonly RecommendationEngine _recommendationEngine;
+    private readonly IRecommendationEngineV2 _recommendationEngineV2;
+    private readonly InsightEngineFeatures _features;
     private readonly ILogger<GetDataSetRecommendationsQueryHandler> _logger;
 
     public GetDataSetRecommendationsQueryHandler(
@@ -25,14 +30,20 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
         IUnitOfWork unitOfWork,
         ICsvProfiler csvProfiler,
         IDataSetSchemaStore schemaStore,
+        IIndexStore indexStore,
         RecommendationEngine recommendationEngine,
+        IRecommendationEngineV2 recommendationEngineV2,
+        InsightEngineFeatures features,
         ILogger<GetDataSetRecommendationsQueryHandler> logger)
     {
         _dataSetRepository = dataSetRepository;
         _unitOfWork = unitOfWork;
         _csvProfiler = csvProfiler;
         _schemaStore = schemaStore;
+        _indexStore = indexStore;
         _recommendationEngine = recommendationEngine;
+        _recommendationEngineV2 = recommendationEngineV2;
+        _features = features;
         _logger = logger;
     }
 
@@ -70,7 +81,16 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
             profile = DatasetSchemaProfileMapper.ApplySchema(profile, schema);
 
             // Generate recommendations
-            var recommendations = _recommendationEngine.Generate(profile);
+            List<ChartRecommendation> recommendations;
+            if (_features.RecommendationV2Enabled)
+            {
+                DatasetIndex? index = await _indexStore.LoadAsync(request.DatasetId, cancellationToken);
+                recommendations = _recommendationEngineV2.Generate(profile, index);
+            }
+            else
+            {
+                recommendations = _recommendationEngine.Generate(profile);
+            }
             dataSet.MarkAccessed();
             _dataSetRepository.Update(dataSet);
             await _unitOfWork.CommitAsync();

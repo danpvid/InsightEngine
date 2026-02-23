@@ -73,10 +73,13 @@ export interface ImportPreviewResponse {
   sampleRows: Array<Record<string, string>>;
   suggestedTargetCandidates: string[];
   suggestedIgnoredCandidates: string[];
+  suggestedUniqueKeyCandidates: string[];
 }
 
 export interface FinalizeImportRequest {
+  importMode?: 'standard' | 'with-index';
   targetColumn?: string | null;
+  uniqueKeyColumn?: string | null;
   ignoredColumns: string[];
   columnTypeOverrides: Record<string, string>;
   currencyCode: string;
@@ -86,6 +89,7 @@ export interface FinalizeImportResponse {
   datasetId: string;
   schemaVersion: number;
   targetColumn?: string | null;
+  uniqueKeyColumn?: string | null;
   ignoredColumnsCount: number;
   storedColumnsCount: number;
   currencyCode: string;

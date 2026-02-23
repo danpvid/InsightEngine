@@ -1,8 +1,11 @@
 using FluentValidation;
 using InsightEngine.Application.Services;
+using InsightEngine.Application.Recommendations;
+using InsightEngine.Application.Insights;
 using InsightEngine.Domain.Behaviors;
 using InsightEngine.Domain.Core.Notifications;
 using InsightEngine.Domain.Interfaces;
+using InsightEngine.Domain.Recommendations.Scoring;
 using InsightEngine.Domain.Settings;
 using InsightEngine.Infra.Data.Configuration;
 using InsightEngine.Infra.Data.Context;
@@ -16,6 +19,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using System;
 using System.IO;
 
@@ -41,6 +45,9 @@ public static class NativeInjectorBootStrapper
         services.Configure<FormulaInferenceSettings>(configuration.GetSection(FormulaInferenceSettings.SectionName));
         services.Configure<MetadataPersistenceSettings>(configuration.GetSection(MetadataPersistenceSettings.SectionName));
         services.Configure<LLMSettings>(configuration.GetSection(LLMSettings.SectionName));
+        services.Configure<InsightEngineFeatures>(configuration.GetSection(InsightEngineFeatures.SectionName));
+        services.Configure<RecommendationWeights>(configuration.GetSection(RecommendationWeights.SectionName));
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<InsightEngineFeatures>>().Value);
         services.PostConfigure<ChartExecutionSettings>(options =>
         {
             options.ScatterMaxPoints = runtimeSettings.ScatterMaxPoints;
@@ -82,6 +89,7 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<ICsvProfiler, CsvProfiler>();
         services.AddScoped<IDuckDbMetadataAnalyzer, DuckDbMetadataAnalyzer>();
         services.AddScoped<ISemanticTagger, InsightEngine.Domain.Services.SemanticTagger>();
+        services.AddScoped<IChartFilterParser, InsightEngine.Domain.Services.ChartFilterParser>();
         services.AddScoped<IIndexStore, IndexStore>();
         services.AddScoped<IIndexingEngine, IndexingEngine>();
         services.AddScoped<IChartExecutionService, ChartExecutionService>();
@@ -92,10 +100,14 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<FormulaSamplingService>();
         services.AddScoped<LinearRegressionService>();
         services.AddScoped<FeatureSelector>();
+        services.AddScoped<FormulaExpressionFormatter>();
         services.AddScoped<FormulaCandidateRankingService>();
         services.AddScoped<IFormulaDiscoveryService, FormulaDiscoveryService>();
         services.AddScoped<IFormulaInferenceEngine, FormulaInferenceEngine>();
         services.AddScoped<InsightEngine.Domain.Services.RecommendationEngine>();
+        services.AddScoped<ChartRelevanceScorer>();
+        services.AddScoped<IRecommendationEngineV2, RecommendationEngineV2>();
+        services.AddScoped<LlmInsightComposerV2>();
         services.AddScoped<ILLMContextBuilder, LLMContextBuilder>();
         services.AddScoped<IEvidencePackService, EvidencePackService>();
         services.AddScoped<IAIInsightService, AIInsightService>();

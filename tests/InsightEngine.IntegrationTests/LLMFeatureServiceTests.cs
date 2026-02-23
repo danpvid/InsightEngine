@@ -1,4 +1,6 @@
 using FluentAssertions;
+using FluentValidation;
+using InsightEngine.Application.Insights;
 using InsightEngine.Application.Models.DataSet;
 using InsightEngine.Application.Services;
 using InsightEngine.Domain.Commands.DataSet;
@@ -124,12 +126,10 @@ public class LLMFeatureServiceTests
             Json = """{"headline":"missing bullets"}"""
         }));
 
-        var service = new AIInsightService(
+        var service = CreateAiInsightService(
             contextBuilder,
             new StubEvidencePackService(),
-            llmClient,
-            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
-            NullLogger<AIInsightService>.Instance);
+            llmClient);
 
         var result = await service.GenerateAiSummaryAsync(new LLMChartContextRequest
         {
@@ -159,12 +159,10 @@ public class LLMFeatureServiceTests
         });
 
         var llmClient = new StubLLMClient(Result.Failure<LLMResponse>("LLM provider is disabled."));
-        var service = new AIInsightService(
+        var service = CreateAiInsightService(
             contextBuilder,
             new StubEvidencePackService(),
-            llmClient,
-            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
-            NullLogger<AIInsightService>.Instance);
+            llmClient);
 
         var result = await service.GenerateAiSummaryAsync(new LLMChartContextRequest
         {
@@ -219,6 +217,45 @@ public class LLMFeatureServiceTests
         {
             return Task.FromResult(_result);
         }
+    }
+
+    private static AIInsightService CreateAiInsightService(
+        ILLMContextBuilder contextBuilder,
+        IEvidencePackService evidencePackService,
+        ILLMClient llmClient)
+    {
+        return new AIInsightService(
+            contextBuilder,
+            evidencePackService,
+            llmClient,
+            new StubIndexStore(),
+            new StubRecommendationEngineV2(),
+            new LlmInsightComposerV2(),
+            new InlineValidator<DeepInsightsRequest>(),
+            new InlineValidator<InsightPackAskRequest>(),
+            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
+            new TestOptionsMonitor<InsightEngineFeatures>(new InsightEngineFeatures()),
+            NullLogger<AIInsightService>.Instance);
+    }
+
+    private sealed class StubIndexStore : IIndexStore
+    {
+        public Task SaveAsync(DatasetIndex index, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<DatasetIndex?> LoadAsync(Guid datasetId, CancellationToken cancellationToken = default)
+            => Task.FromResult<DatasetIndex?>(null);
+
+        public Task SaveStatusAsync(DatasetIndexStatus status, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<DatasetIndexStatus> LoadStatusAsync(Guid datasetId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DatasetIndexStatus { DatasetId = datasetId });
+
+        public Task InvalidateAsync(Guid datasetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class StubRecommendationEngineV2 : IRecommendationEngineV2
+    {
+        public List<ChartRecommendation> Generate(DatasetProfile profile, DatasetIndex? index) => [];
     }
 
     private sealed class StubEvidencePackService : IEvidencePackService

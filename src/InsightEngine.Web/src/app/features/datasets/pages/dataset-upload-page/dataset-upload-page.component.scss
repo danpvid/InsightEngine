@@ -128,7 +128,6 @@
   padding: 16px;
   background-color: var(--surface-2);
   border-radius: 8px;
-
   mat-progress-bar {
     margin-bottom: 12px;
     border-radius: 4px;
@@ -141,6 +140,101 @@
     font-weight: 500;
     font-size: 14px;
     text-align: center;
+  }
+}
+
+.pipeline-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.pipeline-window {
+  width: min(560px, 96vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 24px var(--shadow);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pipeline-header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+
+  mat-icon {
+    color: var(--primary);
+  }
+
+  h3 {
+    margin: 0;
+    color: var(--text);
+    font-size: 18px;
+  }
+
+  p {
+    margin: 2px 0 0;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+}
+
+.pipeline-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+
+  mat-icon {
+    color: var(--text-2);
+  }
+
+  strong {
+    display: block;
+    color: var(--text);
+    font-size: 14px;
+  }
+
+  small {
+    color: var(--text-2);
+    font-size: 12px;
+  }
+
+  &.active {
+    border-color: var(--primary);
+
+    mat-icon {
+      color: var(--primary);
+      animation: spin 1.1s linear infinite;
+    }
+  }
+
+  &.done {
+    border-color: var(--success);
+
+    mat-icon {
+      color: var(--success);
+      animation: none;
+    }
   }
 }
 

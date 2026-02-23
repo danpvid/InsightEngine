@@ -147,7 +147,12 @@ export class ExplorePageComponent implements OnInit {
   }
 
   get canViewRecommendations(): boolean {
-    return !!this.datasetId && !!this.datasetName;
+    return !!this.datasetId && this.isIndexReady;
+  }
+
+  get isIndexReady(): boolean {
+    const status = this.normalizeStatus(this.indexStatus?.status);
+    return status === 'ready' && this.hasIndexData;
   }
 
   get formulaSuggestionExpression(): string {
@@ -959,6 +964,7 @@ export class ExplorePageComponent implements OnInit {
         this.index = response.data;
         this.ensureFieldSelection();
         this.rebuildDistributionCharts();
+
         if (this.selectedTabIndex === 4 && this.gridRows.length === 0) {
           this.loadGridData();
         }

@@ -7,6 +7,7 @@ public class ScenarioRequest
     public string TargetMetric { get; set; } = string.Empty;
     public string TargetDimension { get; set; } = string.Empty;
     public Aggregation? Aggregation { get; set; }
+    public bool PropagateTargetFormula { get; set; } = false;
     public List<ChartFilter> Filters { get; set; } = new();
     public List<ScenarioOperation> Operations { get; set; } = new();
 }
@@ -36,6 +37,7 @@ public class ScenarioSimulationResponse
     public Guid DatasetId { get; set; }
     public string TargetMetric { get; set; } = string.Empty;
     public string TargetDimension { get; set; } = string.Empty;
+    public string? AppliedFormulaExpression { get; set; }
     public string QueryHash { get; set; } = string.Empty;
     public int RowCountReturned { get; set; }
     public long DuckDbMs { get; set; }

@@ -1041,12 +1041,9 @@ FROM ranked;
         var boundedSampleRows = Math.Clamp(sampleRows, 1000, 500000);
 
         return $@"(
-    SELECT * EXCLUDE (__row_id)
-    FROM (
-        SELECT ROW_NUMBER() OVER () AS __row_id, *
-        FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
-    ) sampled
-    WHERE __row_id <= {boundedSampleRows}
+    SELECT *
+    FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true)
+    LIMIT {boundedSampleRows}
 )";
     }
 

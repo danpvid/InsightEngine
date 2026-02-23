@@ -15,6 +15,7 @@ public class ImportPreviewResponse
     public List<Dictionary<string, string>> SampleRows { get; set; } = new();
     public List<string> SuggestedTargetCandidates { get; set; } = new();
     public List<string> SuggestedIgnoredCandidates { get; set; } = new();
+    public List<string> SuggestedUniqueKeyCandidates { get; set; } = new();
 }
 
 public class ImportPreviewColumn

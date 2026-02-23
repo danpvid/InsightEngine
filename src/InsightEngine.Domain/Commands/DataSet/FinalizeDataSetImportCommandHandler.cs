@@ -2,6 +2,7 @@ using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
+using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Models.ImportSchema;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,7 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
     private readonly ICsvProfiler _csvProfiler;
     private readonly IDataSetSanitizer _dataSetSanitizer;
     private readonly IDataSetSchemaStore _schemaStore;
+    private readonly IDuckDbMetadataAnalyzer _metadataAnalyzer;
     private readonly ILogger<FinalizeDataSetImportCommandHandler> _logger;
 
     public FinalizeDataSetImportCommandHandler(
@@ -23,6 +25,7 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
         ICsvProfiler csvProfiler,
         IDataSetSanitizer dataSetSanitizer,
         IDataSetSchemaStore schemaStore,
+        IDuckDbMetadataAnalyzer metadataAnalyzer,
         ILogger<FinalizeDataSetImportCommandHandler> logger)
     {
         _dataSetRepository = dataSetRepository;
@@ -30,6 +33,7 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
         _csvProfiler = csvProfiler;
         _dataSetSanitizer = dataSetSanitizer;
         _schemaStore = schemaStore;
+        _metadataAnalyzer = metadataAnalyzer;
         _logger = logger;
     }
 
@@ -81,6 +85,26 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                 return Result.Failure<FinalizeDataSetImportResponse>("Target column cannot be in ignoredColumns.");
             }
 
+            var uniqueCandidates = await ResolveUniqueKeyCandidatesAsync(
+                dataSet.StoredPath,
+                profile,
+                ignoredColumns,
+                cancellationToken);
+
+            var uniqueKeyColumn = ResolveUniqueKeyColumn(request.UniqueKeyColumn, uniqueCandidates, lookup);
+            var syntheticKeyColumn = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(uniqueKeyColumn) && uniqueCandidates.Count == 0)
+            {
+                syntheticKeyColumn = BuildSyntheticKeyColumnName(allColumns);
+                var updatedSize = await _dataSetSanitizer
+                    .AddSequentialKeyColumnAsync(dataSet.StoredPath, syntheticKeyColumn, cancellationToken);
+                dataSet.UpdateFileInfo(updatedSize);
+                allColumns.Add(syntheticKeyColumn);
+                lookup[syntheticKeyColumn] = syntheticKeyColumn;
+                uniqueKeyColumn = syntheticKeyColumn;
+            }
+
             var overrides = new Dictionary<string, InferredType>(StringComparer.OrdinalIgnoreCase);
             foreach (var (columnName, typeName) in request.ColumnTypeOverrides)
             {
@@ -126,6 +150,21 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                 })
                 .ToList();
 
+            if (!string.IsNullOrWhiteSpace(syntheticKeyColumn))
+            {
+                schemaColumns.Add(new DatasetImportSchemaColumn
+                {
+                    Name = syntheticKeyColumn,
+                    InferredType = InferredType.Integer,
+                    ConfirmedType = InferredType.Integer,
+                    IsIgnored = false,
+                    IsTarget = false,
+                    CurrencyCode = null,
+                    HasPercentSign = null,
+                    PercentageScaleHint = null
+                });
+            }
+
             if (!string.IsNullOrWhiteSpace(targetColumn))
             {
                 var targetSchema = schemaColumns.FirstOrDefault(column =>
@@ -155,6 +194,7 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                 SchemaVersion = 1,
                 SchemaConfirmed = true,
                 TargetColumn = targetColumn,
+                UniqueKeyColumn = uniqueKeyColumn,
                 CurrencyCode = string.IsNullOrWhiteSpace(request.CurrencyCode) ? "BRL" : request.CurrencyCode,
                 FinalizedAtUtc = DateTime.UtcNow,
                 Columns = schemaColumns
@@ -171,6 +211,7 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                 DatasetId = request.DatasetId,
                 SchemaVersion = schema.SchemaVersion,
                 TargetColumn = targetColumn,
+                UniqueKeyColumn = uniqueKeyColumn,
                 IgnoredColumnsCount = ignoredColumns.Count,
                 StoredColumnsCount = storedColumnsCount,
                 CurrencyCode = schema.CurrencyCode
@@ -181,5 +222,108 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
             _logger.LogError(ex, "Failed to finalize dataset import for {DatasetId}", request.DatasetId);
             return Result.Failure<FinalizeDataSetImportResponse>($"Failed to finalize dataset import: {ex.Message}");
         }
+    }
+
+    private static string ResolveUniqueKeyColumn(
+        string? requestedUniqueKeyColumn,
+        IReadOnlyList<string> uniqueCandidates,
+        IReadOnlyDictionary<string, string> lookup)
+    {
+        if (uniqueCandidates.Count == 1)
+        {
+            var single = uniqueCandidates[0];
+            if (string.IsNullOrWhiteSpace(requestedUniqueKeyColumn))
+            {
+                return single;
+            }
+
+            if (!lookup.TryGetValue(requestedUniqueKeyColumn.Trim(), out var resolvedRequested)
+                || !string.Equals(single, resolvedRequested, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Unique key column must be '{single}'.");
+            }
+
+            return single;
+        }
+
+        if (uniqueCandidates.Count > 1)
+        {
+            if (string.IsNullOrWhiteSpace(requestedUniqueKeyColumn))
+            {
+                var options = string.Join(", ", uniqueCandidates.OrderBy(item => item, StringComparer.OrdinalIgnoreCase));
+                throw new InvalidOperationException($"Multiple unique key candidates found: {options}. Please choose one in uniqueKeyColumn.");
+            }
+
+            if (!lookup.TryGetValue(requestedUniqueKeyColumn.Trim(), out var resolvedRequested)
+                || !uniqueCandidates.Contains(resolvedRequested, StringComparer.OrdinalIgnoreCase))
+            {
+                var options = string.Join(", ", uniqueCandidates.OrderBy(item => item, StringComparer.OrdinalIgnoreCase));
+                throw new InvalidOperationException($"Invalid uniqueKeyColumn '{requestedUniqueKeyColumn}'. Valid options: {options}.");
+            }
+
+            return resolvedRequested;
+        }
+
+        return string.Empty;
+    }
+
+    private async Task<List<string>> ResolveUniqueKeyCandidatesAsync(
+        string csvPath,
+        Domain.ValueObjects.DatasetProfile profile,
+        HashSet<string> ignoredColumns,
+        CancellationToken cancellationToken)
+    {
+        var indexColumns = profile.Columns
+            .Where(column => !ignoredColumns.Contains(column.Name))
+            .Select(column => new ColumnIndex
+            {
+                Name = column.Name,
+                InferredType = (column.ConfirmedType ?? column.InferredType).NormalizeLegacy(),
+                NullRate = column.NullRate,
+                DistinctCount = column.DistinctCount
+            })
+            .ToList();
+
+        if (indexColumns.Count == 0)
+        {
+            return [];
+        }
+
+        var sampleRows = Math.Max(5000, Math.Min(50000, profile.RowCount));
+        var keyCandidates = await _metadataAnalyzer.ComputeCandidateKeysAsync(
+            csvPath,
+            indexColumns,
+            sampleRows,
+            maxSingleColumnCandidates: 30,
+            maxCompositeCandidates: 0,
+            cancellationToken: cancellationToken);
+
+        return keyCandidates
+            .Where(candidate => candidate.Columns.Count == 1)
+            .Where(candidate => candidate.UniquenessRatio >= 0.999999)
+            .Where(candidate => candidate.NullRate <= 0)
+            .Select(candidate => candidate.Columns[0])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string BuildSyntheticKeyColumnName(IReadOnlyCollection<string> existingColumns)
+    {
+        const string baseName = "__row_id";
+        var taken = new HashSet<string>(existingColumns, StringComparer.OrdinalIgnoreCase);
+
+        if (!taken.Contains(baseName))
+        {
+            return baseName;
+        }
+
+        var suffix = 1;
+        while (taken.Contains($"{baseName}_{suffix}"))
+        {
+            suffix++;
+        }
+
+        return $"{baseName}_{suffix}";
     }
 }

@@ -8,7 +8,7 @@ public class FormulaInferenceSettings
     public int MaxColumns { get; set; } = 10;
     public int MaxDepth { get; set; } = 5;
     public int MaxCandidatesReturned { get; set; } = 5;
-    public int SearchBudgetMs { get; set; } = 2500;
+    public int SearchBudgetMs { get; set; } = 10000;
     public int InitialSampleRows { get; set; } = 300;
     public int ValidationSampleRows { get; set; } = 2000;
     public double EpsilonAbs { get; set; } = 1e-6;

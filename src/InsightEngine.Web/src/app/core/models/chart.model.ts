@@ -10,6 +10,7 @@ export interface ScenarioSimulationRequest {
   targetMetric: string;
   targetDimension: string;
   aggregation?: string;
+  propagateTargetFormula?: boolean;
   operations: ScenarioOperationRequest[];
   filters?: ScenarioFilterRequest[];
 }
@@ -41,6 +42,7 @@ export interface ScenarioSimulationResponse {
   datasetId: string;
   targetMetric: string;
   targetDimension: string;
+  appliedFormulaExpression?: string;
   queryHash: string;
   rowCountReturned: number;
   duckDbMs: number;

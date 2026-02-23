@@ -1,4 +1,6 @@
 using FluentAssertions;
+using FluentValidation;
+using InsightEngine.Application.Insights;
 using InsightEngine.Application.Models.DataSet;
 using InsightEngine.Application.Services;
 using InsightEngine.Domain.Commands.DataSet;
@@ -65,7 +67,7 @@ public class DeepInsightsTests
     [Fact]
     public async Task DeepInsights_WhenEvidenceIdsAreInvalid_ShouldFallback()
     {
-        var aiService = new AIInsightService(
+        var aiService = CreateAiInsightService(
             new StubContextBuilder(),
             new StubEvidencePackService(),
             new StubLLMClient(Result.Success(new LLMResponse
@@ -86,9 +88,7 @@ public class DeepInsightsTests
   "meta": { "provider": "local", "model": "llama3", "promptVersion": "v1", "evidenceVersion": "v1" }
 }
 """
-            })),
-            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
-            NullLogger<AIInsightService>.Instance);
+                        })));
 
         var result = await aiService.GenerateDeepInsightsAsync(new DeepInsightsRequest
         {
@@ -105,7 +105,7 @@ public class DeepInsightsTests
     [Fact]
     public async Task DeepInsights_WithValidEvidenceIds_ShouldReturnValidatedReport()
     {
-        var aiService = new AIInsightService(
+        var aiService = CreateAiInsightService(
             new StubContextBuilder(),
             new StubEvidencePackService(),
             new StubLLMClient(Result.Success(new LLMResponse
@@ -130,9 +130,7 @@ public class DeepInsightsTests
   "meta": { "provider": "local", "model": "llama3", "promptVersion": "v1", "evidenceVersion": "v1" }
 }
 """
-            })),
-            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
-            NullLogger<AIInsightService>.Instance);
+                        })));
 
         var result = await aiService.GenerateDeepInsightsAsync(new DeepInsightsRequest
         {
@@ -150,12 +148,10 @@ public class DeepInsightsTests
     [Fact]
     public async Task SemanticInsightPack_ShouldProjectDriversCorrelationsAndScaleHint()
     {
-        var aiService = new AIInsightService(
+        var aiService = CreateAiInsightService(
             new StubContextBuilder(),
             new StubEvidencePackService(),
-            new StubLLMClient(Result.Failure<LLMResponse>("Not used")),
-            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
-            NullLogger<AIInsightService>.Instance);
+            new StubLLMClient(Result.Failure<LLMResponse>("Not used")));
 
         var result = await aiService.BuildSemanticInsightPackAsync(new DeepInsightsRequest
         {
@@ -173,7 +169,7 @@ public class DeepInsightsTests
     [Fact]
     public async Task AskWithInsightPack_WhenLlmJsonIsInvalid_ShouldReturnFallbackAndCaveat()
     {
-        var aiService = new AIInsightService(
+        var aiService = CreateAiInsightService(
             new StubContextBuilder(),
             new StubEvidencePackService(),
             new StubLLMClient(Result.Success(new LLMResponse
@@ -181,9 +177,7 @@ public class DeepInsightsTests
                 Provider = LLMProvider.LocalHttp,
                 ModelId = "llama3",
                 Json = "{ \"invalid\": true }"
-            })),
-            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
-            NullLogger<AIInsightService>.Instance);
+            })));
 
         var result = await aiService.AskWithInsightPackAsync(new InsightPackAskRequest
         {
@@ -204,7 +198,7 @@ public class DeepInsightsTests
         [Fact]
         public async Task AskWithInsightPack_ShouldSanitizeCausalLanguageAndEmitConfidenceScore()
         {
-                var aiService = new AIInsightService(
+                var aiService = CreateAiInsightService(
                         new StubContextBuilder(),
                         new StubEvidencePackService(),
                         new StubLLMClient(Result.Success(new LLMResponse
@@ -247,9 +241,7 @@ public class DeepInsightsTests
     "followUpQuestions": ["Which factor caused variance?"]
 }
 """
-                        })),
-                        new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
-                        NullLogger<AIInsightService>.Instance);
+                        })));
 
                 var result = await aiService.AskWithInsightPackAsync(new InsightPackAskRequest
                 {
@@ -369,6 +361,45 @@ public class DeepInsightsTests
         {
             return Task.FromResult(_response);
         }
+    }
+
+    private static AIInsightService CreateAiInsightService(
+        ILLMContextBuilder contextBuilder,
+        IEvidencePackService evidencePackService,
+        ILLMClient llmClient)
+    {
+        return new AIInsightService(
+            contextBuilder,
+            evidencePackService,
+            llmClient,
+            new StubIndexStore(),
+            new StubRecommendationEngineV2(),
+            new LlmInsightComposerV2(),
+            new InlineValidator<DeepInsightsRequest>(),
+            new InlineValidator<InsightPackAskRequest>(),
+            new TestOptionsMonitor<LLMSettings>(new LLMSettings()),
+            new TestOptionsMonitor<InsightEngineFeatures>(new InsightEngineFeatures()),
+            NullLogger<AIInsightService>.Instance);
+    }
+
+    private sealed class StubIndexStore : IIndexStore
+    {
+        public Task SaveAsync(DatasetIndex index, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<DatasetIndex?> LoadAsync(Guid datasetId, CancellationToken cancellationToken = default)
+            => Task.FromResult<DatasetIndex?>(null);
+
+        public Task SaveStatusAsync(DatasetIndexStatus status, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<DatasetIndexStatus> LoadStatusAsync(Guid datasetId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DatasetIndexStatus { DatasetId = datasetId });
+
+        public Task InvalidateAsync(Guid datasetId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class StubRecommendationEngineV2 : IRecommendationEngineV2
+    {
+        public List<ChartRecommendation> Generate(DatasetProfile profile, DatasetIndex? index) => [];
     }
 
     private sealed class FakeDataSetApplicationService : IDataSetApplicationService

@@ -226,6 +226,39 @@ Arquivo principal: `src/InsightEngine.API/appsettings.json`.
 }
 ```
 
+### Feature flags V2 (default OFF)
+```json
+{
+  "Features": {
+    "RecommendationV2Enabled": false,
+    "RecommendationV2DebugLogging": false,
+    "LlmStructuredInsightsV2Enabled": false
+  }
+}
+```
+
+### RecommendationWeights (RecommendationEngineV2)
+```json
+{
+  "RecommendationWeights": {
+    "Correlation": 0.35,
+    "Variance": 0.2,
+    "Completeness": 0.15,
+    "Outlier": 0.05,
+    "Temporal": 0.1,
+    "RoleHint": 0.05,
+    "SemanticHint": 0.05,
+    "CardinalityPenalty": 0.03,
+    "NearConstantPenalty": 0.02
+  }
+}
+```
+
+Notas:
+- `RecommendationV2Enabled=true` ativa ranking por relevancia com `DatasetIndex`.
+- `RecommendationV2DebugLogging=true` registra top candidatos com breakdown de score (somente log).
+- `LlmStructuredInsightsV2Enabled=true` ativa prompt/payload estruturado para insights (com limite deterministico de tamanho).
+
 Provider options:
 - `None`: endpoints de AI ativos com fallback heuristico/deterministico.
 - `LocalHttp`: provedor local (Ollama/llama.cpp HTTP compativel).

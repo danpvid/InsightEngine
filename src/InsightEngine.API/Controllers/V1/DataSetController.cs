@@ -9,6 +9,7 @@ using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Models.Formulas;
 using InsightEngine.Domain.Models.ImportSchema;
 using InsightEngine.Domain.Models.MetadataIndex;
+using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.Settings;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -32,7 +33,6 @@ public class DataSetController : BaseController
 {
     private const string RawRowControlColumn = "__row_control_id";
     private readonly IDataSetApplicationService _dataSetApplicationService;
-    private readonly IAIInsightService _aiInsightService;
     private readonly IDataSetCleanupService _dataSetCleanupService;
     private readonly IFileStorageService _fileStorageService;
     private readonly IDataSetSchemaStore _schemaStore;
@@ -42,6 +42,7 @@ public class DataSetController : BaseController
     private readonly IWebHostEnvironment _environment;
     private readonly InsightEngineSettings _runtimeSettings;
     private readonly FormulaInferenceSettings _formulaInferenceSettings;
+    private readonly InsightEngineFeatures _features;
     private const int RawRangeDistinctThreshold = 20;
     private int RawTopValuesLimit => Math.Clamp(_runtimeSettings.RawTopValuesLimit, 3, 50);
     private int RawTopRangesLimit => Math.Clamp(_runtimeSettings.RawTopRangesLimit, 3, 20);
@@ -49,7 +50,6 @@ public class DataSetController : BaseController
 
     public DataSetController(
         IDataSetApplicationService dataSetApplicationService,
-        IAIInsightService aiInsightService,
         IDataSetCleanupService dataSetCleanupService,
         IFileStorageService fileStorageService,
         IDataSetSchemaStore schemaStore,
@@ -60,11 +60,11 @@ public class DataSetController : BaseController
         ILogger<DataSetController> logger,
         IWebHostEnvironment environment,
         IOptions<InsightEngineSettings> runtimeSettings,
-        IOptions<FormulaInferenceSettings> formulaInferenceSettings)
+        IOptions<FormulaInferenceSettings> formulaInferenceSettings,
+        InsightEngineFeatures features)
         : base(notificationHandler, mediator)
     {
         _dataSetApplicationService = dataSetApplicationService;
-        _aiInsightService = aiInsightService;
         _dataSetCleanupService = dataSetCleanupService;
         _fileStorageService = fileStorageService;
         _schemaStore = schemaStore;
@@ -74,6 +74,7 @@ public class DataSetController : BaseController
         _environment = environment;
         _runtimeSettings = runtimeSettings.Value;
         _formulaInferenceSettings = formulaInferenceSettings.Value;
+        _features = features;
     }
 
     /// <summary>
@@ -409,7 +410,8 @@ public class DataSetController : BaseController
                     }),
                     sampleRows = preview.SampleRows,
                     suggestedTargetCandidates = preview.SuggestedTargetCandidates,
-                    suggestedIgnoredCandidates = preview.SuggestedIgnoredCandidates
+                    suggestedIgnoredCandidates = preview.SuggestedIgnoredCandidates,
+                    suggestedUniqueKeyCandidates = preview.SuggestedUniqueKeyCandidates
                 }
             });
         }
@@ -490,6 +492,7 @@ public class DataSetController : BaseController
                     schemaVersion = schema.SchemaVersion,
                     schemaConfirmed = schema.SchemaConfirmed,
                     targetColumn = schema.TargetColumn,
+                    uniqueKeyColumn = schema.UniqueKeyColumn,
                     currencyCode = schema.CurrencyCode,
                     finalizedAtUtc = schema.FinalizedAtUtc,
                     ignoredColumnsCount = schema.Columns.Count(column => column.IsIgnored),
@@ -537,6 +540,31 @@ public class DataSetController : BaseController
                 return ErrorResponse(statusCode, result.Errors, code);
             }
 
+            var withIndexMode = string.Equals(finalizeRequest.ImportMode, "with-index", StringComparison.OrdinalIgnoreCase)
+                || _features.ImportFinalizeWithIndexByDefault;
+
+            object? indexBuild = null;
+            if (withIndexMode)
+            {
+                var indexBuildResult = await _dataSetApplicationService.BuildIndexAsync(
+                    id,
+                    new BuildIndexRequest(),
+                    HttpContext.RequestAborted);
+
+                if (!indexBuildResult.IsSuccess)
+                {
+                    return ErrorResponse(StatusCodes.Status400BadRequest, indexBuildResult.Errors, "validation_error");
+                }
+
+                indexBuild = new
+                {
+                    triggered = true,
+                    status = (indexBuildResult.Data?.Status ?? IndexBuildState.Ready).ToString().ToLowerInvariant(),
+                    builtAtUtc = indexBuildResult.Data?.BuiltAtUtc,
+                    limitsUsed = indexBuildResult.Data?.LimitsUsed
+                };
+            }
+
             object? formulaInference = null;
             if (finalizeRequest.FormulaInference?.Enabled == true)
             {
@@ -555,9 +583,12 @@ public class DataSetController : BaseController
                     datasetId = result.Data!.DatasetId,
                     schemaVersion = result.Data.SchemaVersion,
                     targetColumn = result.Data.TargetColumn,
+                    uniqueKeyColumn = result.Data.UniqueKeyColumn,
                     ignoredColumnsCount = result.Data.IgnoredColumnsCount,
                     storedColumnsCount = result.Data.StoredColumnsCount,
                     currencyCode = result.Data.CurrencyCode,
+                    importMode = withIndexMode ? "with-index" : "standard",
+                    indexBuild,
                     formulaInference
                 }
             });
@@ -1654,117 +1685,40 @@ OFFSET {offset};
     public async Task<IActionResult> GetChart(
         Guid id, 
         string recommendationId,
-        [FromQuery] string? aggregation = null,
-        [FromQuery] string? timeBin = null,
-        [FromQuery] string? xColumn = null,
-        [FromQuery] string? yColumn = null,
-        [FromQuery] string? metricY = null,
-        [FromQuery] string? groupBy = null,
-        [FromQuery] string[]? filters = null,
-        [FromQuery] string? view = null,
-        [FromQuery] string? percentile = null,
-        [FromQuery] string? mode = null,
-        [FromQuery] string? percentileTarget = null)
+        [FromQuery] ChartExecutionQueryRequest request)
     {
-        var resolvedMetricY = !string.IsNullOrWhiteSpace(metricY) ? metricY : yColumn;
-        var resolvedView = ChartViewKind.Base;
-        var resolvedMode = PercentileMode.None;
-        PercentileKind? resolvedPercentile = null;
-
         _logger.LogInformation(
             "GetChart called - DatasetId: {DatasetId}, RecommendationId: {RecommendationId}, Aggregation: {Aggregation}, TimeBin: {TimeBin}, XColumn: {XColumn}, YColumn: {YColumn}, GroupBy: {GroupBy}, Filters: {FilterCount}, View: {View}, Percentile: {Percentile}, Mode: {Mode}",
-            id, recommendationId, aggregation ?? "null", timeBin ?? "null", xColumn ?? "null", resolvedMetricY ?? "null", groupBy ?? "null", filters?.Length ?? 0, view ?? "base", percentile ?? "null", mode ?? "none");
+            id,
+            recommendationId,
+            request.Aggregation ?? "null",
+            request.TimeBin ?? "null",
+            request.XColumn ?? "null",
+            (request.MetricY ?? request.YColumn) ?? "null",
+            request.GroupBy ?? "null",
+            request.Filters?.Length ?? 0,
+            request.View ?? "base",
+            request.Percentile ?? "null",
+            request.Mode ?? "none");
 
         try
         {
-            if (!string.IsNullOrWhiteSpace(view) && !Enum.TryParse(view, true, out resolvedView))
+            var result = await _mediator.Send(new GetDataSetChartApiQuery
             {
-                return ResponseResult(Result.Failure<object>(new List<string>
-                {
-                    $"Invalid view '{view}'. Allowed values: Base, Percentile."
-                }));
-            }
-
-            if (!string.IsNullOrWhiteSpace(mode) && !Enum.TryParse(mode, true, out resolvedMode))
-            {
-                return ResponseResult(Result.Failure<object>(new List<string>
-                {
-                    $"Invalid mode '{mode}'. Allowed values: None, Bucket, Overall."
-                }));
-            }
-
-            if (!string.IsNullOrWhiteSpace(percentile))
-            {
-                if (Enum.TryParse(percentile, true, out PercentileKind parsedPercentile))
-                {
-                    resolvedPercentile = parsedPercentile;
-                }
-                else
-                {
-                    return ResponseResult(Result.Failure<object>(new List<string>
-                    {
-                        $"Invalid percentile '{percentile}'. Allowed values: P5, P10, P90, P95."
-                    }));
-                }
-            }
-
-            if (resolvedView == ChartViewKind.Percentile && !resolvedPercentile.HasValue)
-            {
-                return ResponseResult(Result.Failure<object>(new List<string>
-                {
-                    "Percentile view requires percentile=P5|P10|P90|P95."
-                }));
-            }
-
-            var filterErrors = new List<string>();
-            var parsedFilters = ParseFilters(filters, filterErrors);
-            if (filterErrors.Count > 0)
-            {
-                return ResponseResult(Result.Failure<object>(filterErrors));
-            }
-
-            if (!string.IsNullOrWhiteSpace(groupBy))
-            {
-                const int maxAllowedGroups = 50;
-                var profileResult = await _dataSetApplicationService.GetProfileAsync(id);
-                if (!profileResult.IsSuccess || profileResult.Data == null)
-                {
-                    return ResponseResult(Result.Failure<object>(profileResult.Errors));
-                }
-
-                var groupByColumn = profileResult.Data.Columns
-                    .FirstOrDefault(column => string.Equals(column.Name, groupBy, StringComparison.OrdinalIgnoreCase));
-
-                if (groupByColumn == null)
-                {
-                    return ResponseResult(Result.Failure<object>(new List<string>
-                    {
-                        $"Invalid groupBy column '{groupBy}'."
-                    }));
-                }
-
-                if (groupByColumn.DistinctCount > maxAllowedGroups)
-                {
-                    return ResponseResult(Result.Failure<object>(new List<string>
-                    {
-                        $"Grouping by '{groupByColumn.Name}' is not allowed because it has {groupByColumn.DistinctCount} distinct groups. Maximum allowed is {maxAllowedGroups}."
-                    }));
-                }
-            }
-
-            var result = await _dataSetApplicationService.GetChartAsync(
-                id,
-                recommendationId,
-                aggregation,
-                timeBin,
-                resolvedMetricY,
-                groupBy,
-                parsedFilters,
-                resolvedView,
-                resolvedMode,
-                resolvedPercentile,
-                percentileTarget,
-                xColumn);
+                DatasetId = id,
+                RecommendationId = recommendationId,
+                Aggregation = request.Aggregation,
+                TimeBin = request.TimeBin,
+                XColumn = request.XColumn,
+                YColumn = request.YColumn,
+                MetricY = request.MetricY,
+                GroupBy = request.GroupBy,
+                Filters = request.Filters,
+                View = request.View,
+                Percentile = request.Percentile,
+                Mode = request.Mode,
+                PercentileTarget = request.PercentileTarget
+            }, HttpContext.RequestAborted);
 
             if (!result.IsSuccess)
             {
@@ -1829,32 +1783,21 @@ OFFSET {offset};
     public async Task<IActionResult> GenerateAiSummary(
         Guid id,
         string recommendationId,
-        [FromBody] AiChartRequest? request)
+        [FromBody] AiChartRequest request)
     {
-        request ??= new AiChartRequest();
         var language = ResolveLanguage();
-
-        var filterErrors = new List<string>();
-        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
-        if (filterErrors.Count > 0)
+        var result = await _mediator.Send(new GenerateAiSummaryQuery
         {
-            return ResponseResult(Result.Failure<object>(filterErrors));
-        }
-
-        var result = await _aiInsightService.GenerateAiSummaryAsync(
-            new LLMChartContextRequest
-            {
-                DatasetId = id,
-                RecommendationId = recommendationId,
-                Language = language,
-                Aggregation = request.Aggregation,
-                TimeBin = request.TimeBin,
-                MetricY = request.MetricY,
-                GroupBy = request.GroupBy,
-                Filters = parsedFilters,
-                ScenarioMeta = request.ScenarioMeta
-            },
-            HttpContext.RequestAborted);
+            DatasetId = id,
+            RecommendationId = recommendationId,
+            Language = language,
+            Aggregation = request.Aggregation,
+            TimeBin = request.TimeBin,
+            MetricY = request.MetricY,
+            GroupBy = request.GroupBy,
+            Filters = request.Filters.ToArray(),
+            ScenarioMeta = request.ScenarioMeta
+        }, HttpContext.RequestAborted);
 
         if (!result.IsSuccess)
         {
@@ -1876,32 +1819,21 @@ OFFSET {offset};
     public async Task<IActionResult> ExplainChart(
         Guid id,
         string recommendationId,
-        [FromBody] AiChartRequest? request)
+        [FromBody] AiChartRequest request)
     {
-        request ??= new AiChartRequest();
         var language = ResolveLanguage();
-
-        var filterErrors = new List<string>();
-        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
-        if (filterErrors.Count > 0)
+        var result = await _mediator.Send(new ExplainChartQuery
         {
-            return ResponseResult(Result.Failure<object>(filterErrors));
-        }
-
-        var result = await _aiInsightService.ExplainChartAsync(
-            new LLMChartContextRequest
-            {
-                DatasetId = id,
-                RecommendationId = recommendationId,
-                Language = language,
-                Aggregation = request.Aggregation,
-                TimeBin = request.TimeBin,
-                MetricY = request.MetricY,
-                GroupBy = request.GroupBy,
-                Filters = parsedFilters,
-                ScenarioMeta = request.ScenarioMeta
-            },
-            HttpContext.RequestAborted);
+            DatasetId = id,
+            RecommendationId = recommendationId,
+            Language = language,
+            Aggregation = request.Aggregation,
+            TimeBin = request.TimeBin,
+            MetricY = request.MetricY,
+            GroupBy = request.GroupBy,
+            Filters = request.Filters.ToArray(),
+            ScenarioMeta = request.ScenarioMeta
+        }, HttpContext.RequestAborted);
 
         if (!result.IsSuccess)
         {
@@ -1929,35 +1861,24 @@ OFFSET {offset};
     public async Task<IActionResult> GenerateDeepInsights(
         Guid id,
         string recommendationId,
-        [FromBody] DeepInsightsApiRequest? request)
+        [FromBody] DeepInsightsApiRequest request)
     {
-        request ??= new DeepInsightsApiRequest();
         var language = ResolveLanguage();
-
-        var filterErrors = new List<string>();
-        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
-        if (filterErrors.Count > 0)
+        var result = await _mediator.Send(new GenerateDeepInsightsQuery
         {
-            return ResponseResult(Result.Failure<object>(filterErrors));
-        }
-
-        var result = await _aiInsightService.GenerateDeepInsightsAsync(
-            new DeepInsightsRequest
-            {
-                DatasetId = id,
-                RecommendationId = recommendationId,
-                Language = language,
-                Aggregation = request.Aggregation,
-                TimeBin = request.TimeBin,
-                MetricY = request.MetricY,
-                GroupBy = request.GroupBy,
-                Filters = parsedFilters,
-                Scenario = request.Scenario,
-                Horizon = request.Horizon,
-                SensitiveMode = request.SensitiveMode,
-                RequesterKey = ResolveRequesterKey()
-            },
-            HttpContext.RequestAborted);
+            DatasetId = id,
+            RecommendationId = recommendationId,
+            Language = language,
+            Aggregation = request.Aggregation,
+            TimeBin = request.TimeBin,
+            MetricY = request.MetricY,
+            GroupBy = request.GroupBy,
+            Filters = request.Filters.ToArray(),
+            Scenario = request.Scenario,
+            Horizon = request.Horizon,
+            SensitiveMode = request.SensitiveMode,
+            RequesterKey = ResolveRequesterKey()
+        }, HttpContext.RequestAborted);
 
         if (!result.IsSuccess)
         {
@@ -1987,45 +1908,30 @@ OFFSET {offset};
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetInsightPack(
         Guid id,
-        [FromBody] InsightPackRequest? request)
+        [FromBody] InsightPackRequest request) 
     {
-        request ??= new InsightPackRequest();
-        if (string.IsNullOrWhiteSpace(request.RecommendationId))
-        {
-            return ResponseResult(Result.Failure<object>("RecommendationId is required."));
-        }
-
-        var filterErrors = new List<string>();
-        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
-        if (filterErrors.Count > 0)
-        {
-            return ResponseResult(Result.Failure<object>(filterErrors));
-        }
-
         var language = ResolveLanguage();
-        var result = await _aiInsightService.BuildSemanticInsightPackAsync(
-            new DeepInsightsRequest
-            {
-                DatasetId = id,
-                RecommendationId = request.RecommendationId,
-                Language = language,
-                Aggregation = request.Aggregation,
-                TimeBin = request.TimeBin,
-                MetricY = request.MetricY,
-                GroupBy = request.GroupBy,
-                Filters = parsedFilters,
-                Month = request.Month,
-                DateFrom = request.DateFrom,
-                DateTo = request.DateTo,
-                SegmentColumn = request.SegmentColumn,
-                SegmentValue = request.SegmentValue,
-                OutputMode = request.OutputMode,
-                Scenario = request.Scenario,
-                Horizon = request.Horizon,
-                SensitiveMode = request.SensitiveMode,
-                RequesterKey = ResolveRequesterKey()
-            },
-            HttpContext.RequestAborted);
+        var result = await _mediator.Send(new BuildInsightPackQuery
+        {
+            DatasetId = id,
+            RecommendationId = request.RecommendationId,
+            Language = language,
+            Aggregation = request.Aggregation,
+            TimeBin = request.TimeBin,
+            MetricY = request.MetricY,
+            GroupBy = request.GroupBy,
+            Filters = request.Filters.ToArray(),
+            Month = request.Month,
+            DateFrom = request.DateFrom,
+            DateTo = request.DateTo,
+            SegmentColumn = request.SegmentColumn,
+            SegmentValue = request.SegmentValue,
+            OutputMode = request.OutputMode,
+            Scenario = request.Scenario,
+            Horizon = request.Horizon,
+            SensitiveMode = request.SensitiveMode,
+            RequesterKey = ResolveRequesterKey()
+        }, HttpContext.RequestAborted);
 
         if (!result.IsSuccess)
         {
@@ -2050,41 +1956,27 @@ OFFSET {offset};
         Guid id,
         [FromQuery] InsightPackQueryRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.RecommendationId))
-        {
-            return ResponseResult(Result.Failure<object>("RecommendationId is required."));
-        }
-
-        var filterErrors = new List<string>();
-        var parsedFilters = ParseFilters(request.Filters, filterErrors);
-        if (filterErrors.Count > 0)
-        {
-            return ResponseResult(Result.Failure<object>(filterErrors));
-        }
-
         var language = ResolveLanguage();
-        var result = await _aiInsightService.BuildSemanticInsightPackAsync(
-            new DeepInsightsRequest
-            {
-                DatasetId = id,
-                RecommendationId = request.RecommendationId,
-                Language = language,
-                Aggregation = request.Aggregation,
-                TimeBin = request.TimeBin,
-                MetricY = request.MetricY,
-                GroupBy = request.GroupBy,
-                Filters = parsedFilters,
-                Month = request.Month,
-                DateFrom = request.DateFrom,
-                DateTo = request.DateTo,
-                SegmentColumn = request.SegmentColumn,
-                SegmentValue = request.SegmentValue,
-                OutputMode = request.OutputMode,
-                Horizon = request.Horizon,
-                SensitiveMode = request.SensitiveMode,
-                RequesterKey = ResolveRequesterKey()
-            },
-            HttpContext.RequestAborted);
+        var result = await _mediator.Send(new BuildInsightPackQuery
+        {
+            DatasetId = id,
+            RecommendationId = request.RecommendationId,
+            Language = language,
+            Aggregation = request.Aggregation,
+            TimeBin = request.TimeBin,
+            MetricY = request.MetricY,
+            GroupBy = request.GroupBy,
+            Filters = request.Filters,
+            Month = request.Month,
+            DateFrom = request.DateFrom,
+            DateTo = request.DateTo,
+            SegmentColumn = request.SegmentColumn,
+            SegmentValue = request.SegmentValue,
+            OutputMode = request.OutputMode,
+            Horizon = request.Horizon,
+            SensitiveMode = request.SensitiveMode,
+            RequesterKey = ResolveRequesterKey()
+        }, HttpContext.RequestAborted);
 
         if (!result.IsSuccess)
         {
@@ -2107,48 +1999,28 @@ OFFSET {offset};
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> AskWithInsightPack(
         Guid id,
-        [FromBody] InsightPackAskApiRequest? request)
+        [FromBody] InsightPackAskApiRequest request)
     {
-        request ??= new InsightPackAskApiRequest();
-        if (string.IsNullOrWhiteSpace(request.RecommendationId))
-        {
-            return ResponseResult(Result.Failure<object>("RecommendationId is required."));
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Question))
-        {
-            return ResponseResult(Result.Failure<object>("Question is required."));
-        }
-
-        var filterErrors = new List<string>();
-        var parsedFilters = ParseFilters(request.Filters.ToArray(), filterErrors);
-        if (filterErrors.Count > 0)
-        {
-            return ResponseResult(Result.Failure<object>(filterErrors));
-        }
-
         var language = ResolveLanguage();
-        var result = await _aiInsightService.AskWithInsightPackAsync(
-            new InsightPackAskRequest
-            {
-                DatasetId = id,
-                RecommendationId = request.RecommendationId,
-                Question = request.Question,
-                Language = language,
-                Aggregation = request.Aggregation,
-                TimeBin = request.TimeBin,
-                MetricY = request.MetricY,
-                GroupBy = request.GroupBy,
-                Filters = parsedFilters,
-                Month = request.Month,
-                DateFrom = request.DateFrom,
-                DateTo = request.DateTo,
-                SegmentColumn = request.SegmentColumn,
-                SegmentValue = request.SegmentValue,
-                OutputMode = request.OutputMode,
-                SensitiveMode = request.SensitiveMode
-            },
-            HttpContext.RequestAborted);
+        var result = await _mediator.Send(new AskWithInsightPackQuery
+        {
+            DatasetId = id,
+            RecommendationId = request.RecommendationId,
+            Question = request.Question,
+            Language = language,
+            Aggregation = request.Aggregation,
+            TimeBin = request.TimeBin,
+            MetricY = request.MetricY,
+            GroupBy = request.GroupBy,
+            Filters = request.Filters.ToArray(),
+            Month = request.Month,
+            DateFrom = request.DateFrom,
+            DateTo = request.DateTo,
+            SegmentColumn = request.SegmentColumn,
+            SegmentValue = request.SegmentValue,
+            OutputMode = request.OutputMode,
+            SensitiveMode = request.SensitiveMode
+        }, HttpContext.RequestAborted);
 
         if (!result.IsSuccess)
         {
@@ -2175,24 +2047,16 @@ OFFSET {offset};
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> AskDataset(
         Guid id,
-        [FromBody] AskDatasetRequest? request)
+        [FromBody] AskDatasetRequest request)
     {
-        request ??= new AskDatasetRequest();
         var language = ResolveLanguage();
-        if (string.IsNullOrWhiteSpace(request.Question))
+        var result = await _mediator.Send(new AskDatasetAnalysisPlanQuery
         {
-            return ResponseResult(Result.Failure<object>("Question is required."));
-        }
-
-        var result = await _aiInsightService.AskAnalysisPlanAsync(
-            new AskAnalysisPlanRequest
-            {
-                DatasetId = id,
-                Language = language,
-                Question = request.Question,
-                CurrentView = request.CurrentView
-            },
-            HttpContext.RequestAborted);
+            DatasetId = id,
+            Language = language,
+            Question = request.Question,
+            CurrentView = request.CurrentView
+        }, HttpContext.RequestAborted);
 
         if (!result.IsSuccess)
         {
@@ -2217,14 +2081,21 @@ OFFSET {offset};
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Simulate(
         Guid id,
-        [FromBody] ScenarioRequest request)
+        [FromBody] ScenarioSimulationRequest request)
     {
-        if (request == null)
+        var result = await _mediator.Send(new SimulateDataSetQuery
         {
-            return ResponseResult(Result.Failure<object>("Invalid simulation request body."));
-        }
-
-        var result = await _dataSetApplicationService.SimulateAsync(id, request);
+            DatasetId = id,
+            Request = new ScenarioRequest
+            {
+                TargetMetric = request.TargetMetric,
+                TargetDimension = request.TargetDimension,
+                Aggregation = request.Aggregation,
+                PropagateTargetFormula = request.PropagateTargetFormula,
+                Filters = request.Filters,
+                Operations = request.Operations
+            }
+        }, HttpContext.RequestAborted);
         if (!result.IsSuccess)
         {
             return ResponseResult(Result.Failure<object>(result.Errors));
@@ -2237,6 +2108,7 @@ OFFSET {offset};
             datasetId = simulation.DatasetId,
             targetMetric = simulation.TargetMetric,
             targetDimension = simulation.TargetDimension,
+            appliedFormulaExpression = simulation.AppliedFormulaExpression,
             queryHash = simulation.QueryHash,
             rowCountReturned = simulation.RowCountReturned,
             duckDbMs = simulation.DuckDbMs,
@@ -2641,7 +2513,10 @@ LIMIT {RawTopRangesLimit};
                 count));
         }
 
-        return ranges;
+        return ranges
+            .OrderBy(item => double.TryParse(item.From, NumberStyles.Any, CultureInfo.InvariantCulture, out var from) ? from : double.MaxValue)
+            .ThenBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private List<RawRangeStat> LoadDateTopRanges(
@@ -2715,7 +2590,10 @@ LIMIT {RawTopRangesLimit};
                 count));
         }
 
-        return ranges;
+        return ranges
+            .OrderBy(item => DateTime.TryParse(item.From, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var from) ? from : DateTime.MaxValue)
+            .ThenBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static string AppendWherePredicate(string whereClause, string predicate)

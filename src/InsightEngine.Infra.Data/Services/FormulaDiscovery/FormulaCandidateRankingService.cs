@@ -5,10 +5,14 @@ namespace InsightEngine.Infra.Data.Services.FormulaDiscovery;
 public sealed class FormulaCandidateRankingService
 {
     private readonly LinearRegressionService _linearRegressionService;
+    private readonly FormulaExpressionFormatter _expressionFormatter;
 
-    public FormulaCandidateRankingService(LinearRegressionService linearRegressionService)
+    public FormulaCandidateRankingService(
+        LinearRegressionService linearRegressionService,
+        FormulaExpressionFormatter expressionFormatter)
     {
         _linearRegressionService = linearRegressionService;
+        _expressionFormatter = expressionFormatter;
     }
 
     public IReadOnlyList<FormulaCandidate> BuildCandidates(
@@ -40,6 +44,11 @@ public sealed class FormulaCandidateRankingService
             });
         candidates.Add(baseCandidate);
 
+        if (baseCandidate.Confidence == FormulaConfidenceLevel.DeterministicLike)
+        {
+            return OrderAndTake(candidates, boundedCandidates);
+        }
+
         var expandedFeatureSeed = SelectExpansionFeatureIndexes(sample.X, sample.Y, maxSeedFeatures: 6);
 
         if (enableInteractions && expandedFeatureSeed.Count >= 2)
@@ -62,6 +71,10 @@ public sealed class FormulaCandidateRankingService
                 if (ShouldIncludeCandidate(baseCandidate, interactionCandidate, minR2Improvement))
                 {
                     candidates.Add(interactionCandidate);
+                    if (interactionCandidate.Confidence == FormulaConfidenceLevel.DeterministicLike)
+                    {
+                        return OrderAndTake(candidates, boundedCandidates);
+                    }
                 }
             }
         }
@@ -86,16 +99,15 @@ public sealed class FormulaCandidateRankingService
                 if (ShouldIncludeCandidate(baseCandidate, ratioCandidate, minR2Improvement))
                 {
                     candidates.Add(ratioCandidate);
+                    if (ratioCandidate.Confidence == FormulaConfidenceLevel.DeterministicLike)
+                    {
+                        return OrderAndTake(candidates, boundedCandidates);
+                    }
                 }
             }
         }
 
-        return candidates
-            .OrderByDescending(candidate => candidate.Metrics.R2)
-            .ThenBy(candidate => candidate.Metrics.MAE)
-            .ThenBy(candidate => candidate.Terms.Count)
-            .Take(boundedCandidates)
-            .ToList();
+        return OrderAndTake(candidates, boundedCandidates);
     }
 
     private FormulaCandidate ToCandidate(
@@ -130,7 +142,7 @@ public sealed class FormulaCandidateRankingService
             },
             ModelType = modelType,
             Confidence = confidence,
-            PrettyFormula = BuildPrettyFormula(sample.TargetColumn, fit.Intercept, terms),
+            PrettyFormula = _expressionFormatter.BuildPrettyFormula(sample.TargetColumn, fit.Intercept, terms),
             Notes = notes.ToList()
         };
 
@@ -198,23 +210,15 @@ public sealed class FormulaCandidateRankingService
         return Math.Max(absP95, 1d);
     }
 
-    private static string BuildPrettyFormula(string target, double intercept, IReadOnlyCollection<Term> terms)
+    private static List<FormulaCandidate> OrderAndTake(IEnumerable<FormulaCandidate> candidates, int take)
     {
-        var interceptText = $"{RoundForDisplay(intercept):0.####}";
-        var parts = new List<string> { interceptText };
-
-        foreach (var term in terms)
-        {
-            var sign = term.Coefficient >= 0d ? "+" : "-";
-            parts.Add($"{sign} {Math.Abs(RoundForDisplay(term.Coefficient)):0.####}*{term.FeatureName}");
-        }
-
-        return $"{target} ≈ {string.Join(" ", parts)}";
-    }
-
-    private static double RoundForDisplay(double value)
-    {
-        return Math.Round(value, 4, MidpointRounding.AwayFromZero);
+        return candidates
+            .OrderByDescending(candidate => candidate.Metrics.R2)
+            .ThenBy(candidate => candidate.Metrics.MAE)
+            .ThenBy(candidate => candidate.Terms.Count)
+            .ThenBy(candidate => candidate.ModelType)
+            .Take(take)
+            .ToList();
     }
 
     private static List<int> SelectExpansionFeatureIndexes(double[][] x, double[] y, int maxSeedFeatures)
