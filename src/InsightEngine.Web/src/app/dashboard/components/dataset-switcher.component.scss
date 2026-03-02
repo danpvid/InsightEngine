@@ -1,0 +1,16 @@
+.dataset-switcher {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(300px, 1fr);
+  gap: 12px;
+}
+
+.search-field,
+.select-field {
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .dataset-switcher {
+    grid-template-columns: 1fr;
+  }
+}

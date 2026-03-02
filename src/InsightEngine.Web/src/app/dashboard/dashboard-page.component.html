@@ -1,0 +1,62 @@
+<section class="dashboard-page">
+  <header class="dashboard-top">
+    <div>
+      <h1>Dashboard</h1>
+      <p *ngIf="dashboard?.dataset">
+        {{ dashboard?.dataset?.name }} · Atualizado em {{ dashboard?.lastUpdated | date:'short' }}
+      </p>
+    </div>
+    <app-dataset-switcher
+      [datasets]="datasets"
+      [selectedDatasetId]="selectedDatasetId"
+      (selectedDatasetIdChange)="onDatasetChange($event)">
+    </app-dataset-switcher>
+  </header>
+
+  <mat-card class="empty-card" *ngIf="datasets.length === 0">
+    <h3>Nenhum dataset disponível</h3>
+    <p>Importe um dataset para começar.</p>
+    <a mat-flat-button color="primary" [routerLink]="['/', lang, 'datasets', 'new']">Importar dataset</a>
+  </mat-card>
+
+  <mat-card class="empty-card" *ngIf="datasets.length > 0 && !selectedDatasetId">
+    <h3>Selecione um dataset</h3>
+    <p>Escolha um dataset no seletor para carregar o dashboard.</p>
+  </mat-card>
+
+  <div class="loading" *ngIf="loading">Carregando dashboard...</div>
+
+  <ng-container *ngIf="!loading && dashboard && selectedDatasetId">
+    <app-kpi-cards [kpis]="dashboard.kpis"></app-kpi-cards>
+
+    <section class="section">
+      <h2>Charts</h2>
+      <mat-card class="empty-card" *ngIf="!dashboard.metadata.indexAvailable">
+        <p>Sem índice para gerar recomendações. Gere índice para visualizar os charts.</p>
+        <a mat-stroked-button [routerLink]="['/', lang, 'datasets']">Ir para Datasets</a>
+      </mat-card>
+      <app-charts-grid
+        *ngIf="dashboard.metadata.indexAvailable && dashboard.charts.length > 0"
+        [lang]="lang"
+        [datasetId]="selectedDatasetId"
+        [charts]="dashboard.charts">
+      </app-charts-grid>
+      <mat-card class="empty-card" *ngIf="dashboard.metadata.indexAvailable && dashboard.charts.length === 0">
+        <p>Sem recomendações para este dataset.</p>
+      </mat-card>
+    </section>
+
+    <section class="tables">
+      <app-top-features-table [rows]="dashboard.tables.topFeatures"></app-top-features-table>
+      <app-data-quality-table [rows]="dashboard.tables.dataQuality"></app-data-quality-table>
+    </section>
+
+    <app-insights-panel [insights]="dashboard.insights"></app-insights-panel>
+    <app-dataset-meta
+      [lang]="lang"
+      [datasetId]="selectedDatasetId"
+      [dataset]="dashboard.dataset || null"
+      [metadata]="dashboard.metadata">
+    </app-dataset-meta>
+  </ng-container>
+</section>

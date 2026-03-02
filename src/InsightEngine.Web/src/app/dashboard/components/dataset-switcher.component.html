@@ -1,0 +1,16 @@
+<div class="dataset-switcher">
+  <mat-form-field appearance="outline" class="search-field">
+    <mat-label>Buscar dataset</mat-label>
+    <input matInput [(ngModel)]="search" placeholder="Nome do arquivo" />
+    <mat-icon matSuffix>search</mat-icon>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline" class="select-field">
+    <mat-label>Dataset</mat-label>
+    <mat-select [ngModel]="selectedDatasetId" (ngModelChange)="onSelectionChange($event)">
+      <mat-option *ngFor="let dataset of filteredDatasets" [value]="dataset.datasetId">
+        {{ dataset.originalFileName }} · {{ (dataset.lastAccessedAt || dataset.createdAt) | date:'short' }}
+      </mat-option>
+    </mat-select>
+  </mat-form-field>
+</div>
