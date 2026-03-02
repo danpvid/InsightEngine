@@ -13,6 +13,9 @@ export interface DataSetSummary {
   fileSizeInBytes: number;
   fileSizeMB: number;
   createdAt: string;
+  lastAccessedAt?: string;
+  rowCount?: number;
+  profileSummary?: string | null;
 }
 
 export interface DataSetDeletionResponse {
