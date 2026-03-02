@@ -1,0 +1,12 @@
+<div class="charts-grid">
+  <mat-card class="chart-card" *ngFor="let chart of cards">
+    <div class="chart-header">
+      <h4>{{ chart.title }}</h4>
+      <a [routerLink]="chartLink(chart.id)">Abrir</a>
+    </div>
+    <p class="reason" *ngIf="chart.reason">{{ chart.reason }}</p>
+    <div class="chart-state" *ngIf="chart.loading">Carregando...</div>
+    <div class="chart-state" *ngIf="!chart.loading && chart.error">{{ chart.error }}</div>
+    <div class="chart-host" echarts [options]="chart.option" *ngIf="!chart.loading && !chart.error && chart.option"></div>
+  </mat-card>
+</div>

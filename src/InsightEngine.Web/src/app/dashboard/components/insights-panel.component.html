@@ -1,0 +1,13 @@
+<mat-card class="insights-card">
+  <h3>Insights</h3>
+  <p class="summary" *ngIf="insights?.llmExecutiveSummary; else noSummary">
+    {{ insights?.llmExecutiveSummary }}
+  </p>
+  <ng-template #noSummary>
+    <p class="summary muted">Nenhum insight LLM disponível para este dataset.</p>
+  </ng-template>
+
+  <ul *ngIf="insights?.warnings?.length">
+    <li *ngFor="let warning of insights?.warnings">{{ warning }}</li>
+  </ul>
+</mat-card>

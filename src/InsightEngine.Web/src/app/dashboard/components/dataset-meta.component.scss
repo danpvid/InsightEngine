@@ -1,0 +1,21 @@
+.meta-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.links {
+  display: flex;
+  gap: 12px;
+}
+
+.links a {
+  color: var(--primary);
+  text-decoration: none;
+}

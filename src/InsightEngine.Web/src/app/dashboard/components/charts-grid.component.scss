@@ -1,0 +1,34 @@
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.chart-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.chart-host {
+  width: 100%;
+  height: 280px;
+}
+
+.chart-state {
+  opacity: 0.75;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+}
+
+.reason {
+  opacity: 0.8;
+  font-size: 12px;
+}
