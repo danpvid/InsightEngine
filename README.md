@@ -232,7 +232,10 @@ Arquivo principal: `src/InsightEngine.API/appsettings.json`.
   "Features": {
     "RecommendationV2Enabled": false,
     "RecommendationV2DebugLogging": false,
-    "LlmStructuredInsightsV2Enabled": false
+    "LlmStructuredInsightsV2Enabled": false,
+    "AutoApplyZeroErrorFormulaEnabled": false,
+    "AuthRequiredForDatasets": false,
+    "FakePlanUpgradeEnabled": true
   }
 }
 ```
@@ -257,7 +260,47 @@ Arquivo principal: `src/InsightEngine.API/appsettings.json`.
 Notas:
 - `RecommendationV2Enabled=true` ativa ranking por relevancia com `DatasetIndex`.
 - `RecommendationV2DebugLogging=true` registra top candidatos com breakdown de score (somente log).
+
+### JWT + Refresh Token
+```json
+{
+  "JwtSettings": {
+    "Secret": "your-256-bit-secret-key-here-minimum-length",
+    "Issuer": "InsightEngine",
+    "Audience": "InsightEngine.Users",
+    "ExpirationInMinutes": 60,
+    "RefreshExpirationInDays": 30
+  }
+}
+```
+
+Backend auth stack:
+- ASP.NET Core Identity (`ApplicationUser`) + EF Core store
+- JWT access token (15 min default)
+- Refresh token rotation persisted em `RefreshTokens`
+
+`AuthRequiredForDatasets=true` habilita protecao obrigatoria para endpoints de dataset.  
+Com `false` (default), o sistema permanece compativel com fluxos antigos sem login.
+
+### Endpoints de autenticacao e perfil
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/me`
+- `PUT /api/v1/me/profile`
+- `PUT /api/v1/me/password`
+- `PUT /api/v1/me/avatar`
+- `GET /api/v1/me/plan`
+- `POST /api/v1/me/plan/upgrade` (fake, controlado por `FakePlanUpgradeEnabled`)
 - `LlmStructuredInsightsV2Enabled=true` ativa prompt/payload estruturado para insights (com limite deterministico de tamanho).
+- `AutoApplyZeroErrorFormulaEnabled=true` aplica automaticamente formula inferida quando o erro maximo for zero.
+- O fluxo LLM usa timeout configuravel por `LLM:TimeoutSeconds`; timeout retorna erro via `Result` (sem exception como controle de fluxo).
+- DTOs publicos de indexacao/finalizacao/formula inference possuem validadores FluentValidation antes do mapeamento para Command/Query.
+
+Opcoes adicionais:
+- `FormulaInference:EpsilonZero` define o limiar de erro considerado "zero" para early-stop (default `0`).
+- `ScenarioSimulation:SimulationFormulaMaxError` define erro maximo permitido para propagacao de formula na simulacao (default `1e-6`).
 
 Provider options:
 - `None`: endpoints de AI ativos com fallback heuristico/deterministico.
@@ -525,6 +568,33 @@ curl -X POST "http://localhost:5000/api/v1/datasets/{datasetId}/insights/ask" \
 ```
 
 ## Qualidade, Testes e Smoke
+
+## Dashboard Home (Dinâmico por Dataset)
+
+Endpoint agregado (backend):
+
+```http
+GET /api/v1/dashboard?datasetId={guid}
+```
+
+Retorno principal (`DashboardViewModel`):
+- `dataset`: resumo do dataset selecionado.
+- `kpis`: cards de KPI prontos para renderização.
+- `charts`: recomendações de charts.
+- `tables.topFeatures` e `tables.dataQuality`.
+- `insights`: resumo executivo + warnings.
+- `metadata`: disponibilidade de índice/recomendações/fórmula.
+
+Regras:
+- Multi-tenant por owner: consulta por `(datasetId + CurrentUserId)`.
+- Dataset sem ownership retorna `404` (sem vazamento de existência).
+- Dataset sem índice retorna payload gracioso com `metadata.indexAvailable=false` e `charts=[]`.
+
+Frontend:
+- Nova home autenticada em `/:lang/dashboard`.
+- Seletor de dataset no topo com busca e persistência do último `datasetId` por usuário no `localStorage`.
+- Layout responsivo com KPIs, grid de charts, tabelas, insights e metadata.
+- Menu lateral mantém `Datasets` como primeiro item e inclui `Dashboard` como segundo item.
 
 Backend:
 ```bash
