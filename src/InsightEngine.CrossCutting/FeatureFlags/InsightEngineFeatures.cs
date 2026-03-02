@@ -8,4 +8,7 @@ public class InsightEngineFeatures
     public bool RecommendationV2DebugLogging { get; set; } = false;
     public bool LlmStructuredInsightsV2Enabled { get; set; } = false;
     public bool ImportFinalizeWithIndexByDefault { get; set; } = false;
+    public bool AutoApplyZeroErrorFormulaEnabled { get; set; } = false;
+    public bool AuthRequiredForDatasets { get; set; } = false;
+    public bool FakePlanUpgradeEnabled { get; set; } = true;
 }

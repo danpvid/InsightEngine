@@ -1,0 +1,44 @@
+<div class="profile-page container-wide">
+  <mat-card>
+    <h1>Profile</h1>
+    <mat-tab-group [(selectedIndex)]="selectedIndex">
+      <mat-tab label="Basic Data">
+        <form [formGroup]="profileForm" class="profile-grid">
+          <mat-form-field appearance="outline">
+            <mat-label>Display name</mat-label>
+            <input matInput formControlName="displayName" />
+          </mat-form-field>
+          <button mat-flat-button color="primary" type="button" (click)="saveProfile()" [disabled]="saving">Save</button>
+        </form>
+      </mat-tab>
+      <mat-tab label="Password">
+        <form [formGroup]="passwordForm" class="profile-grid">
+          <mat-form-field appearance="outline">
+            <mat-label>Current password</mat-label>
+            <input matInput type="password" formControlName="currentPassword" />
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>New password</mat-label>
+            <input matInput type="password" formControlName="newPassword" />
+          </mat-form-field>
+          <button mat-flat-button color="primary" type="button" (click)="savePassword()" [disabled]="saving">Update password</button>
+        </form>
+      </mat-tab>
+      <mat-tab label="Avatar">
+        <form [formGroup]="avatarForm" class="profile-grid">
+          <mat-form-field appearance="outline">
+            <mat-label>Avatar URL</mat-label>
+            <input matInput formControlName="avatarUrl" />
+          </mat-form-field>
+          <button mat-flat-button color="primary" type="button" (click)="saveAvatar()" [disabled]="saving">Save avatar</button>
+        </form>
+      </mat-tab>
+      <mat-tab label="Plan">
+        <div class="plan-box">
+          <p>Current plan: <strong>{{ plan }}</strong></p>
+          <button mat-raised-button color="accent" type="button" (click)="upgradePlan()" [disabled]="saving">Upgrade (fake)</button>
+        </div>
+      </mat-tab>
+    </mat-tab-group>
+  </mat-card>
+</div>

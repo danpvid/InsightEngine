@@ -319,6 +319,7 @@ public class DataSetIntegrationTests : IAsyncLifetime
         runData.GetProperty("targetColumn").GetString().Should().Be("total");
         runData.TryGetProperty("formulaInference", out var formulaInferenceElement).Should().BeTrue();
         formulaInferenceElement.ValueKind.Should().NotBe(JsonValueKind.Null);
+        formulaInferenceElement.GetProperty("candidates").GetArrayLength().Should().Be(1);
 
         var getResponse = await _client.GetAsync($"/api/v1/datasets/{datasetId}/formula-inference");
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -445,37 +446,12 @@ public class DataSetIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RawRows_FieldStatsTopRanges_ShouldBeSortedByRangeStart()
+    public async Task RawRows_FieldStatsTopRanges_ShouldBeSortedByFrequencyDescThenRangeStart()
     {
-        var csv = string.Join('\n',
-        [
-            "bucket,sales",
-            "A,1",
-            "A,2",
-            "A,3",
-            "A,100",
-            "B,110",
-            "B,120",
-            "B,130",
-            "C,240",
-            "C,250",
-            "C,260",
-            "D,390",
-            "D,400",
-            "D,410",
-            "E,520",
-            "E,530",
-            "E,540",
-            "F,650",
-            "F,660",
-            "F,670",
-            "G,780",
-            "G,790",
-            "G,800",
-            "H,910",
-            "H,920",
-            "H,930"
-        ]);
+        var lines = new List<string> { "bucket,sales" };
+        lines.AddRange(Enumerable.Range(1, 30).Select(i => $"A,{i}"));
+        lines.AddRange(Enumerable.Range(1, 5).Select(i => $"B,{1000 + i}"));
+        var csv = string.Join('\n', lines);
 
         var datasetId = await TestHelpers.UploadTestDatasetAsync(_client, csv, "raw-ranges-sort.csv");
         var response = await _client.GetAsync($"/api/v1/datasets/{datasetId}/rows?fieldStatsColumn=sales&pageSize=50");
@@ -488,9 +464,51 @@ public class DataSetIntegrationTests : IAsyncLifetime
             .GetProperty("fieldStats")
             .GetProperty("topRanges")
             .EnumerateArray()
-            .Select(item => item.GetProperty("from").GetString())
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => double.Parse(value!, NumberStyles.Any, CultureInfo.InvariantCulture))
+            .Select(item => new
+            {
+                Count = item.GetProperty("count").GetInt64(),
+                From = double.Parse(item.GetProperty("from").GetString()!, NumberStyles.Any, CultureInfo.InvariantCulture)
+            })
+            .ToArray();
+
+        topRanges.Should().NotBeEmpty();
+        topRanges.Select(item => item.Count).Should().BeInDescendingOrder();
+    }
+
+    [Fact]
+    public async Task RawRows_FieldStatsTopRanges_ForRowId_ShouldBeOrderedByRangeBoundaries()
+    {
+        var rows = new List<string> { "a,b" };
+        rows.AddRange(Enumerable.Range(1, 35).Select(i => $"{i % 3},{i * 10}"));
+        var csv = string.Join('\n', rows);
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client, csv, "raw-ranges-rowid.csv");
+
+        var finalizeResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/finalize",
+            new
+            {
+                targetColumn = (string?)null,
+                uniqueKeyColumn = (string?)null,
+                ignoredColumns = Array.Empty<string>(),
+                columnTypeOverrides = new Dictionary<string, string>(),
+                currencyCode = "BRL"
+            });
+        finalizeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var finalizeJson = JsonDocument.Parse(await finalizeResponse.Content.ReadAsStringAsync());
+        var uniqueKeyColumn = finalizeJson.RootElement.GetProperty("data").GetProperty("uniqueKeyColumn").GetString();
+        uniqueKeyColumn.Should().NotBeNullOrWhiteSpace();
+
+        var response = await _client.GetAsync($"/api/v1/datasets/{datasetId}/rows?fieldStatsColumn={Uri.EscapeDataString(uniqueKeyColumn!)}&pageSize=50");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var topRanges = payload.RootElement
+            .GetProperty("data")
+            .GetProperty("fieldStats")
+            .GetProperty("topRanges")
+            .EnumerateArray()
+            .Select(item => double.Parse(item.GetProperty("from").GetString()!, NumberStyles.Any, CultureInfo.InvariantCulture))
             .ToArray();
 
         topRanges.Should().NotBeEmpty();

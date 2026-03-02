@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using InsightEngine.Domain.Models.FormulaDiscovery;
 using InsightEngine.Infra.Data.Services.FormulaDiscovery;
 using Xunit;

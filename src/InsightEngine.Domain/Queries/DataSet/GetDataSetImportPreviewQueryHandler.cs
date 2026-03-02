@@ -1,6 +1,7 @@
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models.ImportPreview;
+using InsightEngine.Domain.Settings;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -10,15 +11,21 @@ public class GetDataSetImportPreviewQueryHandler : IRequestHandler<GetDataSetImp
 {
     private readonly IDataSetRepository _dataSetRepository;
     private readonly ICsvProfiler _csvProfiler;
+    private readonly ICurrentUser _currentUser;
+    private readonly InsightEngineFeatures _features;
     private readonly ILogger<GetDataSetImportPreviewQueryHandler> _logger;
 
     public GetDataSetImportPreviewQueryHandler(
         IDataSetRepository dataSetRepository,
         ICsvProfiler csvProfiler,
+        ICurrentUser currentUser,
+        InsightEngineFeatures features,
         ILogger<GetDataSetImportPreviewQueryHandler> logger)
     {
         _dataSetRepository = dataSetRepository;
         _csvProfiler = csvProfiler;
+        _currentUser = currentUser;
+        _features = features;
         _logger = logger;
     }
 
@@ -28,7 +35,14 @@ public class GetDataSetImportPreviewQueryHandler : IRequestHandler<GetDataSetImp
     {
         try
         {
-            var dataSet = await _dataSetRepository.GetByIdAsync(request.DatasetId);
+            if (_features.AuthRequiredForDatasets && (!_currentUser.IsAuthenticated || !_currentUser.UserId.HasValue))
+            {
+                return Result.Failure<ImportPreviewResponse>("Unauthorized");
+            }
+
+            var dataSet = _currentUser.IsAuthenticated && _currentUser.UserId.HasValue
+                ? await _dataSetRepository.GetByIdForOwnerAsync(request.DatasetId, _currentUser.UserId.Value, cancellationToken)
+                : await _dataSetRepository.GetByIdAsync(request.DatasetId);
             if (dataSet is null)
             {
                 return Result.Failure<ImportPreviewResponse>("Dataset not found");

@@ -1,30 +1,31 @@
 using InsightEngine.Domain.Entities;
+using InsightEngine.Infra.Data.Identity;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace InsightEngine.Infra.Data.Context;
 
-public class InsightEngineContext : DbContext
+public class InsightEngineContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
 {
     public InsightEngineContext(DbContextOptions<InsightEngineContext> options) : base(options)
     {
     }
 
-    // DbSets
     public DbSet<DataSet> DataSets { get; set; }
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // Aplicar configurações
+        base.OnModelCreating(modelBuilder);
+
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(InsightEngineContext).Assembly);
 
-        // Convenções
         foreach (var relationship in modelBuilder.Model.GetEntityTypes()
             .SelectMany(e => e.GetForeignKeys()))
         {
             relationship.DeleteBehavior = DeleteBehavior.Restrict;
         }
-
-        base.OnModelCreating(modelBuilder);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -40,7 +41,10 @@ public class InsightEngineContext : DbContext
             if (entry.State == EntityState.Modified)
             {
                 entry.Property("CreatedAt").IsModified = false;
-                entry.Property("UpdatedAt").CurrentValue = DateTime.UtcNow;
+                if (entry.Entity.GetType().GetProperty("UpdatedAt") != null)
+                {
+                    entry.Property("UpdatedAt").CurrentValue = DateTime.UtcNow;
+                }
             }
         }
 

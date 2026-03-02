@@ -3,6 +3,7 @@ using InsightEngine.Application.Models.DataSet;
 using InsightEngine.Application.Services;
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Core.Notifications;
+using InsightEngine.Domain.Commands.DataSet;
 using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
@@ -11,6 +12,7 @@ using InsightEngine.Domain.Models.ImportSchema;
 using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Queries.DataSet;
 using InsightEngine.Domain.Settings;
+using InsightEngine.Domain.Helpers;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -111,57 +113,30 @@ public class DataSetController : BaseController
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Upload(IFormFile file)
     {
-        try
+        var result = await _mediator.Send(new UploadDataSetCommand(file, _runtimeSettings.UploadMaxBytes));
+        if (!result.IsSuccess)
         {
-            if (file == null || file.Length == 0)
-            {
-                return ResponseResult(Result.Failure<object>("File is required."));
-            }
-
-            if (file.Length > _runtimeSettings.UploadMaxBytes)
-            {
-                var maxMb = Math.Round(_runtimeSettings.UploadMaxBytes / (1024d * 1024d), 2);
-                return ErrorResponse(
-                    StatusCodes.Status413PayloadTooLarge,
-                    "payload_too_large",
-                    $"File size exceeds the maximum allowed size of {maxMb}MB.",
-                    "file");
-            }
-
-            var result = await _dataSetApplicationService.UploadAsync(file, _runtimeSettings.UploadMaxBytes);
-
-            if (!result.IsSuccess)
-            {
-                return ErrorResponse(StatusCodes.Status400BadRequest, result.Errors, "validation_error");
-            }
-
-            var response = new
-            {
-                success = true,
-                message = "Arquivo enviado com sucesso.",
-                data = new
-                {
-                    datasetId = result.Data.DatasetId,
-                    originalFileName = result.Data.OriginalFileName,
-                    storedFileName = result.Data.StoredFileName,
-                    sizeBytes = result.Data.SizeBytes,
-                    createdAtUtc = result.Data.CreatedAtUtc
-                }
-            };
-
-            return CreatedAtAction(
-                nameof(GetById),
-                new { id = result.Data.DatasetId, version = "1.0" },
-                response);
+            return ResponseResult(Result.Failure<object>(result.Errors));
         }
-        catch (Exception ex)
+
+        var response = new
         {
-            _logger.LogError(ex, "Error processing file upload");
-            return ErrorResponse(
-                StatusCodes.Status500InternalServerError,
-                "internal_error",
-                "Erro interno ao processar o arquivo.");
-        }
+            success = true,
+            message = "Arquivo enviado com sucesso.",
+            data = new
+            {
+                datasetId = result.Data!.DatasetId,
+                originalFileName = result.Data.OriginalFileName,
+                storedFileName = result.Data.StoredFileName,
+                sizeBytes = result.Data.SizeBytes,
+                createdAtUtc = result.Data.CreatedAtUtc
+            }
+        };
+
+        return CreatedAtAction(
+            nameof(GetById),
+            new { id = result.Data.DatasetId, version = "1.0" },
+            response);
     }
 
     /// <summary>
@@ -173,29 +148,8 @@ public class DataSetController : BaseController
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetAll()
     {
-        try
-        {
-            var result = await _dataSetApplicationService.GetAllAsync();
-
-            if (!result.IsSuccess)
-            {
-                return ErrorResponse(StatusCodes.Status500InternalServerError, result.Errors, "internal_error");
-            }
-
-            return Ok(new
-            {
-                success = true,
-                data = result.Data
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving datasets");
-            return ErrorResponse(
-                StatusCodes.Status500InternalServerError,
-                "internal_error",
-                "Erro ao listar datasets.");
-        }
+        var result = await _mediator.Send(new GetAllDataSetsQuery());
+        return ResponseResult(result);
     }
 
     /// <summary>
@@ -680,7 +634,7 @@ public class DataSetController : BaseController
     public async Task<IActionResult> GetFormulaDiscovery(
         Guid id,
         [FromQuery] string? target = null,
-        [FromQuery] int topK = 10,
+        [FromQuery] int? topK = null,
         [FromQuery] bool interactions = true,
         [FromQuery] bool ratios = false,
         [FromQuery] bool force = false,
@@ -692,7 +646,7 @@ public class DataSetController : BaseController
             var request = new FormulaDiscoveryRequest
             {
                 Target = target,
-                TopKFeatures = topK,
+                TopKFeatures = topK ?? 0,
                 EnableInteractions = interactions,
                 EnableRatios = ratios,
                 Force = force,
@@ -844,6 +798,7 @@ public class DataSetController : BaseController
             var candidateColumns = knownColumns.Values
                 .Where(column => !column.IsIgnored)
                 .Where(column => !string.Equals(column.Name, targetInfo.Name, StringComparison.OrdinalIgnoreCase))
+                .Where(column => !ColumnRoleHeuristics.IsRowIdLike(column.Name))
                 .Where(column => column.Type.IsNumericLike())
                 .Where(column => includePercentageColumns || column.Type.NormalizeLegacy() != InferredType.Percentage)
                 .Select(column => column.Name)
@@ -860,6 +815,7 @@ public class DataSetController : BaseController
                 ValidationSampleRows = _formulaInferenceSettings.ValidationSampleRows,
                 EpsilonAbs = request.Options?.EpsilonAbs ?? _formulaInferenceSettings.EpsilonAbs,
                 EpsilonAbsRelaxed = _formulaInferenceSettings.EpsilonAbsRelaxed,
+                EpsilonZero = _formulaInferenceSettings.EpsilonZero,
                 DivisionZeroEpsilon = _formulaInferenceSettings.DivisionZeroEpsilon,
                 AllowConstants = false,
                 AllowColumnReuse = _formulaInferenceSettings.AllowColumnReuse,
@@ -1122,6 +1078,7 @@ FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause
             var candidateColumns = knownColumns.Values
                 .Where(column => !column.IsIgnored)
                 .Where(column => !string.Equals(column.Name, targetInfo.Name, StringComparison.OrdinalIgnoreCase))
+                .Where(column => !ColumnRoleHeuristics.IsRowIdLike(column.Name))
                 .Where(column => column.Type.IsNumericLike())
                 .Where(column => includePercentageColumns || column.Type.NormalizeLegacy() != InferredType.Percentage)
                 .Select(column => column.Name)
@@ -1148,6 +1105,7 @@ FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause
                 ValidationSampleRows = _formulaInferenceSettings.ValidationSampleRows,
                 EpsilonAbs = options.EpsilonAbs ?? _formulaInferenceSettings.EpsilonAbs,
                 EpsilonAbsRelaxed = _formulaInferenceSettings.EpsilonAbsRelaxed,
+                EpsilonZero = _formulaInferenceSettings.EpsilonZero,
                 DivisionZeroEpsilon = _formulaInferenceSettings.DivisionZeroEpsilon,
                 AllowConstants = false,
                 AllowColumnReuse = _formulaInferenceSettings.AllowColumnReuse,
@@ -1161,11 +1119,18 @@ FROM read_csv_auto('{escapedPath}', header=true, ignore_errors=true){whereClause
                 settingsOverride,
                 cancellationToken);
 
+            var refreshedIndex = await _indexStore.LoadAsync(datasetId, cancellationToken);
+            var autoApplied = string.Equals(
+                refreshedIndex?.SelectedFormula?.Source,
+                "AutoZeroError",
+                StringComparison.OrdinalIgnoreCase);
+
             return new
             {
                 triggered = true,
                 status = "completed",
-                result = inference
+                result = inference,
+                autoApplied
             };
         }
         catch (Exception ex)
@@ -2414,11 +2379,11 @@ LIMIT {RawTopValuesLimit};
         {
             if (string.Equals(inferredType, "Number", StringComparison.OrdinalIgnoreCase))
             {
-                topRanges = LoadNumericTopRanges(connection, escapedPath, whereClause, columnExpr);
+                topRanges = LoadNumericTopRanges(connection, escapedPath, whereClause, columnExpr, column);
             }
             else if (string.Equals(inferredType, "Date", StringComparison.OrdinalIgnoreCase))
             {
-                topRanges = LoadDateTopRanges(connection, escapedPath, whereClause, columnExpr);
+                topRanges = LoadDateTopRanges(connection, escapedPath, whereClause, columnExpr, column);
             }
         }
 
@@ -2447,7 +2412,8 @@ LIMIT {RawTopValuesLimit};
         DuckDBConnection connection,
         string escapedPath,
         string whereClause,
-        string columnExpr)
+        string columnExpr,
+        string columnName)
     {
         var sql = $@"
 WITH values_cte AS (
@@ -2513,17 +2479,15 @@ LIMIT {RawTopRangesLimit};
                 count));
         }
 
-        return ranges
-            .OrderBy(item => double.TryParse(item.From, NumberStyles.Any, CultureInfo.InvariantCulture, out var from) ? from : double.MaxValue)
-            .ThenBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        return SortRawRanges(ranges, columnName, "Number");
     }
 
     private List<RawRangeStat> LoadDateTopRanges(
         DuckDBConnection connection,
         string escapedPath,
         string whereClause,
-        string columnExpr)
+        string columnExpr,
+        string columnName)
     {
         var parsedDateExpr = BuildParsedDateExpression(columnExpr);
         var sql = $@"
@@ -2590,10 +2554,51 @@ LIMIT {RawTopRangesLimit};
                 count));
         }
 
-        return ranges
-            .OrderBy(item => DateTime.TryParse(item.From, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var from) ? from : DateTime.MaxValue)
-            .ThenBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        return SortRawRanges(ranges, columnName, "Date");
+    }
+
+    private static List<RawRangeStat> SortRawRanges(
+        IReadOnlyCollection<RawRangeStat> ranges,
+        string columnName,
+        string inferredType)
+    {
+        static double ParseAsNumber(string value)
+            => double.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var number)
+                ? number
+                : double.MaxValue;
+
+        static long ParseAsDateTicks(string value)
+            => DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var date)
+                ? date.Ticks
+                : long.MaxValue;
+
+        var isSequential = ColumnRoleHeuristics.IsRowIdLike(columnName);
+        var isDate = string.Equals(inferredType, "Date", StringComparison.OrdinalIgnoreCase);
+
+        if (isSequential)
+        {
+            return isDate
+                ? ranges
+                    .OrderBy(item => ParseAsDateTicks(item.From))
+                    .ThenBy(item => ParseAsDateTicks(item.To))
+                    .ToList()
+                : ranges
+                    .OrderBy(item => ParseAsNumber(item.From))
+                    .ThenBy(item => ParseAsNumber(item.To))
+                    .ToList();
+        }
+
+        return isDate
+            ? ranges
+                .OrderByDescending(item => item.Count)
+                .ThenBy(item => ParseAsDateTicks(item.From))
+                .ThenBy(item => ParseAsDateTicks(item.To))
+                .ToList()
+            : ranges
+                .OrderByDescending(item => item.Count)
+                .ThenBy(item => ParseAsNumber(item.From))
+                .ThenBy(item => ParseAsNumber(item.To))
+                .ToList();
     }
 
     private static string AppendWherePredicate(string whereClause, string predicate)

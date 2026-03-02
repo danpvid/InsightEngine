@@ -4,6 +4,7 @@ using InsightEngine.Domain.Enums;
 using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Models.Formulas;
 using InsightEngine.Domain.Settings;
 using InsightEngine.Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
@@ -86,25 +87,37 @@ public class ScenarioSimulationService : IScenarioSimulationService
             Filters = normalizedFilters,
             Operations = normalizedOperations
         };
+        var responseTargetMetric = normalizedRequest.TargetMetric;
 
         string? appliedFormulaExpression = null;
+        FormulaExpression? propagationFormula = null;
         if (normalizedRequest.PropagateTargetFormula)
         {
             var index = await _indexStore.LoadAsync(datasetId, ct);
             var selectedFormula = index?.SelectedFormula?.Formula;
-            var inferredFormula = index?.FormulaInference?.Result?.Candidates?.FirstOrDefault();
+            var inferredFormula = index?.FormulaInference?.Result?.Candidates?
+                .FirstOrDefault(candidate => candidate.EpsilonMaxAbsError <= _settings.SimulationFormulaMaxError);
             var formula = selectedFormula ?? inferredFormula;
 
             if (formula is not null
-                && string.Equals(formula.TargetColumn, normalizedRequest.TargetMetric, StringComparison.OrdinalIgnoreCase))
+                && formula.EpsilonMaxAbsError <= _settings.SimulationFormulaMaxError
+                && !formula.UsedColumns.Any(ColumnRoleHeuristics.IsRowIdLike)
+                && (string.Equals(formula.TargetColumn, normalizedRequest.TargetMetric, StringComparison.OrdinalIgnoreCase)
+                    || formula.UsedColumns.Any(column =>
+                        string.Equals(column, normalizedRequest.TargetMetric, StringComparison.OrdinalIgnoreCase))))
             {
                 appliedFormulaExpression = formula.ExpressionText;
+                propagationFormula = formula;
+                if (!string.Equals(formula.TargetColumn, normalizedRequest.TargetMetric, StringComparison.OrdinalIgnoreCase))
+                {
+                    responseTargetMetric = formula.TargetColumn;
+                }
             }
         }
 
         var queryHash = QueryHashHelper.ComputeScenarioQueryHash(normalizedRequest, datasetId);
 
-        var sql = BuildSimulationSql(csvPath, normalizedRequest);
+        var sql = BuildSimulationSql(csvPath, normalizedRequest, columnLookup, propagationFormula);
         var sw = Stopwatch.StartNew();
 
         try
@@ -163,7 +176,7 @@ public class ScenarioSimulationService : IScenarioSimulationService
             return Result.Success(new ScenarioSimulationResponse
             {
                 DatasetId = datasetId,
-                TargetMetric = normalizedRequest.TargetMetric,
+                TargetMetric = responseTargetMetric,
                 TargetDimension = normalizedRequest.TargetDimension,
                 AppliedFormulaExpression = appliedFormulaExpression,
                 QueryHash = queryHash,
@@ -319,9 +332,16 @@ public class ScenarioSimulationService : IScenarioSimulationService
                         errors.Add("Invalid operation MultiplyMetric: factor must be a finite number.");
                         continue;
                     }
+
+                    var multiplyColumn = ResolveOptionalNumericOperationColumn(
+                        operation.Column,
+                        columnLookup,
+                        errors,
+                        "MultiplyMetric");
                     normalized.Add(new ScenarioOperation
                     {
                         Type = operation.Type,
+                        Column = multiplyColumn,
                         Factor = operation.Factor
                     });
                     break;
@@ -332,9 +352,16 @@ public class ScenarioSimulationService : IScenarioSimulationService
                         errors.Add("Invalid operation AddConstant: constant must be a finite number.");
                         continue;
                     }
+
+                    var addColumn = ResolveOptionalNumericOperationColumn(
+                        operation.Column,
+                        columnLookup,
+                        errors,
+                        "AddConstant");
                     normalized.Add(new ScenarioOperation
                     {
                         Type = operation.Type,
+                        Column = addColumn,
                         Constant = operation.Constant
                     });
                     break;
@@ -352,9 +379,16 @@ public class ScenarioSimulationService : IScenarioSimulationService
                         continue;
                     }
 
+                    var clampColumn = ResolveOptionalNumericOperationColumn(
+                        operation.Column,
+                        columnLookup,
+                        errors,
+                        "Clamp");
+
                     normalized.Add(new ScenarioOperation
                     {
                         Type = operation.Type,
+                        Column = clampColumn,
                         Min = operation.Min,
                         Max = operation.Max
                     });
@@ -400,7 +434,11 @@ public class ScenarioSimulationService : IScenarioSimulationService
         return normalized;
     }
 
-    private string BuildSimulationSql(string csvPath, ScenarioRequest request)
+    private string BuildSimulationSql(
+        string csvPath,
+        ScenarioRequest request,
+        IReadOnlyDictionary<string, ColumnProfile> columnLookup,
+        FormulaExpression? propagationFormula)
     {
         var escapedPath = csvPath.Replace("'", "''");
         var maxRows = _settings.MaxRowsReturned > 0 ? _settings.MaxRowsReturned : 200;
@@ -418,24 +456,83 @@ public class ScenarioSimulationService : IScenarioSimulationService
 
         foreach (var operation in request.Operations)
         {
+            var affectedColumn = string.IsNullOrWhiteSpace(operation.Column)
+                ? request.TargetMetric
+                : operation.Column!;
+
             switch (operation.Type)
             {
                 case ScenarioOperationType.MultiplyMetric:
-                    simulatedMetricExpression = $"({simulatedMetricExpression} * {ToInvariant(operation.Factor!.Value)})";
+                    if (string.Equals(affectedColumn, request.TargetMetric, StringComparison.OrdinalIgnoreCase))
+                    {
+                        simulatedMetricExpression = $"({simulatedMetricExpression} * {ToInvariant(operation.Factor!.Value)})";
+                    }
                     break;
                 case ScenarioOperationType.AddConstant:
-                    simulatedMetricExpression = $"({simulatedMetricExpression} + {ToInvariant(operation.Constant!.Value)})";
+                    if (string.Equals(affectedColumn, request.TargetMetric, StringComparison.OrdinalIgnoreCase))
+                    {
+                        simulatedMetricExpression = $"({simulatedMetricExpression} + {ToInvariant(operation.Constant!.Value)})";
+                    }
                     break;
                 case ScenarioOperationType.Clamp:
-                    var min = operation.Min.HasValue ? ToInvariant(operation.Min.Value) : "-1e308";
-                    var max = operation.Max.HasValue ? ToInvariant(operation.Max.Value) : "1e308";
-                    simulatedMetricExpression = $"LEAST(GREATEST({simulatedMetricExpression}, {min}), {max})";
+                    if (string.Equals(affectedColumn, request.TargetMetric, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var min = operation.Min.HasValue ? ToInvariant(operation.Min.Value) : "-1e308";
+                        var max = operation.Max.HasValue ? ToInvariant(operation.Max.Value) : "1e308";
+                        simulatedMetricExpression = $"LEAST(GREATEST({simulatedMetricExpression}, {min}), {max})";
+                    }
                     break;
                 case ScenarioOperationType.RemoveCategory:
                 case ScenarioOperationType.FilterOut:
                     scenarioPredicates.Add(BuildNotInPredicate(operation.Column!, operation.Values));
                     break;
             }
+        }
+
+        if (propagationFormula is not null)
+        {
+            var referencedColumns = propagationFormula.UsedColumns
+                .Where(column => !string.IsNullOrWhiteSpace(column))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var baseExpressions = referencedColumns.ToDictionary(
+                column => column,
+                column =>
+                    columnLookup.TryGetValue(column, out var profile) && profile.InferredType.IsNumericLike()
+                        ? BuildNumericSourceExpression(column)
+                        : BuildNumericSourceExpression(column),
+                StringComparer.OrdinalIgnoreCase);
+            var simulatedExpressions = new Dictionary<string, string>(baseExpressions, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var operation in request.Operations)
+            {
+                var affectedColumn = string.IsNullOrWhiteSpace(operation.Column)
+                    ? request.TargetMetric
+                    : operation.Column!;
+                if (!simulatedExpressions.TryGetValue(affectedColumn, out var currentExpression))
+                {
+                    continue;
+                }
+
+                switch (operation.Type)
+                {
+                    case ScenarioOperationType.MultiplyMetric:
+                        simulatedExpressions[affectedColumn] = $"({currentExpression} * {ToInvariant(operation.Factor!.Value)})";
+                        break;
+                    case ScenarioOperationType.AddConstant:
+                        simulatedExpressions[affectedColumn] = $"({currentExpression} + {ToInvariant(operation.Constant!.Value)})";
+                        break;
+                    case ScenarioOperationType.Clamp:
+                        var min = operation.Min.HasValue ? ToInvariant(operation.Min.Value) : "-1e308";
+                        var max = operation.Max.HasValue ? ToInvariant(operation.Max.Value) : "1e308";
+                        simulatedExpressions[affectedColumn] = $"LEAST(GREATEST({currentExpression}, {min}), {max})";
+                        break;
+                }
+            }
+
+            baseMetricExpression = BuildFormulaMetricExpression(propagationFormula.ExpressionText, baseExpressions);
+            simulatedMetricExpression = BuildFormulaMetricExpression(propagationFormula.ExpressionText, simulatedExpressions);
         }
 
         var baselineWhere = string.IsNullOrWhiteSpace(baselineFilterExpression)
@@ -463,16 +560,16 @@ baseline AS (
     SELECT
         dimension_value AS dimension,
         {aggFunction}({baseMetricExpression}) AS value
-    FROM source
-    WHERE dimension_value IS NOT NULL AND metric_value IS NOT NULL{baselineWhere}
+FROM source
+    WHERE dimension_value IS NOT NULL AND {baseMetricExpression} IS NOT NULL{baselineWhere}
     GROUP BY 1
 ),
 simulated AS (
     SELECT
         dimension_value AS dimension,
         {aggFunction}({simulatedMetricExpression}) AS value
-    FROM source
-    WHERE dimension_value IS NOT NULL AND metric_value IS NOT NULL{scenarioWhere}
+FROM source
+    WHERE dimension_value IS NOT NULL AND {simulatedMetricExpression} IS NOT NULL{scenarioWhere}
     GROUP BY 1
 ),
 combined AS (
@@ -496,6 +593,52 @@ FROM combined
 ORDER BY dimension
 LIMIT {maxRows};
 ";
+    }
+
+    private string? ResolveOptionalNumericOperationColumn(
+        string? requestedColumn,
+        IReadOnlyDictionary<string, ColumnProfile> columnLookup,
+        List<string> errors,
+        string operationType)
+    {
+        if (string.IsNullOrWhiteSpace(requestedColumn))
+        {
+            return null;
+        }
+
+        if (!columnLookup.TryGetValue(requestedColumn.Trim(), out var resolvedColumn))
+        {
+            errors.Add($"Invalid operation {operationType}: column '{requestedColumn}' was not found.");
+            return null;
+        }
+
+        if (!resolvedColumn.InferredType.IsNumericLike())
+        {
+            errors.Add($"Invalid operation {operationType}: column '{resolvedColumn.Name}' must be numeric.");
+            return null;
+        }
+
+        return resolvedColumn.Name;
+    }
+
+    private static string BuildNumericSourceExpression(string columnName)
+    {
+        return $"TRY_CAST(REPLACE(CAST(\"{EscapeIdentifier(columnName)}\" AS VARCHAR), ',', '') AS DOUBLE)";
+    }
+
+    private static string BuildFormulaMetricExpression(
+        string expressionText,
+        IReadOnlyDictionary<string, string> expressionsByColumn)
+    {
+        var output = expressionText;
+        foreach (var pair in expressionsByColumn
+                     .OrderByDescending(item => item.Key.Length)
+                     .ThenBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            output = output.Replace($"\"{pair.Key.Replace("\"", "\"\"", StringComparison.Ordinal)}\"", $"({pair.Value})", StringComparison.Ordinal);
+        }
+
+        return output;
     }
 
     private static string MapAggregation(Domain.Enums.Aggregation aggregation)

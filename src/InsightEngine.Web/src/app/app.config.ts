@@ -7,7 +7,8 @@ import { MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { routes } from './app.routes';
-import { authInterceptor } from './core/interceptors/auth.interceptor';
+import { jwtInterceptor } from './auth/jwt.interceptor';
+import { refreshInterceptor } from './auth/refresh.interceptor';
 import { apiErrorInterceptor } from './core/interceptors/api-error.interceptor';
 import { languageQueryInterceptor } from './core/interceptors/language-query.interceptor';
 
@@ -16,7 +17,7 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideHttpClient(
-      withInterceptors([languageQueryInterceptor, authInterceptor, apiErrorInterceptor])
+      withInterceptors([languageQueryInterceptor, jwtInterceptor, refreshInterceptor, apiErrorInterceptor])
     ),
     importProvidersFrom(MatDialogModule, MatSnackBarModule),
     provideAnimations(),

@@ -4,6 +4,9 @@ using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models.MetadataIndex;
 using MediatR;
 using Microsoft.Extensions.Logging;
+using InsightEngine.Domain.Services;
+using InsightEngine.Domain.Helpers;
+using InsightEngine.Domain.Settings;
 
 namespace InsightEngine.Domain.Queries.DataSet;
 
@@ -23,6 +26,9 @@ public class GetDataSetFormulaDiscoveryQueryHandler : IRequestHandler<GetDataSet
     private readonly IIndexStore _indexStore;
     private readonly IDuckDbMetadataAnalyzer _metadataAnalyzer;
     private readonly IFormulaDiscoveryService _formulaDiscoveryService;
+    private readonly ICurrentUser _currentUser;
+    private readonly InsightEngineFeatures _features;
+    private readonly TopKFeatureSuggester _topKFeatureSuggester;
     private readonly ILogger<GetDataSetFormulaDiscoveryQueryHandler> _logger;
 
     public GetDataSetFormulaDiscoveryQueryHandler(
@@ -30,12 +36,18 @@ public class GetDataSetFormulaDiscoveryQueryHandler : IRequestHandler<GetDataSet
         IIndexStore indexStore,
         IDuckDbMetadataAnalyzer metadataAnalyzer,
         IFormulaDiscoveryService formulaDiscoveryService,
+        ICurrentUser currentUser,
+        InsightEngineFeatures features,
+        TopKFeatureSuggester topKFeatureSuggester,
         ILogger<GetDataSetFormulaDiscoveryQueryHandler> logger)
     {
         _dataSetRepository = dataSetRepository;
         _indexStore = indexStore;
         _metadataAnalyzer = metadataAnalyzer;
         _formulaDiscoveryService = formulaDiscoveryService;
+        _currentUser = currentUser;
+        _features = features;
+        _topKFeatureSuggester = topKFeatureSuggester;
         _logger = logger;
     }
 
@@ -45,7 +57,14 @@ public class GetDataSetFormulaDiscoveryQueryHandler : IRequestHandler<GetDataSet
     {
         try
         {
-            var dataSet = await _dataSetRepository.GetByIdAsync(request.DatasetId);
+            if (_features.AuthRequiredForDatasets && (!_currentUser.IsAuthenticated || !_currentUser.UserId.HasValue))
+            {
+                return Result.Failure<Domain.Models.FormulaDiscovery.FormulaDiscoveryResult>("Unauthorized");
+            }
+
+            var dataSet = _currentUser.IsAuthenticated && _currentUser.UserId.HasValue
+                ? await _dataSetRepository.GetByIdForOwnerAsync(request.DatasetId, _currentUser.UserId.Value, cancellationToken)
+                : await _dataSetRepository.GetByIdAsync(request.DatasetId);
             if (dataSet is null)
             {
                 return Result.Failure<Domain.Models.FormulaDiscovery.FormulaDiscoveryResult>("Dataset not found.");
@@ -68,10 +87,17 @@ public class GetDataSetFormulaDiscoveryQueryHandler : IRequestHandler<GetDataSet
                 return Result.Failure<Domain.Models.FormulaDiscovery.FormulaDiscoveryResult>("No suitable numeric target column found for formula discovery.");
             }
 
+            var effectiveTopK = request.TopKFeatures <= 0
+                ? _topKFeatureSuggester.Suggest(columns, target, maxK: 20)
+                : request.TopKFeatures;
+
+            var options = request.ToOptions();
+            options.TopKFeatures = effectiveTopK;
+
             var result = await _formulaDiscoveryService.DiscoverAsync(
                 request.DatasetId,
                 target,
-                request.ToOptions(),
+                options,
                 cancellationToken);
 
             return Result.Success(result, "Formula discovery completed successfully.");
@@ -107,6 +133,7 @@ public class GetDataSetFormulaDiscoveryQueryHandler : IRequestHandler<GetDataSet
     {
         var numericColumns = columns
             .Where(column => column.InferredType.IsNumericLike())
+            .Where(column => !ColumnRoleHeuristics.IsRowIdLike(column.Name))
             .ToList();
 
         if (numericColumns.Count == 0)

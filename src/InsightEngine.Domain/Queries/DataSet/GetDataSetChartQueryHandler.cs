@@ -7,6 +7,7 @@ using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Services;
+using InsightEngine.Domain.Settings;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +22,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICsvProfiler _csvProfiler;
     private readonly IDataSetSchemaStore _schemaStore;
+    private readonly ICurrentUser _currentUser;
+    private readonly InsightEngineFeatures _features;
     private readonly IChartExecutionService _chartExecutionService;
     private readonly IChartPercentileService _chartPercentileService;
     private readonly IChartQueryCache _chartQueryCache;
@@ -31,6 +34,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         IUnitOfWork unitOfWork,
         ICsvProfiler csvProfiler,
         IDataSetSchemaStore schemaStore,
+        ICurrentUser currentUser,
+        InsightEngineFeatures features,
         IChartExecutionService chartExecutionService,
         IChartPercentileService chartPercentileService,
         IChartQueryCache chartQueryCache,
@@ -40,6 +45,8 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
         _unitOfWork = unitOfWork;
         _csvProfiler = csvProfiler;
         _schemaStore = schemaStore;
+        _currentUser = currentUser;
+        _features = features;
         _chartExecutionService = chartExecutionService;
         _chartPercentileService = chartPercentileService;
         _chartQueryCache = chartQueryCache;
@@ -56,7 +63,14 @@ public class GetDataSetChartQueryHandler : IRequestHandler<GetDataSetChartQuery,
 
         try
         {
-            var dataSet = await _dataSetRepository.GetByIdAsync(request.DatasetId);
+            if (_features.AuthRequiredForDatasets && (!_currentUser.IsAuthenticated || !_currentUser.UserId.HasValue))
+            {
+                return Result.Failure<ChartExecutionResponse>("Unauthorized");
+            }
+
+            var dataSet = _currentUser.IsAuthenticated && _currentUser.UserId.HasValue
+                ? await _dataSetRepository.GetByIdForOwnerAsync(request.DatasetId, _currentUser.UserId.Value, cancellationToken)
+                : await _dataSetRepository.GetByIdAsync(request.DatasetId);
             if (dataSet is null)
             {
                 _logger.LogWarning("Dataset not found: {DatasetId}", request.DatasetId);

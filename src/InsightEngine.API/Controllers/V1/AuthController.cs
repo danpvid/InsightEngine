@@ -1,4 +1,5 @@
-using InsightEngine.API.Services;
+﻿using InsightEngine.API.CQRS.Auth;
+using InsightEngine.API.Models;
 using InsightEngine.Domain.Core.Notifications;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -8,90 +9,43 @@ using Microsoft.AspNetCore.Mvc;
 namespace InsightEngine.API.Controllers.V1;
 
 [ApiVersion("1.0")]
-[Route("api/v{version:apiVersion}/[controller]")]
+[Route("api/v{version:apiVersion}/auth")]
 public class AuthController : BaseController
 {
-    private readonly ITokenService _tokenService;
-
-    public AuthController(
-        IDomainNotificationHandler notificationHandler,
-        IMediator mediator,
-        ITokenService tokenService) : base(notificationHandler, mediator)
+    public AuthController(IDomainNotificationHandler notificationHandler, IMediator mediator)
+        : base(notificationHandler, mediator)
     {
-        _tokenService = tokenService;
     }
 
-    /// <summary>
-    /// Endpoint de exemplo para autenticação
-    /// </summary>
-    /// <param name="request">Credenciais do usuário</param>
-    /// <returns>Token JWT</returns>
+    [HttpPost("register")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
+    {
+        var result = await _mediator.Send(new RegisterCommand(request.Email, request.Password, request.DisplayName));
+        return ResponseResult(result, StatusCodes.Status201Created);
+    }
+
     [HttpPost("login")]
     [AllowAnonymous]
-    public IActionResult Login([FromBody] LoginRequest request)
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        // TODO: Implementar validação real de usuário e senha
-        // Este é apenas um exemplo para demonstração do JWT
-        
-        if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Password))
-        {
-            return ErrorResponse(
-                StatusCodes.Status400BadRequest,
-                "validation_error",
-                "Email e senha são obrigatórios");
-        }
-
-        // Exemplo: validar credenciais (implementar sua lógica real aqui)
-        // Por enquanto, aceita qualquer credencial para demonstração
-        
-        var userId = Guid.NewGuid().ToString();
-        var roles = new[] { "User", "Admin" };
-        
-        var token = _tokenService.GenerateToken(userId, request.Email, roles);
-
-        return Ok(new
-        {
-            success = true,
-            data = new
-            {
-                token,
-                expiresIn = 480, // minutos
-                user = new
-                {
-                    id = userId,
-                    email = request.Email,
-                    roles
-                }
-            }
-        });
+        var result = await _mediator.Send(new LoginCommand(request.Email, request.Password));
+        return ResponseResult(result);
     }
 
-    /// <summary>
-    /// Endpoint de exemplo protegido por autenticação
-    /// </summary>
-    [HttpGet("profile")]
-    [Authorize]
-    public IActionResult GetProfile()
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Refresh([FromBody] RefreshRequest request)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
-        var roles = User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value);
-
-        return Ok(new
-        {
-            success = true,
-            data = new
-            {
-                userId,
-                email,
-                roles
-            }
-        });
+        var result = await _mediator.Send(new RefreshTokenCommand(request.AccessToken, request.RefreshToken));
+        return ResponseResult(result);
     }
-}
 
-public class LoginRequest
-{
-    public string Email { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
+    [HttpPost("logout")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
+    {
+        var result = await _mediator.Send(new LogoutCommand(request.RefreshToken));
+        return ResponseResult(result);
+    }
 }

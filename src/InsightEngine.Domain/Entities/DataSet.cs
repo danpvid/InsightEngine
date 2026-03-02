@@ -2,6 +2,7 @@ namespace InsightEngine.Domain.Entities;
 
 public class DataSet : Core.Models.Entity
 {
+    public Guid? OwnerUserId { get; private set; }
     public string OriginalFileName { get; private set; } = string.Empty;
     public string StoredFileName { get; private set; } = string.Empty;
     public string StoredPath { get; private set; } = string.Empty;
@@ -19,9 +20,11 @@ public class DataSet : Core.Models.Entity
         string storedFileName,
         string storedPath,
         long fileSizeInBytes,
-        string contentType)
+        string contentType,
+        Guid? ownerUserId = null)
     {
         Id = id;
+        OwnerUserId = ownerUserId;
         OriginalFileName = originalFileName;
         StoredFileName = storedFileName;
         StoredPath = storedPath;
@@ -47,6 +50,12 @@ public class DataSet : Core.Models.Entity
     public void MarkAccessed()
     {
         LastAccessedAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SetOwner(Guid ownerUserId)
+    {
+        OwnerUserId = ownerUserId;
         UpdatedAt = DateTime.UtcNow;
     }
 }

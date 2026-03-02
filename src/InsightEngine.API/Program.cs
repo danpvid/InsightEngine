@@ -6,9 +6,11 @@ using InsightEngine.API.Validators;
 using InsightEngine.CrossCutting.IoC;
 using InsightEngine.Domain.Settings;
 using InsightEngine.Infra.Data.Context;
+using InsightEngine.Infra.Data.Identity;
 using DuckDB.NET.Data;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
@@ -16,6 +18,7 @@ using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using MediatR;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Diagnostics;
 
@@ -91,6 +94,10 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddValidatorsFromAssemblyContaining<AiChartRequestValidator>();
+builder.Services.AddMediatR(cfg =>
+{
+    cfg.RegisterServicesFromAssembly(typeof(InsightEngine.API.CQRS.Auth.RegisterCommand).Assembly);
+});
 
 // Configure API Versioning
 builder.Services.AddApiVersioning(options =>
@@ -154,10 +161,21 @@ builder.Services.AddCors(options =>
 
 // Register Token Service
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<InsightEngine.Domain.Interfaces.ICurrentUser, CurrentUser>();
 builder.Services.AddHostedService<DataSetRetentionBackgroundService>();
 
 // Register application services
 NativeInjectorBootStrapper.RegisterServices(builder.Services, builder.Configuration);
+builder.Services
+    .AddIdentityCore<ApplicationUser>(options =>
+    {
+        options.User.RequireUniqueEmail = true;
+        options.Password.RequiredLength = 8;
+    })
+    .AddRoles<IdentityRole<Guid>>()
+    .AddEntityFrameworkStores<InsightEngineContext>()
+    .AddDefaultTokenProviders();
 
 var app = builder.Build();
 
@@ -172,6 +190,7 @@ using (var scope = app.Services.CreateScope())
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<InsightEngineContext>();
         dbContext.Database.EnsureCreated();
+        EnsureAuthSchema(dbContext, logger);
         logger.LogInformation("Metadata store initialized using SQLite.");
     }
 }
@@ -297,5 +316,140 @@ app.MapGet("/health/ready", (ILogger<Program> logger) =>
 });
 
 app.Run();
+
+static void EnsureAuthSchema(InsightEngineContext dbContext, ILogger logger)
+{
+    try
+    {
+        using var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            connection.Open();
+        }
+
+        using (var users = connection.CreateCommand())
+        {
+            users.CommandText = @"
+                CREATE TABLE IF NOT EXISTS Users (
+                    Id TEXT NOT NULL PRIMARY KEY,
+                    UserName TEXT NULL,
+                    NormalizedUserName TEXT NULL,
+                    Email TEXT NULL,
+                    NormalizedEmail TEXT NULL,
+                    EmailConfirmed INTEGER NOT NULL DEFAULT 0,
+                    PasswordHash TEXT NULL,
+                    SecurityStamp TEXT NULL,
+                    ConcurrencyStamp TEXT NULL,
+                    PhoneNumber TEXT NULL,
+                    PhoneNumberConfirmed INTEGER NOT NULL DEFAULT 0,
+                    TwoFactorEnabled INTEGER NOT NULL DEFAULT 0,
+                    LockoutEnd TEXT NULL,
+                    LockoutEnabled INTEGER NOT NULL DEFAULT 0,
+                    AccessFailedCount INTEGER NOT NULL DEFAULT 0,
+                    DisplayName TEXT NOT NULL DEFAULT '',
+                    AvatarUrl TEXT NULL,
+                    Plan TEXT NOT NULL DEFAULT 'Free',
+                    IsActive INTEGER NOT NULL DEFAULT 1,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NULL
+                );";
+            users.ExecuteNonQuery();
+        }
+
+        EnsureColumn(connection, "Users", "UserName", "TEXT NULL");
+        EnsureColumn(connection, "Users", "NormalizedUserName", "TEXT NULL");
+        EnsureColumn(connection, "Users", "NormalizedEmail", "TEXT NULL");
+        EnsureColumn(connection, "Users", "EmailConfirmed", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "Users", "SecurityStamp", "TEXT NULL");
+        EnsureColumn(connection, "Users", "ConcurrencyStamp", "TEXT NULL");
+        EnsureColumn(connection, "Users", "PhoneNumber", "TEXT NULL");
+        EnsureColumn(connection, "Users", "PhoneNumberConfirmed", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "Users", "TwoFactorEnabled", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "Users", "LockoutEnd", "TEXT NULL");
+        EnsureColumn(connection, "Users", "LockoutEnabled", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "Users", "AccessFailedCount", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "Users", "DisplayName", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "Users", "AvatarUrl", "TEXT NULL");
+        EnsureColumn(connection, "Users", "Plan", "TEXT NOT NULL DEFAULT 'Free'");
+        EnsureColumn(connection, "Users", "IsActive", "INTEGER NOT NULL DEFAULT 1");
+        EnsureColumn(connection, "Users", "CreatedAt", "TEXT NOT NULL DEFAULT (datetime('now'))");
+        EnsureColumn(connection, "Users", "UpdatedAt", "TEXT NULL");
+
+        using (var userIndexes = connection.CreateCommand())
+        {
+            userIndexes.CommandText = @"
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_NormalizedUserName ON Users (NormalizedUserName);
+                CREATE INDEX IF NOT EXISTS IX_Users_NormalizedEmail ON Users (NormalizedEmail);";
+            userIndexes.ExecuteNonQuery();
+        }
+
+        using (var refreshTokens = connection.CreateCommand())
+        {
+            refreshTokens.CommandText = @"
+                CREATE TABLE IF NOT EXISTS RefreshTokens (
+                    Id TEXT NOT NULL PRIMARY KEY,
+                    UserId TEXT NOT NULL,
+                    Token TEXT NOT NULL,
+                    ExpiresAtUtc TEXT NOT NULL,
+                    RevokedAtUtc TEXT NULL,
+                    ReplacedByToken TEXT NULL,
+                    CreatedByIp TEXT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_RefreshTokens_Token ON RefreshTokens (Token);
+                CREATE INDEX IF NOT EXISTS IX_RefreshTokens_UserId_ExpiresAtUtc ON RefreshTokens (UserId, ExpiresAtUtc);";
+            refreshTokens.ExecuteNonQuery();
+        }
+
+        EnsureColumn(connection, "RefreshTokens", "CreatedByIp", "TEXT NULL");
+
+        using var checkColumn = connection.CreateCommand();
+        checkColumn.CommandText = "PRAGMA table_info(DataSets);";
+        using var reader = checkColumn.ExecuteReader();
+        var hasOwnerUserId = false;
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), "OwnerUserId", StringComparison.OrdinalIgnoreCase))
+            {
+                hasOwnerUserId = true;
+                break;
+            }
+        }
+
+        if (!hasOwnerUserId)
+        {
+            using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE DataSets ADD COLUMN OwnerUserId TEXT NULL;";
+            alter.ExecuteNonQuery();
+
+            using var index = connection.CreateCommand();
+            index.CommandText = "CREATE INDEX IF NOT EXISTS IX_DataSets_OwnerUserId_Id ON DataSets (OwnerUserId, Id);";
+            index.ExecuteNonQuery();
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to ensure auth schema bootstrap.");
+    }
+}
+
+static void EnsureColumn(System.Data.Common.DbConnection connection, string tableName, string columnName, string sqlDefinition)
+{
+    using var pragma = connection.CreateCommand();
+    pragma.CommandText = $"PRAGMA table_info({tableName});";
+    using var reader = pragma.ExecuteReader();
+    while (reader.Read())
+    {
+        if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+    }
+
+    using var alter = connection.CreateCommand();
+    alter.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {sqlDefinition};";
+    alter.ExecuteNonQuery();
+}
 
 public partial class Program { }

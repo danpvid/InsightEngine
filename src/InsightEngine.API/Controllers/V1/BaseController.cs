@@ -134,6 +134,9 @@ public abstract class BaseController : ControllerBase
             firstError.Contains("pattern") || firstError.Contains("formato"))
             return 400;
 
+        if (firstError.Contains("unauthorized") || firstError.Contains("nÃ£o autorizado"))
+            return 401;
+
         // Erro genérico/interno
         return 500;
     }
@@ -200,6 +203,7 @@ public abstract class BaseController : ControllerBase
         return statusCode switch
         {
             StatusCodes.Status400BadRequest => "validation_error",
+            StatusCodes.Status401Unauthorized => "unauthorized",
             StatusCodes.Status404NotFound => "not_found",
             StatusCodes.Status413PayloadTooLarge => "payload_too_large",
             _ => "internal_error"

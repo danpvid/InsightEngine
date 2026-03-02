@@ -4853,14 +4853,53 @@ export class ChartViewerPageComponent implements OnInit, OnDestroy {
   private syncFormulaTargetWithContext(): void {
     if (this.selectedMetric && this.formulaTargets.includes(this.selectedMetric)) {
       this.formulaTargetColumn = this.selectedMetric;
+      this.applySuggestedFormulaTopK();
       return;
     }
 
     if (this.formulaTargetColumn && this.formulaTargets.includes(this.formulaTargetColumn)) {
+      this.applySuggestedFormulaTopK();
       return;
     }
 
     this.formulaTargetColumn = this.formulaTargets[0] || '';
+    this.applySuggestedFormulaTopK();
+  }
+
+  onFormulaTargetChange(): void {
+    this.applySuggestedFormulaTopK();
+  }
+
+  private applySuggestedFormulaTopK(): void {
+    if (!this.formulaTargetColumn || this.profileColumns.length === 0) {
+      return;
+    }
+
+    const target = this.profileColumns.find(column => column.name === this.formulaTargetColumn);
+    if (!target) {
+      return;
+    }
+
+    const targetType = (target.confirmedType || target.inferredType || '').toLowerCase();
+    if (!targetType) {
+      return;
+    }
+
+    const sameType = this.profileColumns.filter(column =>
+      column.name !== this.formulaTargetColumn &&
+      !this.isRowIdLike(column.name) &&
+      ((column.confirmedType || column.inferredType || '').toLowerCase() === targetType));
+
+    const suggested = Math.min(Math.max(1, sameType.length), 20);
+    this.formulaTopKFeatures = suggested;
+  }
+
+  private isRowIdLike(columnName: string): boolean {
+    const normalized = (columnName || '').trim().toLowerCase();
+    return normalized === '__row_id'
+      || normalized === '_row_id'
+      || normalized.startsWith('__row_id_')
+      || normalized.startsWith('_row_id_');
   }
 
   private buildPredictedVsActualPoints(

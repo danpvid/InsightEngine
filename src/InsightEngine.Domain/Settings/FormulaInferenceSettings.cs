@@ -13,6 +13,7 @@ public class FormulaInferenceSettings
     public int ValidationSampleRows { get; set; } = 2000;
     public double EpsilonAbs { get; set; } = 1e-6;
     public double EpsilonAbsRelaxed { get; set; } = 1e-3;
+    public double EpsilonZero { get; set; } = 0;
     public double DivisionZeroEpsilon { get; set; } = 1e-12;
     public bool AllowConstants { get; set; } = false;
     public bool AllowColumnReuse { get; set; } = false;

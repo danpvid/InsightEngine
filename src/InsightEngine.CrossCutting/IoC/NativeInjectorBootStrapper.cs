@@ -6,6 +6,7 @@ using InsightEngine.Domain.Behaviors;
 using InsightEngine.Domain.Core.Notifications;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Recommendations.Scoring;
+using InsightEngine.Domain.Services;
 using InsightEngine.Domain.Settings;
 using InsightEngine.Infra.Data.Configuration;
 using InsightEngine.Infra.Data.Context;
@@ -83,6 +84,8 @@ public static class NativeInjectorBootStrapper
 
         // Repositories específicos
         services.AddScoped<IDataSetRepository, DataSetRepository>();
+        services.AddScoped<IAppUserRepository, AppUserRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
         // Services
         services.AddScoped<IFileStorageService, FileStorageService>();
@@ -108,6 +111,7 @@ public static class NativeInjectorBootStrapper
         services.AddScoped<ChartRelevanceScorer>();
         services.AddScoped<IRecommendationEngineV2, RecommendationEngineV2>();
         services.AddScoped<LlmInsightComposerV2>();
+        services.AddScoped<TopKFeatureSuggester>();
         services.AddScoped<ILLMContextBuilder, LLMContextBuilder>();
         services.AddScoped<IEvidencePackService, EvidencePackService>();
         services.AddScoped<IAIInsightService, AIInsightService>();

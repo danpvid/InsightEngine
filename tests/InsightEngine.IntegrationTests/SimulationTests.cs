@@ -2,6 +2,7 @@ using FluentAssertions;
 using InsightEngine.API.Models;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Xunit;
 
 namespace InsightEngine.IntegrationTests;
@@ -99,6 +100,58 @@ public class SimulationTests : IAsyncLifetime
         var result = await response.Content.ReadFromJsonAsync<ApiErrorResponse>(TestHelpers.JsonOptions);
         result!.Errors.Should().NotBeEmpty();
         result.Errors.Any(error => error.Message.ToLowerInvariant().Contains("operations")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Simulate_WithPropagateTargetFormulaAndInputChange_RecomputesFormulaTarget()
+    {
+        var csv = string.Join('\n',
+        [
+            "region,unit_price,quantity,total",
+            "A,10,2,20",
+            "A,12,3,36",
+            "B,8,5,40",
+            "B,7,6,42"
+        ]);
+
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client, csv, "simulate-formula-propagation.csv");
+
+        var buildResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/index:build",
+            new { sampleRows = 5000, includeStringPatterns = true, includeDistributions = true });
+        buildResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var inferenceResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/formula-inference/run",
+            new
+            {
+                targetColumn = "total",
+                mode = "Auto",
+                options = new { maxColumns = 3, maxDepth = 2, epsilonAbs = 0.0001, includePercentageColumns = false }
+            });
+        inferenceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/simulate",
+            new
+            {
+                targetMetric = "unit_price",
+                targetDimension = "region",
+                aggregation = "Sum",
+                propagateTargetFormula = true,
+                operations = new[]
+                {
+                    new { type = "MultiplyMetric", factor = 2.0 }
+                }
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = payload.RootElement.GetProperty("data");
+        data.GetProperty("targetMetric").GetString().Should().Be("total");
+        data.GetProperty("appliedFormulaExpression").GetString().Should().NotBeNullOrWhiteSpace();
+        data.GetProperty("deltaSummary").GetProperty("changedPoints").GetInt32().Should().BeGreaterThan(0);
     }
 
     public class SimulationResponseDto

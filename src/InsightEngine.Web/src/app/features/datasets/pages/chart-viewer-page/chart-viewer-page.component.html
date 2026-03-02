@@ -546,7 +546,7 @@
             <div class="formula-controls">
               <mat-form-field appearance="outline">
                 <mat-label>{{ 'chartViewer.formulasTarget' | translate }}</mat-label>
-                <mat-select [(ngModel)]="formulaTargetColumn">
+                <mat-select [(ngModel)]="formulaTargetColumn" (selectionChange)="onFormulaTargetChange()">
                   <mat-option *ngFor="let metric of formulaTargets" [value]="metric">
                     {{ metric }}
                   </mat-option>
@@ -555,7 +555,7 @@
 
               <mat-form-field appearance="outline" class="formula-topk">
                 <mat-label>{{ 'chartViewer.formulasTopK' | translate }}</mat-label>
-                <input matInput type="number" [(ngModel)]="formulaTopKFeatures" min="3" max="20" />
+                <input matInput type="number" [(ngModel)]="formulaTopKFeatures" min="1" max="20" />
               </mat-form-field>
 
               <mat-slide-toggle [(ngModel)]="formulaEnableInteractions" color="primary">

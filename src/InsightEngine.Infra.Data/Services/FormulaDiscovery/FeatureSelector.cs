@@ -1,4 +1,5 @@
 using InsightEngine.Domain.Enums;
+using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Models.MetadataIndex;
 
 namespace InsightEngine.Infra.Data.Services.FormulaDiscovery;
@@ -128,6 +129,11 @@ public sealed class FeatureSelector
 
     private static bool LooksLikeIdentifier(ColumnIndex column, long rowCount)
     {
+        if (ColumnRoleHeuristics.IsRowIdLike(column.Name))
+        {
+            return true;
+        }
+
         if (rowCount <= 0)
         {
             return false;

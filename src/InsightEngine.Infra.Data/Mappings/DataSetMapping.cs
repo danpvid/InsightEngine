@@ -34,6 +34,10 @@ public class DataSetMapping : IEntityTypeConfiguration<DataSet>
             .IsRequired()
             .HasMaxLength(100);
 
+        builder.Property(ds => ds.OwnerUserId);
+
+        builder.HasIndex(ds => new { ds.OwnerUserId, ds.Id });
+
         builder.Property(ds => ds.RowCount);
 
         builder.Property(ds => ds.ProfileSummary)

@@ -20,6 +20,7 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
     private readonly ICsvProfiler _csvProfiler;
     private readonly IDataSetSchemaStore _schemaStore;
     private readonly IIndexStore _indexStore;
+    private readonly ICurrentUser _currentUser;
     private readonly RecommendationEngine _recommendationEngine;
     private readonly IRecommendationEngineV2 _recommendationEngineV2;
     private readonly InsightEngineFeatures _features;
@@ -31,6 +32,7 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
         ICsvProfiler csvProfiler,
         IDataSetSchemaStore schemaStore,
         IIndexStore indexStore,
+        ICurrentUser currentUser,
         RecommendationEngine recommendationEngine,
         IRecommendationEngineV2 recommendationEngineV2,
         InsightEngineFeatures features,
@@ -41,6 +43,7 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
         _csvProfiler = csvProfiler;
         _schemaStore = schemaStore;
         _indexStore = indexStore;
+        _currentUser = currentUser;
         _recommendationEngine = recommendationEngine;
         _recommendationEngineV2 = recommendationEngineV2;
         _features = features;
@@ -57,7 +60,14 @@ public class GetDataSetRecommendationsQueryHandler : IRequestHandler<GetDataSetR
                 "Generating chart recommendations for dataset {DatasetId}",
                 request.DatasetId);
 
-            var dataSet = await _dataSetRepository.GetByIdAsync(request.DatasetId);
+            if (_features.AuthRequiredForDatasets && (!_currentUser.IsAuthenticated || !_currentUser.UserId.HasValue))
+            {
+                return Result.Failure<List<ChartRecommendation>>("Unauthorized");
+            }
+
+            var dataSet = _currentUser.IsAuthenticated && _currentUser.UserId.HasValue
+                ? await _dataSetRepository.GetByIdForOwnerAsync(request.DatasetId, _currentUser.UserId.Value, cancellationToken)
+                : await _dataSetRepository.GetByIdAsync(request.DatasetId);
             if (dataSet is null)
             {
                 return Result.Failure<List<ChartRecommendation>>("Dataset not found");

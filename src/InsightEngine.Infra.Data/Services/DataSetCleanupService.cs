@@ -1,5 +1,6 @@
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
+using InsightEngine.Domain.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace InsightEngine.Infra.Data.Services;
@@ -12,6 +13,8 @@ public class DataSetCleanupService : IDataSetCleanupService
     private readonly IChartQueryCache _chartQueryCache;
     private readonly IIndexStore _indexStore;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUser _currentUser;
+    private readonly InsightEngineFeatures _features;
     private readonly ILogger<DataSetCleanupService> _logger;
 
     public DataSetCleanupService(
@@ -21,6 +24,8 @@ public class DataSetCleanupService : IDataSetCleanupService
         IChartQueryCache chartQueryCache,
         IIndexStore indexStore,
         IUnitOfWork unitOfWork,
+        ICurrentUser currentUser,
+        InsightEngineFeatures features,
         ILogger<DataSetCleanupService> logger)
     {
         _dataSetRepository = dataSetRepository;
@@ -29,6 +34,8 @@ public class DataSetCleanupService : IDataSetCleanupService
         _chartQueryCache = chartQueryCache;
         _indexStore = indexStore;
         _unitOfWork = unitOfWork;
+        _currentUser = currentUser;
+        _features = features;
         _logger = logger;
     }
 
@@ -88,7 +95,15 @@ public class DataSetCleanupService : IDataSetCleanupService
 
     public async Task<DataSetDeletionResult?> DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default)
     {
-        var dataSet = await _dataSetRepository.GetByIdAsync(datasetId);
+        var dataSet = _currentUser.IsAuthenticated && _currentUser.UserId.HasValue
+            ? await _dataSetRepository.GetByIdForOwnerAsync(datasetId, _currentUser.UserId.Value, cancellationToken)
+            : await _dataSetRepository.GetByIdAsync(datasetId);
+
+        if (_features.AuthRequiredForDatasets && (!_currentUser.IsAuthenticated || !_currentUser.UserId.HasValue))
+        {
+            return null;
+        }
+
         if (dataSet is null)
         {
             return null;

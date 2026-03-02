@@ -9,7 +9,7 @@ export const apiErrorInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(req).pipe(
     catchError((error) => {
-      if (!HttpErrorUtil.isRequestAbort(error)) {
+      if (!HttpErrorUtil.isRequestAbort(error) && error.status !== 401) {
         errorHandler.handle(error);
       }
 

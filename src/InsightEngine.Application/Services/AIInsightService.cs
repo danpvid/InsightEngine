@@ -99,7 +99,7 @@ public class AIInsightService : IAIInsightService
             ContextObjects = context.ContextObjects
         };
 
-        var llmResult = await _llmClient.GenerateJsonAsync(llmRequest, cancellationToken);
+        var llmResult = await GenerateJsonWithTimeoutAsync(llmRequest, cancellationToken);
         if (llmResult.IsSuccess && llmResult.Data != null)
         {
             var generated = TryParseSummary(llmResult.Data.Json ?? llmResult.Data.Text);
@@ -198,7 +198,7 @@ public class AIInsightService : IAIInsightService
             ContextObjects = context.ContextObjects
         };
 
-        var llmResult = await _llmClient.GenerateJsonAsync(llmRequest, cancellationToken);
+        var llmResult = await GenerateJsonWithTimeoutAsync(llmRequest, cancellationToken);
         if (llmResult.IsSuccess && llmResult.Data != null)
         {
             var parsed = TryParseAnalysisPlan(llmResult.Data.Json ?? llmResult.Data.Text);
@@ -261,7 +261,7 @@ public class AIInsightService : IAIInsightService
             ContextObjects = context.ContextObjects
         };
 
-        var llmResult = await _llmClient.GenerateJsonAsync(llmRequest, cancellationToken);
+        var llmResult = await GenerateJsonWithTimeoutAsync(llmRequest, cancellationToken);
         if (llmResult.IsSuccess && llmResult.Data != null)
         {
             var parsed = TryParseExplanation(llmResult.Data.Json ?? llmResult.Data.Text);
@@ -359,7 +359,7 @@ public class AIInsightService : IAIInsightService
             ContextObjects = context
         };
 
-        var llmResult = await _llmClient.GenerateJsonAsync(llmRequest, cancellationToken);
+        var llmResult = await GenerateJsonWithTimeoutAsync(llmRequest, cancellationToken);
         if (llmResult.IsSuccess && llmResult.Data != null)
         {
             var parsed = TryParseDeepInsightsReport(llmResult.Data.Json ?? llmResult.Data.Text);
@@ -615,7 +615,7 @@ public class AIInsightService : IAIInsightService
             }
         };
 
-        var llmResult = await _llmClient.GenerateJsonAsync(llmRequest, cancellationToken);
+        var llmResult = await GenerateJsonWithTimeoutAsync(llmRequest, cancellationToken);
         var rawPayload = llmResult.Data?.Json ?? llmResult.Data?.Text;
         var parsedStructured = TryParseInsightPackStructuredAnswer(rawPayload, out _);
 
@@ -637,7 +637,7 @@ public class AIInsightService : IAIInsightService
                 }
             };
 
-            var repairResult = await _llmClient.GenerateJsonAsync(repairRequest, cancellationToken);
+            var repairResult = await GenerateJsonWithTimeoutAsync(repairRequest, cancellationToken);
             if (repairResult.IsSuccess && repairResult.Data != null)
             {
                 rawPayload = repairResult.Data.Json ?? repairResult.Data.Text;
@@ -1143,6 +1143,25 @@ Rules:
         };
 
         return profile;
+    }
+
+    private async Task<Result<LLMResponse>> GenerateJsonWithTimeoutAsync(
+        LLMRequest request,
+        CancellationToken cancellationToken)
+    {
+        var timeoutSeconds = Math.Max(1, _settingsMonitor.CurrentValue.TimeoutSeconds);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+        try
+        {
+            return await _llmClient.GenerateJsonAsync(request, timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Result.Failure<LLMResponse>($"LLM request timed out after {timeoutSeconds} seconds.");
+        }
     }
 
     private BudgetDecision TryConsumeDeepInsightsBudget(DeepInsightsRequest request)

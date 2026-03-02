@@ -1,6 +1,7 @@
 using InsightEngine.Domain.Core;
 using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
+using InsightEngine.Domain.Settings;
 using InsightEngine.Domain.ValueObjects;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,8 @@ public class GetDataSetProfileQueryHandler : IRequestHandler<GetDataSetProfileQu
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICsvProfiler _csvProfiler;
     private readonly IDataSetSchemaStore _schemaStore;
+    private readonly ICurrentUser _currentUser;
+    private readonly InsightEngineFeatures _features;
     private readonly ILogger<GetDataSetProfileQueryHandler> _logger;
 
     public GetDataSetProfileQueryHandler(
@@ -23,12 +26,16 @@ public class GetDataSetProfileQueryHandler : IRequestHandler<GetDataSetProfileQu
         IUnitOfWork unitOfWork,
         ICsvProfiler csvProfiler,
         IDataSetSchemaStore schemaStore,
+        ICurrentUser currentUser,
+        InsightEngineFeatures features,
         ILogger<GetDataSetProfileQueryHandler> logger)
     {
         _dataSetRepository = dataSetRepository;
         _unitOfWork = unitOfWork;
         _csvProfiler = csvProfiler;
         _schemaStore = schemaStore;
+        _currentUser = currentUser;
+        _features = features;
         _logger = logger;
     }
 
@@ -40,7 +47,14 @@ public class GetDataSetProfileQueryHandler : IRequestHandler<GetDataSetProfileQu
         {
             _logger.LogInformation("Generating profile for dataset {DatasetId}", request.DatasetId);
 
-            var dataSet = await _dataSetRepository.GetByIdAsync(request.DatasetId);
+            if (_features.AuthRequiredForDatasets && (!_currentUser.IsAuthenticated || !_currentUser.UserId.HasValue))
+            {
+                return Result.Failure<DatasetProfile>("Unauthorized");
+            }
+
+            var dataSet = _currentUser.IsAuthenticated && _currentUser.UserId.HasValue
+                ? await _dataSetRepository.GetByIdForOwnerAsync(request.DatasetId, _currentUser.UserId.Value, cancellationToken)
+                : await _dataSetRepository.GetByIdAsync(request.DatasetId);
             if (dataSet is null)
             {
                 return Result.Failure<DatasetProfile>("Dataset not found");

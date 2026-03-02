@@ -21,8 +21,8 @@ public class GetDataSetFormulaDiscoveryQueryValidator : AbstractValidator<GetDat
             .WithMessage("MaxCandidates must be between 1 and 5.");
 
         RuleFor(query => query.TopKFeatures)
-            .InclusiveBetween(3, 20)
-            .WithMessage("TopKFeatures must be between 3 and 20.");
+            .InclusiveBetween(0, 20)
+            .WithMessage("TopKFeatures must be between 0 and 20.");
 
         RuleFor(query => query.SampleCap)
             .InclusiveBetween(1000, 100000)

@@ -248,6 +248,7 @@ public class IndexingEngine : IIndexingEngine
         var numericCandidates = datasetIndex.Columns
             .Where(column =>
                 !string.Equals(column.Name, targetColumn.Name, StringComparison.OrdinalIgnoreCase)
+                && !ColumnRoleHeuristics.IsRowIdLike(column.Name)
                 && column.InferredType.IsNumericLike())
             .Select(column => column.Name)
             .ToList();
@@ -279,6 +280,7 @@ public class IndexingEngine : IIndexingEngine
                     ValidationSampleRows = 2000,
                     EpsilonAbs = 1e-6,
                     EpsilonAbsRelaxed = 1e-3,
+                    EpsilonZero = 0,
                     DivisionZeroEpsilon = 1e-12,
                     AllowConstants = false,
                     AllowColumnReuse = false,

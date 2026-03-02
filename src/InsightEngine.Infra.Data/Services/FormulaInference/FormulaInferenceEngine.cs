@@ -2,6 +2,7 @@ using System.Diagnostics;
 using DuckDB.NET.Data;
 using InsightEngine.Domain.Entities;
 using InsightEngine.Domain.Enums;
+using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models.Formulas;
 using InsightEngine.Domain.Models.MetadataIndex;
@@ -16,17 +17,20 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
     private readonly IDataSetRepository _dataSetRepository;
     private readonly IIndexStore _indexStore;
     private readonly IOptionsMonitor<FormulaInferenceSettings> _settingsMonitor;
+    private readonly IOptionsMonitor<InsightEngineFeatures> _featuresMonitor;
     private readonly ILogger<FormulaInferenceEngine> _logger;
 
     public FormulaInferenceEngine(
         IDataSetRepository dataSetRepository,
         IIndexStore indexStore,
         IOptionsMonitor<FormulaInferenceSettings> settingsMonitor,
+        IOptionsMonitor<InsightEngineFeatures> featuresMonitor,
         ILogger<FormulaInferenceEngine> logger)
     {
         _dataSetRepository = dataSetRepository;
         _indexStore = indexStore;
         _settingsMonitor = settingsMonitor;
+        _featuresMonitor = featuresMonitor;
         _logger = logger;
     }
 
@@ -192,6 +196,7 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
             }
 
             var finalCandidates = new List<FormulaExpression>();
+            FormulaExpression? zeroErrorCandidate = null;
             foreach (var candidate in accepted)
             {
                 if (BudgetExceeded(stopwatch, settings.SearchBudgetMs))
@@ -213,7 +218,7 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
                     continue;
                 }
 
-                var confidence = ResolveConfidence(validation.RowsTested, settings.ValidationSampleRows);
+                var confidence = ResolveConfidence(validation.RowsTested, validationSample.RowCount);
                 if (confidence == FormulaConfidence.Low)
                 {
                     continue;
@@ -229,21 +234,30 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
                         .ToArray(),
                     Depth = candidate.Node.Depth,
                     OperatorsUsed = candidate.Node.OperatorsUsed.ToArray(),
-                    EpsilonMaxAbsError = epsilonUsed,
+                    EpsilonMaxAbsError = validation.MaxAbsError,
                     SampleRowsTested = validation.RowsTested,
                     RowsFailed = validation.RowsFailed,
                     Confidence = confidence,
                     Notes = "division by zero skipped rows: 0"
                 });
+
+                if (validation.MaxAbsError <= settings.EpsilonZero)
+                {
+                    zeroErrorCandidate = finalCandidates[^1];
+                    warnings.Add("early stop: zero-error candidate found");
+                    break;
+                }
             }
 
-            var ordered = finalCandidates
-                .OrderBy(expression => expression.UsedColumns.Length)
-                .ThenBy(expression => expression.Depth)
-                .ThenBy(expression => OperatorPenalty(expression.OperatorsUsed))
-                .ThenByDescending(expression => expression.UsedColumns.Sum(column => correlationByColumn.TryGetValue(column, out var score) ? score : 0d))
-                .Take(settings.MaxCandidatesReturned)
-                .ToList();
+            var ordered = zeroErrorCandidate is not null
+                ? [zeroErrorCandidate]
+                : finalCandidates
+                    .OrderBy(expression => expression.UsedColumns.Length)
+                    .ThenBy(expression => expression.Depth)
+                    .ThenBy(expression => OperatorPenalty(expression.OperatorsUsed))
+                    .ThenByDescending(expression => expression.UsedColumns.Sum(column => correlationByColumn.TryGetValue(column, out var score) ? score : 0d))
+                    .Take(settings.MaxCandidatesReturned)
+                    .ToList();
 
             meta["elapsedMs"] = stopwatch.ElapsedMilliseconds;
             meta["searchRows"] = searchSample.RowCount;
@@ -262,6 +276,7 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
             result.Status = FormulaInferenceStatus.Completed;
             result.Candidates = ordered;
             result.Meta = meta;
+            TryAutoApplyZeroErrorFormula(index, ordered, settings.EpsilonZero);
 
             return await PersistAndReturnAsync();
         }
@@ -304,6 +319,7 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
             ValidationSampleRows = Math.Clamp(input.ValidationSampleRows, 200, 20_000),
             EpsilonAbs = Math.Max(input.EpsilonAbs, 1e-12),
             EpsilonAbsRelaxed = Math.Max(input.EpsilonAbsRelaxed, input.EpsilonAbs),
+            EpsilonZero = Math.Max(0d, input.EpsilonZero),
             DivisionZeroEpsilon = Math.Max(input.DivisionZeroEpsilon, 1e-15),
             AllowConstants = false,
             AllowColumnReuse = input.AllowColumnReuse,
@@ -347,6 +363,7 @@ public sealed class FormulaInferenceEngine : IFormulaInferenceEngine
         var ranked = index.Columns
             .Where(column => !string.Equals(column.Name, targetColumn, StringComparison.OrdinalIgnoreCase))
             .Where(column => column.InferredType.IsNumericLike())
+            .Where(column => !ColumnRoleHeuristics.IsRowIdLike(column.Name))
             .Where(column => allowed is not null || column.InferredType.NormalizeLegacy() != InferredType.Percentage)
             .Where(column => allowed is null || allowed.Contains(column.Name))
             .Select(column => new RankedColumn(
@@ -664,6 +681,7 @@ FROM sampled;";
     {
         var tested = 0;
         var failed = 0;
+        var maxAbsError = 0d;
 
         for (var row = 0; row < sample.RowCount; row++)
         {
@@ -673,21 +691,26 @@ FROM sampled;";
             if (!TryEvaluate(node, sample.Values[row], divisionZeroEpsilon, out var value))
             {
                 failed++;
-                return new CandidateEvaluation(false, tested, failed);
+                return new CandidateEvaluation(false, tested, failed, double.PositiveInfinity);
             }
 
             var absError = Math.Abs(value - sample.Target[row]);
+            if (absError > maxAbsError)
+            {
+                maxAbsError = absError;
+            }
+
             if (absError > epsilon)
             {
                 failed++;
                 if (stopAtFirstError)
                 {
-                    return new CandidateEvaluation(false, tested, failed);
+                    return new CandidateEvaluation(false, tested, failed, maxAbsError);
                 }
             }
         }
 
-        return new CandidateEvaluation(failed == 0, tested, failed);
+        return new CandidateEvaluation(failed == 0, tested, failed, maxAbsError);
     }
 
     private static bool TryEvaluate(ExpressionNode node, IReadOnlyList<double> row, double divisionZeroEpsilon, out double value)
@@ -728,12 +751,17 @@ FROM sampled;";
 
     private static FormulaConfidence ResolveConfidence(int testedRows, int validationSampleRows)
     {
+        if (testedRows >= 10 && testedRows == validationSampleRows)
+        {
+            return FormulaConfidence.High;
+        }
+
         if (testedRows >= validationSampleRows)
         {
             return FormulaConfidence.High;
         }
 
-        if (testedRows >= 500)
+        if (testedRows >= Math.Min(500, validationSampleRows))
         {
             return FormulaConfidence.Medium;
         }
@@ -823,7 +851,31 @@ FROM sampled;";
         }
     }
 
-    private sealed record CandidateEvaluation(bool Passed, int RowsTested, int RowsFailed);
+    private void TryAutoApplyZeroErrorFormula(
+        DatasetIndex index,
+        IReadOnlyList<FormulaExpression> candidates,
+        double epsilonZero)
+    {
+        if (!_featuresMonitor.CurrentValue.AutoApplyZeroErrorFormulaEnabled)
+        {
+            return;
+        }
+
+        var best = candidates.FirstOrDefault(candidate => candidate.EpsilonMaxAbsError <= epsilonZero);
+        if (best is null)
+        {
+            return;
+        }
+
+        index.SelectedFormula = new SelectedFormulaIndexEntry
+        {
+            SelectedAtUtc = DateTimeOffset.UtcNow,
+            Source = "AutoZeroError",
+            Formula = best
+        };
+    }
+
+    private sealed record CandidateEvaluation(bool Passed, int RowsTested, int RowsFailed, double MaxAbsError);
 
     private sealed record ScoredNode(ExpressionNode Node, double Score);
 

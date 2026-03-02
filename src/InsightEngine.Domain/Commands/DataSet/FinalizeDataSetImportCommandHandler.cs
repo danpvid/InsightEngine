@@ -4,6 +4,7 @@ using InsightEngine.Domain.Helpers;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models.MetadataIndex;
 using InsightEngine.Domain.Models.ImportSchema;
+using InsightEngine.Domain.Settings;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -17,6 +18,8 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
     private readonly IDataSetSanitizer _dataSetSanitizer;
     private readonly IDataSetSchemaStore _schemaStore;
     private readonly IDuckDbMetadataAnalyzer _metadataAnalyzer;
+    private readonly ICurrentUser _currentUser;
+    private readonly InsightEngineFeatures _features;
     private readonly ILogger<FinalizeDataSetImportCommandHandler> _logger;
 
     public FinalizeDataSetImportCommandHandler(
@@ -26,6 +29,8 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
         IDataSetSanitizer dataSetSanitizer,
         IDataSetSchemaStore schemaStore,
         IDuckDbMetadataAnalyzer metadataAnalyzer,
+        ICurrentUser currentUser,
+        InsightEngineFeatures features,
         ILogger<FinalizeDataSetImportCommandHandler> logger)
     {
         _dataSetRepository = dataSetRepository;
@@ -34,6 +39,8 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
         _dataSetSanitizer = dataSetSanitizer;
         _schemaStore = schemaStore;
         _metadataAnalyzer = metadataAnalyzer;
+        _currentUser = currentUser;
+        _features = features;
         _logger = logger;
     }
 
@@ -43,7 +50,14 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
     {
         try
         {
-            var dataSet = await _dataSetRepository.GetByIdAsync(request.DatasetId);
+            if (_features.AuthRequiredForDatasets && (!_currentUser.IsAuthenticated || !_currentUser.UserId.HasValue))
+            {
+                return Result.Failure<FinalizeDataSetImportResponse>("Unauthorized");
+            }
+
+            var dataSet = _currentUser.IsAuthenticated && _currentUser.UserId.HasValue
+                ? await _dataSetRepository.GetByIdForOwnerAsync(request.DatasetId, _currentUser.UserId.Value, cancellationToken)
+                : await _dataSetRepository.GetByIdAsync(request.DatasetId);
             if (dataSet is null)
             {
                 return Result.Failure<FinalizeDataSetImportResponse>("Dataset not found.");

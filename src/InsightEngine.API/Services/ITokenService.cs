@@ -4,5 +4,12 @@ namespace InsightEngine.API.Services;
 
 public interface ITokenService
 {
-    string GenerateToken(string userId, string email, IEnumerable<string>? roles = null);
+    string GenerateAccessToken(
+        Guid userId,
+        string email,
+        string plan,
+        string displayName,
+        IEnumerable<string>? roles = null);
+    string GenerateRefreshToken();
+    ClaimsPrincipal? GetPrincipalFromExpiredToken(string accessToken);
 }

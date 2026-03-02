@@ -15,17 +15,20 @@ public class UploadDataSetCommandHandler : IRequestHandler<UploadDataSetCommand,
     private readonly IFileStorageService _fileStorageService;
     private readonly IDataSetRepository _dataSetRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<UploadDataSetCommandHandler> _logger;
 
     public UploadDataSetCommandHandler(
         IFileStorageService fileStorageService,
         IDataSetRepository dataSetRepository,
         IUnitOfWork unitOfWork,
+        ICurrentUser currentUser,
         ILogger<UploadDataSetCommandHandler> logger)
     {
         _fileStorageService = fileStorageService;
         _dataSetRepository = dataSetRepository;
         _unitOfWork = unitOfWork;
+        _currentUser = currentUser;
         _logger = logger;
     }
 
@@ -63,7 +66,8 @@ public class UploadDataSetCommandHandler : IRequestHandler<UploadDataSetCommand,
                 storedFileName,
                 storedPath,
                 fileSize,
-                request.File.ContentType ?? "text/csv");
+                request.File.ContentType ?? "text/csv",
+                _currentUser.UserId);
 
             await _dataSetRepository.AddAsync(dataSet);
             await _unitOfWork.CommitAsync();
