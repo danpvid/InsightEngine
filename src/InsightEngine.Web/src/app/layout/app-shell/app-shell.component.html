@@ -1,4 +1,4 @@
-<mat-drawer-container class="shell-layout">
+<mat-drawer-container class="shell-layout" autosize>
   <mat-drawer class="sidebar" mode="side" opened [style.width]="sidebarWidth">
     <div class="sidebar-top">
       <button mat-icon-button type="button" (click)="toggleSidebar()" [matTooltip]="collapsed ? 'Expand' : 'Collapse'">
@@ -48,22 +48,17 @@
 
   <mat-drawer-content class="content-area">
     <header class="content-topbar">
-      <div class="topbar-left">
-        <span class="topbar-title">InsightEngine</span>
-      </div>
-      <div class="topbar-right">
-        <app-theme-toggle></app-theme-toggle>
-        <div class="language-picker">
-          <mat-icon>language</mat-icon>
-          <mat-select
-            [ngModel]="currentLanguage"
-            (ngModelChange)="onLanguageChange($event)"
-            panelClass="language-select-panel"
-            aria-label="Language">
-            <mat-option value="pt-br">PT-BR</mat-option>
-            <mat-option value="en">EN</mat-option>
-          </mat-select>
-        </div>
+      <app-theme-toggle></app-theme-toggle>
+      <div class="language-picker">
+        <mat-icon>language</mat-icon>
+        <mat-select
+          [ngModel]="currentLanguage"
+          (ngModelChange)="onLanguageChange($event)"
+          panelClass="language-select-panel"
+          aria-label="Language">
+          <mat-option value="pt-br">PT-BR</mat-option>
+          <mat-option value="en">EN</mat-option>
+        </mat-select>
       </div>
     </header>
     <main class="main-content">

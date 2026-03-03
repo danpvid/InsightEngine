@@ -108,6 +108,7 @@ export class AppShellComponent implements OnInit {
 
   toggleSidebar(): void {
     this.collapsed = !this.collapsed;
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 180);
   }
 
   openUpgrade(): void {

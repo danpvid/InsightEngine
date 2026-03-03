@@ -1,6 +1,6 @@
 .shell-layout {
   min-height: 100vh;
-  background: #0f172a;
+  background: #171a20;
 }
 
 .sidebar {
@@ -11,14 +11,15 @@
   flex-direction: column;
   padding: 10px 8px;
   overflow: hidden;
+  z-index: 20;
 }
 
 .sidebar-top {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 46px;
   margin-bottom: 12px;
+  min-height: 42px;
 }
 
 .brand {
@@ -55,7 +56,6 @@
   color: #c1cada;
   text-decoration: none;
   padding: 0 12px;
-  transition: all 0.16s ease;
 }
 
 .nav-item span {
@@ -103,7 +103,6 @@
   background: #4b8dff;
   color: #fff;
   font-weight: 700;
-  flex: 0 0 auto;
 }
 
 .meta {
@@ -119,46 +118,26 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 178px;
+  max-width: 180px;
 }
 
 .content-area {
-  background: #0f172a;
+  background: var(--bg);
   min-width: 0;
 }
 
 .content-topbar {
   position: sticky;
   top: 0;
-  z-index: 30;
   height: 56px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid var(--border);
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(8px);
-  overflow: hidden;
-}
-
-.topbar-left,
-.topbar-right {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.topbar-right {
   gap: 10px;
-}
-
-.topbar-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #dbeafe;
-  white-space: nowrap;
+  padding: 0 16px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  z-index: 10;
 }
 
 .language-picker {
@@ -173,11 +152,11 @@
 }
 
 @media (max-width: 960px) {
-  .sidebar {
-    width: 84px !important;
+  .shell-layout {
+    display: block;
   }
 
-  .topbar-title {
-    font-size: 13px;
+  .sidebar {
+    width: 84px !important;
   }
 }
