@@ -43,6 +43,32 @@
   gap: 10px;
 }
 
+.section-block {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-title h2 {
+  margin: 0;
+  font-size: 17px;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+
+.section-title .line {
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.4), rgba(148, 163, 184, 0.05));
+}
+
 .section-head {
   display: flex;
   align-items: center;

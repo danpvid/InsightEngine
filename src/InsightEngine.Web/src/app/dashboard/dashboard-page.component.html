@@ -47,9 +47,15 @@
   </div>
 
   <ng-container *ngIf="!loading && dashboard && selectedDatasetId">
-    <app-kpi-cards [kpis]="dashboard.kpis"></app-kpi-cards>
+    <section class="section-block">
+      <div class="section-title">
+        <h2>Visão Geral</h2>
+        <span class="line"></span>
+      </div>
+      <app-kpi-cards [kpis]="dashboard.kpis"></app-kpi-cards>
+    </section>
 
-    <section class="section charts-section">
+    <section class="section-block charts-section">
       <div class="section-head">
         <h2>Charts</h2>
         <a [routerLink]="['/', lang, 'datasets', selectedDatasetId, 'recommendations']">Ver mais</a>
@@ -76,18 +82,36 @@
       </mat-card>
     </section>
 
-    <section class="tables-grid">
-      <app-top-features-table [rows]="dashboard.tables.topFeatures"></app-top-features-table>
-      <app-data-quality-table [rows]="dashboard.tables.dataQuality"></app-data-quality-table>
+    <section class="section-block">
+      <div class="section-title">
+        <h2>Tabelas Analíticas</h2>
+        <span class="line"></span>
+      </div>
+      <section class="tables-grid">
+        <app-top-features-table [rows]="dashboard.tables.topFeatures"></app-top-features-table>
+        <app-data-quality-table [rows]="dashboard.tables.dataQuality"></app-data-quality-table>
+      </section>
     </section>
 
-    <app-insights-panel [insights]="dashboard.insights"></app-insights-panel>
+    <section class="section-block">
+      <div class="section-title">
+        <h2>Insights</h2>
+        <span class="line"></span>
+      </div>
+      <app-insights-panel [insights]="dashboard.insights"></app-insights-panel>
+    </section>
 
-    <app-dataset-meta
-      [lang]="lang"
-      [datasetId]="selectedDatasetId"
-      [dataset]="dashboard.dataset || null"
-      [metadata]="dashboard.metadata">
-    </app-dataset-meta>
+    <section class="section-block">
+      <div class="section-title">
+        <h2>Metadados do Dataset</h2>
+        <span class="line"></span>
+      </div>
+      <app-dataset-meta
+        [lang]="lang"
+        [datasetId]="selectedDatasetId"
+        [dataset]="dashboard.dataset || null"
+        [metadata]="dashboard.metadata">
+      </app-dataset-meta>
+    </section>
   </ng-container>
 </section>
