@@ -57,6 +57,12 @@
   white-space: nowrap;
 }
 
+.chart-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .chart-host {
   width: 100%;
 }

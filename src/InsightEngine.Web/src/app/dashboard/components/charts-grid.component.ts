@@ -3,9 +3,14 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { NgxEchartsModule } from 'ngx-echarts';
 import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { ChartRecommendation } from '../../core/models/recommendation.model';
 import { DatasetApiService } from '../../core/services/dataset-api.service';
 import { formatCompactNumber } from '../../shared/format/compact-number';
+import { ChartExpandDialogComponent } from './chart-expand-dialog.component';
 
 type ChartLayout = 'hero' | 'secondary';
 
@@ -22,7 +27,7 @@ interface ChartCardState {
 @Component({
   selector: 'app-charts-grid',
   standalone: true,
-  imports: [CommonModule, RouterLink, NgxEchartsModule, MatCardModule],
+  imports: [CommonModule, RouterLink, NgxEchartsModule, MatCardModule, MatIconModule, MatButtonModule, MatDialogModule, MatTooltipModule],
   templateUrl: './charts-grid.component.html',
   styleUrls: ['./charts-grid.component.scss']
 })
@@ -37,7 +42,10 @@ export class ChartsGridComponent implements OnChanges {
 
   cards: ChartCardState[] = [];
 
-  constructor(private readonly datasetApi: DatasetApiService) {}
+  constructor(
+    private readonly datasetApi: DatasetApiService,
+    private readonly dialog: MatDialog
+  ) {}
 
   ngOnChanges(changes: SimpleChanges): void {
     if ((changes['datasetId'] || changes['heroChart'] || changes['secondaryCharts'] || changes['charts']) && this.datasetId) {
@@ -97,9 +105,27 @@ export class ChartsGridComponent implements OnChanges {
     return card.id;
   }
 
+  expandChart(card: ChartCardState): void {
+    if (!card.option) {
+      return;
+    }
+
+    this.dialog.open(ChartExpandDialogComponent, {
+      data: { title: card.title, option: card.option },
+      panelClass: 'chart-expand-panel',
+      autoFocus: false,
+      maxWidth: '96vw'
+    });
+  }
+
   private applyDashboardPolicy(option: any): any {
     const normalized = {
       ...option,
+      title: undefined,
+      textStyle: {
+        color: '#dbe2f0',
+        ...(option?.textStyle || {})
+      },
       grid: {
         top: 48,
         right: 24,
@@ -123,6 +149,11 @@ export class ChartsGridComponent implements OnChanges {
       icon: 'circle',
       itemWidth: 8,
       itemHeight: 8,
+      textStyle: {
+        color: '#dbe2f0',
+        fontSize: 11
+      },
+      formatter: (value: string) => value.length > 22 ? `${value.slice(0, 22)}...` : value,
       ...(normalized.legend || {})
     };
 
@@ -136,6 +167,13 @@ export class ChartsGridComponent implements OnChanges {
 
     normalized.tooltip = {
       trigger: 'axis',
+      backgroundColor: 'rgba(15, 23, 42, 0.96)',
+      borderColor: 'rgba(148, 163, 184, 0.35)',
+      borderWidth: 1,
+      textStyle: {
+        color: '#e2e8f0',
+        fontSize: 12
+      },
       ...(normalized.tooltip || {})
     };
 
@@ -170,7 +208,16 @@ export class ChartsGridComponent implements OnChanges {
         ...item,
         axisLabel: {
           ...(item?.axisLabel || {}),
+          color: '#dbe2f0',
           formatter
+        },
+        axisLine: {
+          ...(item?.axisLine || {}),
+          lineStyle: { color: 'rgba(148, 163, 184, 0.55)', ...(item?.axisLine?.lineStyle || {}) }
+        },
+        splitLine: {
+          ...(item?.splitLine || {}),
+          lineStyle: { color: 'rgba(148, 163, 184, 0.18)', ...(item?.splitLine?.lineStyle || {}) }
         }
       }));
     }
@@ -183,7 +230,16 @@ export class ChartsGridComponent implements OnChanges {
       ...axis,
       axisLabel: {
         ...(axis.axisLabel || {}),
+        color: '#dbe2f0',
         formatter
+      },
+      axisLine: {
+        ...(axis.axisLine || {}),
+        lineStyle: { color: 'rgba(148, 163, 184, 0.55)', ...(axis?.axisLine?.lineStyle || {}) }
+      },
+      splitLine: {
+        ...(axis.splitLine || {}),
+        lineStyle: { color: 'rgba(148, 163, 184, 0.18)', ...(axis?.splitLine?.lineStyle || {}) }
       }
     };
   }
