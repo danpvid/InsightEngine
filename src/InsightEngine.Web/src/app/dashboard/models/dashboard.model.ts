@@ -62,6 +62,7 @@ export interface DashboardCategorySummaryRow {
 export interface DashboardInsights {
   llmExecutiveSummary?: string | null;
   executiveBullets: string[];
+  keyDrivers: string[];
   warnings: string[];
   nextActions: string[];
 }

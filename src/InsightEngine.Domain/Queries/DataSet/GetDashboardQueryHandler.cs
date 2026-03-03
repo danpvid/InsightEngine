@@ -134,7 +134,12 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
             dashboard.Metadata.RecommendationsAvailable = dashboard.Charts.Count > 0;
             dashboard.Generation.RecommendationsGeneratedAt = dashboard.Charts.Count > 0 ? DateTime.UtcNow : null;
 
-            dashboard.Insights = await BuildInsightsAsync(request.DatasetId, dashboard.HeroChart, index, cancellationToken);
+            dashboard.Insights = await BuildInsightsAsync(
+                request.DatasetId,
+                dashboard.HeroChart,
+                index,
+                dashboard.Tables.TopFeatures,
+                cancellationToken);
             dashboard.Generation.InsightsGeneratedAt = DateTime.UtcNow;
         }
         else
@@ -247,6 +252,7 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
         Guid datasetId,
         ChartRecommendation? heroChart,
         DatasetIndex index,
+        IReadOnlyList<DashboardTopFeatureRow> topFeatures,
         CancellationToken cancellationToken)
     {
         var insights = new DashboardInsights();
@@ -260,19 +266,25 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
                 Language = "pt-br"
             }, cancellationToken);
 
-            if (insightResult.IsSuccess && insightResult.Data is not null)
-            {
-                insights.LlmExecutiveSummary = insightResult.Data.InsightSummary.Headline;
-                insights.ExecutiveBullets = ToBullets(insightResult.Data.InsightSummary.Headline);
-                insights.Warnings = insightResult.Data.InsightSummary.Cautions.Take(5).ToList();
+                if (insightResult.IsSuccess && insightResult.Data is not null)
+                {
+                    insights.LlmExecutiveSummary = insightResult.Data.InsightSummary.Headline;
+                    insights.ExecutiveBullets = insightResult.Data.InsightSummary.BulletPoints.Take(5).ToList();
+                    insights.Warnings = insightResult.Data.InsightSummary.Cautions.Take(5).ToList();
+                }
             }
-        }
 
         if (insights.Warnings.Count == 0)
         {
             insights.Warnings = CollectWarnings(index);
         }
 
+        insights.KeyDrivers = topFeatures
+            .Take(5)
+            .Select(item => item.Correlation.HasValue
+                ? $"{item.Column} (corr: {item.Correlation.Value:0.###})"
+                : $"{item.Column} (score: {item.Score:0.###})")
+            .ToList();
         insights.NextActions = BuildNextActions(index);
         return insights;
     }
@@ -660,17 +672,4 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
         return actions.Take(3).ToList();
     }
 
-    private static List<string> ToBullets(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return new List<string>();
-        }
-
-        return text
-            .Split(['\r', '\n', '.', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(item => item.Length > 6)
-            .Take(3)
-            .ToList();
-    }
 }

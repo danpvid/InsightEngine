@@ -72,6 +72,7 @@ public class DashboardInsights
 {
     public string? LlmExecutiveSummary { get; set; }
     public List<string> ExecutiveBullets { get; set; } = new();
+    public List<string> KeyDrivers { get; set; } = new();
     public List<string> Warnings { get; set; } = new();
     public List<string> NextActions { get; set; } = new();
 }

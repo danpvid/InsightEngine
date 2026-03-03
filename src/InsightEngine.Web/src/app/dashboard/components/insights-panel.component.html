@@ -20,6 +20,16 @@
   </mat-card>
 
   <mat-card class="insights-card">
+    <h3>Key Drivers</h3>
+    <ul class="bullets" *ngIf="insights?.keyDrivers?.length; else noDrivers">
+      <li *ngFor="let driver of insights?.keyDrivers">{{ driver }}</li>
+    </ul>
+    <ng-template #noDrivers>
+      <p class="muted">Sem drivers relevantes identificados.</p>
+    </ng-template>
+  </mat-card>
+
+  <mat-card class="insights-card">
     <h3>Riscos e Alertas</h3>
     <ul class="bullets" *ngIf="insights?.warnings?.length; else noWarnings">
       <li *ngFor="let warning of insights?.warnings">{{ warning }}</li>
