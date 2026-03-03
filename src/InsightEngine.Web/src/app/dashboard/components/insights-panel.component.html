@@ -1,13 +1,41 @@
-<mat-card class="insights-card">
-  <h3>Insights</h3>
-  <p class="summary" *ngIf="insights?.llmExecutiveSummary; else noSummary">
-    {{ insights?.llmExecutiveSummary }}
-  </p>
-  <ng-template #noSummary>
-    <p class="summary muted">Nenhum insight LLM disponível para este dataset.</p>
-  </ng-template>
+<section class="insights-grid">
+  <mat-card class="insights-card summary-card">
+    <div class="card-head">
+      <h3>Resumo Executivo</h3>
+      <button type="button" (click)="toggleExpanded()">{{ expanded ? 'Ver menos' : 'Ver mais' }}</button>
+    </div>
 
-  <ul *ngIf="insights?.warnings?.length">
-    <li *ngFor="let warning of insights?.warnings">{{ warning }}</li>
-  </ul>
-</mat-card>
+    <p class="summary" *ngIf="insights?.llmExecutiveSummary; else noSummary">
+      {{ expanded ? insights?.llmExecutiveSummary : (insights?.llmExecutiveSummary | slice:0:260) }}
+      <span *ngIf="!expanded && (insights?.llmExecutiveSummary?.length || 0) > 260">...</span>
+    </p>
+
+    <ul class="bullets" *ngIf="insights?.executiveBullets?.length">
+      <li *ngFor="let bullet of insights?.executiveBullets">{{ bullet }}</li>
+    </ul>
+
+    <ng-template #noSummary>
+      <p class="summary muted">Nenhum insight LLM disponível para este dataset.</p>
+    </ng-template>
+  </mat-card>
+
+  <mat-card class="insights-card">
+    <h3>Riscos e Alertas</h3>
+    <ul class="bullets" *ngIf="insights?.warnings?.length; else noWarnings">
+      <li *ngFor="let warning of insights?.warnings">{{ warning }}</li>
+    </ul>
+    <ng-template #noWarnings>
+      <p class="muted">Sem alertas críticos.</p>
+    </ng-template>
+  </mat-card>
+
+  <mat-card class="insights-card">
+    <h3>Próximas Ações</h3>
+    <ol class="actions" *ngIf="insights?.nextActions?.length; else noActions">
+      <li *ngFor="let action of insights?.nextActions">{{ action }}</li>
+    </ol>
+    <ng-template #noActions>
+      <p class="muted">Sem ações sugeridas no momento.</p>
+    </ng-template>
+  </mat-card>
+</section>

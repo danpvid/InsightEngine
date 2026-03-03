@@ -1,4 +1,6 @@
+using System.Text.Json;
 using InsightEngine.Domain.Core;
+using InsightEngine.Domain.Entities;
 using InsightEngine.Domain.Interfaces;
 using InsightEngine.Domain.Models;
 using InsightEngine.Domain.Models.Dashboard;
@@ -15,35 +17,50 @@ namespace InsightEngine.Domain.Queries.DataSet;
 public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Result<DashboardViewModel>>
 {
     private const int MaxDashboardCharts = 9;
+    private const int MaxSecondaryCharts = 8;
+    private const string DashboardCacheVersion = "dashboard-v2";
+
+    private static readonly JsonSerializerOptions CacheJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
     private readonly IDataSetRepository _dataSetRepository;
     private readonly IDataSetSchemaStore _schemaStore;
     private readonly IIndexStore _indexStore;
+    private readonly IDashboardCacheRepository _dashboardCacheRepository;
     private readonly ICurrentUser _currentUser;
     private readonly RecommendationEngine _recommendationEngine;
     private readonly IRecommendationEngineV2 _recommendationEngineV2;
     private readonly IAIInsightService _aiInsightService;
     private readonly InsightEngineFeatures _features;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<GetDashboardQueryHandler> _logger;
 
     public GetDashboardQueryHandler(
         IDataSetRepository dataSetRepository,
         IDataSetSchemaStore schemaStore,
         IIndexStore indexStore,
+        IDashboardCacheRepository dashboardCacheRepository,
         ICurrentUser currentUser,
         RecommendationEngine recommendationEngine,
         IRecommendationEngineV2 recommendationEngineV2,
         IAIInsightService aiInsightService,
         InsightEngineFeatures features,
+        IUnitOfWork unitOfWork,
         ILogger<GetDashboardQueryHandler> logger)
     {
         _dataSetRepository = dataSetRepository;
         _schemaStore = schemaStore;
         _indexStore = indexStore;
+        _dashboardCacheRepository = dashboardCacheRepository;
         _currentUser = currentUser;
         _recommendationEngine = recommendationEngine;
         _recommendationEngineV2 = recommendationEngineV2;
         _aiInsightService = aiInsightService;
         _features = features;
+        _unitOfWork = unitOfWork;
         _logger = logger;
     }
 
@@ -54,9 +71,8 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
             return Result.Failure<DashboardViewModel>("Unauthorized");
         }
 
-        _logger.LogInformation("Composing dashboard for dataset {DatasetId}", request.DatasetId);
-
-        var dataset = await _dataSetRepository.GetByIdForOwnerAsync(request.DatasetId, _currentUser.UserId.Value, cancellationToken);
+        var ownerUserId = _currentUser.UserId.Value;
+        var dataset = await _dataSetRepository.GetByIdForOwnerAsync(request.DatasetId, ownerUserId, cancellationToken);
         if (dataset is null)
         {
             return Result.Failure<DashboardViewModel>("Dataset not found.");
@@ -64,12 +80,38 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
 
         var schema = await _schemaStore.LoadAsync(request.DatasetId, cancellationToken);
         var index = await _indexStore.LoadAsync(request.DatasetId, cancellationToken);
+        var sourceDatasetUpdatedAt = dataset.UpdatedAt ?? dataset.CreatedAt;
+        var sourceFingerprint = BuildSourceFingerprint(index);
+
+        var cached = await TryReadCachedDashboardAsync(
+            ownerUserId,
+            request.DatasetId,
+            sourceDatasetUpdatedAt,
+            sourceFingerprint,
+            cancellationToken);
+        if (cached is not null)
+        {
+            return Result.Success(cached);
+        }
 
         var dashboard = new DashboardViewModel
         {
             Dataset = BuildDatasetSummary(dataset, schema, index),
             Metadata = BuildMetadata(index),
-            LastUpdated = dataset.UpdatedAt ?? dataset.CreatedAt,
+            RenderingHints = new DashboardRenderingHints
+            {
+                NumberFormat = new DashboardNumberFormatHints
+                {
+                    Mode = "compact",
+                    Locale = "pt-BR"
+                },
+                MultiSeriesPolicy = new DashboardMultiSeriesPolicy
+                {
+                    MaxSeries = 3,
+                    MaxLegendItems = 5
+                }
+            },
+            LastUpdated = sourceDatasetUpdatedAt,
             Generation = new DashboardGenerationTimestamps
             {
                 IndexGeneratedAt = index?.BuiltAtUtc
@@ -77,7 +119,7 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
         };
 
         dashboard.Kpis = BuildKpis(dashboard.Dataset, index);
-        dashboard.Tables = BuildTables(index, schema);
+        dashboard.Tables = BuildTables(index);
 
         if (index is not null)
         {
@@ -87,44 +129,152 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
                 : _recommendationEngine.Generate(profile);
 
             dashboard.Charts = recommendations.Take(MaxDashboardCharts).ToList();
+            dashboard.HeroChart = dashboard.Charts.FirstOrDefault();
+            dashboard.SecondaryCharts = dashboard.Charts.Skip(1).Take(MaxSecondaryCharts).ToList();
             dashboard.Metadata.RecommendationsAvailable = dashboard.Charts.Count > 0;
             dashboard.Generation.RecommendationsGeneratedAt = dashboard.Charts.Count > 0 ? DateTime.UtcNow : null;
 
-            if (dashboard.Charts.Count > 0)
-            {
-                var insightResult = await _aiInsightService.GenerateAiSummaryAsync(new LLMChartContextRequest
-                {
-                    DatasetId = request.DatasetId,
-                    RecommendationId = dashboard.Charts[0].Id,
-                    Language = "pt-br"
-                }, cancellationToken);
-
-                if (insightResult.IsSuccess && insightResult.Data is not null)
-                {
-                    dashboard.Insights.LlmExecutiveSummary = insightResult.Data.InsightSummary.Headline;
-                    dashboard.Insights.Warnings = insightResult.Data.InsightSummary.Cautions;
-                    dashboard.Generation.InsightsGeneratedAt = DateTime.UtcNow;
-                }
-                else
-                {
-                    dashboard.Insights.Warnings = CollectWarnings(index);
-                }
-            }
-            else
-            {
-                dashboard.Insights.Warnings = CollectWarnings(index);
-            }
+            dashboard.Insights = await BuildInsightsAsync(request.DatasetId, dashboard.HeroChart, index, cancellationToken);
+            dashboard.Generation.InsightsGeneratedAt = DateTime.UtcNow;
         }
         else
         {
-            _logger.LogInformation("Dataset {DatasetId} has no index metadata; returning dashboard fallback", request.DatasetId);
-            dashboard.Insights.Warnings = new List<string>
+            dashboard.Insights = new DashboardInsights
             {
-                "Index metadata not available. Generate index to unlock full dashboard insights."
+                Warnings =
+                {
+                    "Index metadata not available. Generate index to unlock full dashboard insights."
+                },
+                NextActions =
+                {
+                    "Reimporte o dataset no modo WithIndex.",
+                    "Defina uma coluna alvo para recomendações orientadas.",
+                    "Atualize o dashboard após gerar o índice."
+                }
             };
         }
 
+        await SaveDashboardCacheAsync(
+            ownerUserId,
+            request.DatasetId,
+            sourceDatasetUpdatedAt,
+            sourceFingerprint,
+            dashboard,
+            cancellationToken);
+
         return Result.Success(dashboard);
+    }
+
+    private async Task<DashboardViewModel?> TryReadCachedDashboardAsync(
+        Guid ownerUserId,
+        Guid datasetId,
+        DateTime sourceDatasetUpdatedAt,
+        string sourceFingerprint,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var entry = await _dashboardCacheRepository.GetAsync(ownerUserId, datasetId, DashboardCacheVersion, cancellationToken);
+            if (entry is null)
+            {
+                return null;
+            }
+
+            if (sourceDatasetUpdatedAt > entry.SourceDatasetUpdatedAt)
+            {
+                return null;
+            }
+
+            if (!string.Equals(entry.SourceFingerprint, sourceFingerprint, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            var payload = JsonSerializer.Deserialize<DashboardViewModel>(entry.PayloadJson, CacheJsonOptions);
+            if (payload is null)
+            {
+                return null;
+            }
+
+            _logger.LogInformation("Dashboard cache hit. DatasetId={DatasetId}", datasetId);
+            return payload;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dashboard cache read failed. DatasetId={DatasetId}", datasetId);
+            return null;
+        }
+    }
+
+    private async Task SaveDashboardCacheAsync(
+        Guid ownerUserId,
+        Guid datasetId,
+        DateTime sourceDatasetUpdatedAt,
+        string sourceFingerprint,
+        DashboardViewModel dashboard,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var payloadJson = JsonSerializer.Serialize(dashboard, CacheJsonOptions);
+            var existing = await _dashboardCacheRepository.GetAsync(ownerUserId, datasetId, DashboardCacheVersion, cancellationToken);
+            if (existing is null)
+            {
+                var entry = new DashboardCacheEntry(
+                    ownerUserId,
+                    datasetId,
+                    DashboardCacheVersion,
+                    payloadJson,
+                    sourceDatasetUpdatedAt,
+                    sourceFingerprint);
+                await _dashboardCacheRepository.AddAsync(entry);
+            }
+            else
+            {
+                existing.UpdatePayload(payloadJson, sourceDatasetUpdatedAt, sourceFingerprint);
+                _dashboardCacheRepository.Update(existing);
+            }
+
+            await _unitOfWork.CommitAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dashboard cache save failed. DatasetId={DatasetId}", datasetId);
+        }
+    }
+
+    private async Task<DashboardInsights> BuildInsightsAsync(
+        Guid datasetId,
+        ChartRecommendation? heroChart,
+        DatasetIndex index,
+        CancellationToken cancellationToken)
+    {
+        var insights = new DashboardInsights();
+
+        if (heroChart is not null)
+        {
+            var insightResult = await _aiInsightService.GenerateAiSummaryAsync(new LLMChartContextRequest
+            {
+                DatasetId = datasetId,
+                RecommendationId = heroChart.Id,
+                Language = "pt-br"
+            }, cancellationToken);
+
+            if (insightResult.IsSuccess && insightResult.Data is not null)
+            {
+                insights.LlmExecutiveSummary = insightResult.Data.InsightSummary.Headline;
+                insights.ExecutiveBullets = ToBullets(insightResult.Data.InsightSummary.Headline);
+                insights.Warnings = insightResult.Data.InsightSummary.Cautions.Take(5).ToList();
+            }
+        }
+
+        if (insights.Warnings.Count == 0)
+        {
+            insights.Warnings = CollectWarnings(index);
+        }
+
+        insights.NextActions = BuildNextActions(index);
+        return insights;
     }
 
     private static DashboardDatasetSummary BuildDatasetSummary(
@@ -206,6 +356,12 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
             Label = "Avg Null Rate",
             Value = $"{(index.Quality.MissingnessSummary.AverageNullRate * 100):0.##}%"
         });
+        kpis.Add(new DashboardKpiCard
+        {
+            Key = "columnsWithNulls",
+            Label = "Columns With Nulls",
+            Value = index.Quality.MissingnessSummary.ColumnsWithNulls.ToString("N0")
+        });
 
         var outlierColumnsCount = index.Columns.Count(column => EstimateOutlierRate(column) >= 0.1d);
         kpis.Add(new DashboardKpiCard
@@ -214,6 +370,22 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
             Label = "Outlier Columns",
             Value = outlierColumnsCount.ToString("N0")
         });
+        kpis.Add(new DashboardKpiCard
+        {
+            Key = "duplicateRate",
+            Label = "Duplicate Rows",
+            Value = $"{(index.Quality.DuplicateRowRate * 100):0.##}%"
+        });
+
+        if (!string.IsNullOrWhiteSpace(dataset.TargetColumn))
+        {
+            kpis.Add(new DashboardKpiCard
+            {
+                Key = "targetColumn",
+                Label = "Target",
+                Value = dataset.TargetColumn
+            });
+        }
 
         var topCorrelation = ResolveTopCorrelation(index);
         if (topCorrelation is not null)
@@ -226,10 +398,21 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
             });
         }
 
+        var dateRange = ResolveDateRange(index);
+        if (!string.IsNullOrWhiteSpace(dateRange))
+        {
+            kpis.Add(new DashboardKpiCard
+            {
+                Key = "dateRange",
+                Label = "Date Range",
+                Value = dateRange
+            });
+        }
+
         return kpis;
     }
 
-    private static DashboardTables BuildTables(DatasetIndex? index, DatasetImportSchema? schema)
+    private static DashboardTables BuildTables(DatasetIndex? index)
     {
         var tables = new DashboardTables();
         if (index is null)
@@ -249,6 +432,18 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
                 OutlierRate = Math.Round(EstimateOutlierRate(column), 6),
                 DistinctCount = column.DistinctCount
             })
+            .ToList();
+
+        tables.TopCategories = index.Columns
+            .Where(column => column.NumericStats is null && column.TopValues.Count > 0)
+            .OrderByDescending(column => column.DistinctCount)
+            .Take(4)
+            .SelectMany(column => column.TopValues.Take(3).Select(value => new DashboardCategorySummaryRow
+            {
+                Column = column.Name,
+                Category = value,
+                Count = 0
+            }))
             .ToList();
 
         return tables;
@@ -329,6 +524,19 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
         };
     }
 
+    private string BuildSourceFingerprint(DatasetIndex? index)
+    {
+        if (index is null)
+        {
+            return $"idx:none|recV2:{_features.RecommendationV2Enabled}|llmV2:{_features.LlmStructuredInsightsV2Enabled}";
+        }
+
+        var selectedFormulaAt = index.SelectedFormula?.SelectedAtUtc.ToUnixTimeSeconds() ?? 0;
+        var formulaInferenceAt = index.FormulaInference?.UpdatedAtUtc.ToUnixTimeSeconds() ?? 0;
+        var formulaDiscoveryAt = index.FormulaDiscovery?.UpdatedAtUtc.ToUnixTimeSeconds() ?? 0;
+        return $"idx:{index.BuiltAtUtc:O}|ver:{index.Version}|target:{index.TargetColumn}|sel:{selectedFormulaAt}|inf:{formulaInferenceAt}|disc:{formulaDiscoveryAt}|recV2:{_features.RecommendationV2Enabled}|llmV2:{_features.LlmStructuredInsightsV2Enabled}";
+    }
+
     private static (string Column, double Score)? ResolveTopCorrelation(DatasetIndex index)
     {
         if (string.IsNullOrWhiteSpace(index.TargetColumn))
@@ -351,6 +559,27 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
             ? top.RightColumn
             : top.LeftColumn;
         return (columnName, top.Score);
+    }
+
+    private static string ResolveDateRange(DatasetIndex index)
+    {
+        var minDate = index.Columns
+            .Where(column => column.DateStats?.Min is not null)
+            .Select(column => column.DateStats!.Min!.Value)
+            .DefaultIfEmpty()
+            .Min();
+        var maxDate = index.Columns
+            .Where(column => column.DateStats?.Max is not null)
+            .Select(column => column.DateStats!.Max!.Value)
+            .DefaultIfEmpty()
+            .Max();
+
+        if (minDate == default || maxDate == default)
+        {
+            return string.Empty;
+        }
+
+        return $"{minDate:yyyy-MM-dd} .. {maxDate:yyyy-MM-dd}";
     }
 
     private static double ResolveVarianceNorm(ColumnIndex column)
@@ -408,5 +637,40 @@ public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, Resul
         }
 
         return warnings;
+    }
+
+    private static List<string> BuildNextActions(DatasetIndex index)
+    {
+        var actions = new List<string>();
+        if (string.IsNullOrWhiteSpace(index.TargetColumn))
+        {
+            actions.Add("Defina uma coluna alvo para análises orientadas por correlação.");
+        }
+        else
+        {
+            actions.Add($"Valide os drivers principais da coluna alvo \"{index.TargetColumn}\".");
+        }
+
+        if (index.Quality.MissingnessSummary.AverageNullRate > 0.05)
+        {
+            actions.Add("Priorize tratamento de colunas com null rate elevado.");
+        }
+
+        actions.Add("Abra os gráficos recomendados para detalhar segmentos críticos.");
+        return actions.Take(3).ToList();
+    }
+
+    private static List<string> ToBullets(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return new List<string>();
+        }
+
+        return text
+            .Split(['\r', '\n', '.', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(item => item.Length > 6)
+            .Take(3)
+            .ToList();
     }
 }

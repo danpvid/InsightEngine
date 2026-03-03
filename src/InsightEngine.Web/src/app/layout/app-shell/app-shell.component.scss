@@ -1,6 +1,6 @@
 .shell-layout {
   min-height: 100vh;
-  background: #171a20;
+  background: #0f172a;
 }
 
 .sidebar {
@@ -10,12 +10,14 @@
   display: flex;
   flex-direction: column;
   padding: 10px 8px;
+  overflow: hidden;
 }
 
 .sidebar-top {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 46px;
   margin-bottom: 12px;
 }
 
@@ -26,6 +28,13 @@
   text-decoration: none;
   color: #f3f6fc;
   font-weight: 600;
+  min-width: 0;
+}
+
+.brand span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-nav {
@@ -33,6 +42,8 @@
   flex-direction: column;
   gap: 4px;
   flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .nav-item {
@@ -44,6 +55,13 @@
   color: #c1cada;
   text-decoration: none;
   padding: 0 12px;
+  transition: all 0.16s ease;
+}
+
+.nav-item span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nav-item:hover {
@@ -72,6 +90,7 @@
   gap: 10px;
   padding: 8px;
   cursor: pointer;
+  min-width: 0;
 }
 
 .avatar {
@@ -84,6 +103,7 @@
   background: #4b8dff;
   color: #fff;
   font-weight: 700;
+  flex: 0 0 auto;
 }
 
 .meta {
@@ -99,22 +119,46 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 178px;
 }
 
 .content-area {
-  background: var(--bg);
+  background: #0f172a;
+  min-width: 0;
 }
 
 .content-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   height: 56px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 0 16px;
-  background: var(--surface);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+.topbar-left,
+.topbar-right {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.topbar-right {
+  gap: 10px;
+}
+
+.topbar-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #dbeafe;
+  white-space: nowrap;
 }
 
 .language-picker {
@@ -129,11 +173,11 @@
 }
 
 @media (max-width: 960px) {
-  .shell-layout {
-    display: block;
-  }
-
   .sidebar {
     width: 84px !important;
+  }
+
+  .topbar-title {
+    font-size: 13px;
   }
 }

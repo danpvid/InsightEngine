@@ -1,6 +1,7 @@
 <div class="kpi-grid">
   <mat-card class="kpi-card" *ngFor="let item of kpis">
     <span class="label">{{ item.label }}</span>
-    <strong class="value">{{ item.value }}</strong>
+    <strong class="value">{{ formatValue(item.value) }}</strong>
+    <span class="trend" *ngIf="item.trend">{{ item.trend }}</span>
   </mat-card>
 </div>

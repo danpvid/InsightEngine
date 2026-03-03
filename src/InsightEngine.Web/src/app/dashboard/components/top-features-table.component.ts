@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatTableModule } from '@angular/material/table';
 import { DashboardTopFeatureRow } from '../models/dashboard.model';
+import { formatCompactNumber } from '../../shared/format/compact-number';
 
 @Component({
   selector: 'app-top-features-table',
@@ -14,4 +15,8 @@ import { DashboardTopFeatureRow } from '../models/dashboard.model';
 export class TopFeaturesTableComponent {
   @Input() rows: DashboardTopFeatureRow[] = [];
   readonly displayedColumns = ['column', 'score', 'correlation', 'nullRate'];
+
+  compact(value: number): string {
+    return formatCompactNumber(value, { locale: 'pt-BR' });
+  }
 }

@@ -18,7 +18,7 @@
 
     <ng-container matColumnDef="distinctCount">
       <th mat-header-cell *matHeaderCellDef>Distintos</th>
-      <td mat-cell *matCellDef="let row">{{ row.distinctCount | number }}</td>
+      <td mat-cell *matCellDef="let row">{{ compact(row.distinctCount) }}</td>
     </ng-container>
 
     <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>

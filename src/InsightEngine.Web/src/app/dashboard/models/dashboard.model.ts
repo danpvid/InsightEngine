@@ -3,10 +3,13 @@ import { ChartRecommendation } from '../../core/models/recommendation.model';
 export interface DashboardViewModel {
   dataset?: DashboardDatasetSummary | null;
   kpis: DashboardKpiCard[];
-  charts: ChartRecommendation[];
+  charts?: ChartRecommendation[];
+  heroChart?: ChartRecommendation | null;
+  secondaryCharts?: ChartRecommendation[];
   tables: DashboardTables;
   insights: DashboardInsights;
   metadata: DashboardMetadata;
+  renderingHints?: DashboardRenderingHints | null;
   lastUpdated?: string | null;
   generation: DashboardGenerationTimestamps;
 }
@@ -31,6 +34,7 @@ export interface DashboardKpiCard {
 export interface DashboardTables {
   topFeatures: DashboardTopFeatureRow[];
   dataQuality: DashboardDataQualityRow[];
+  topCategories: DashboardCategorySummaryRow[];
 }
 
 export interface DashboardTopFeatureRow {
@@ -49,9 +53,17 @@ export interface DashboardDataQualityRow {
   distinctCount: number;
 }
 
+export interface DashboardCategorySummaryRow {
+  column: string;
+  category: string;
+  count: number;
+}
+
 export interface DashboardInsights {
   llmExecutiveSummary?: string | null;
+  executiveBullets: string[];
   warnings: string[];
+  nextActions: string[];
 }
 
 export interface DashboardMetadata {
@@ -71,4 +83,15 @@ export interface DashboardGenerationTimestamps {
   indexGeneratedAt?: string | null;
   recommendationsGeneratedAt?: string | null;
   insightsGeneratedAt?: string | null;
+}
+
+export interface DashboardRenderingHints {
+  numberFormat: {
+    mode: string;
+    locale: string;
+  };
+  multiSeriesPolicy: {
+    maxSeries: number;
+    maxLegendItems: number;
+  };
 }

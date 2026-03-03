@@ -1,5 +1,6 @@
 using FluentAssertions;
 using InsightEngine.API.Models;
+using Microsoft.Data.Sqlite;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -99,6 +100,84 @@ public class DashboardEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task Dashboard_ShouldReturnSamePayload_WhenCacheIsHit()
+    {
+        var user = await RegisterUserAsync($"dash_cache_hit_{Guid.NewGuid():N}@test.local");
+        using var client = CreateAuthorizedClient(user.AccessToken);
+        var datasetId = await UploadDatasetAsync(client, TestHelpers.CreateSimpleTestCsv(), "dashboard-cache-hit.csv");
+
+        var buildIndexResponse = await client.PostAsJsonAsync($"/api/v1/datasets/{datasetId}/index:build", new { });
+        buildIndexResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var first = await client.GetAsync($"/api/v1/dashboard?datasetId={datasetId}");
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstJson = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        var firstRecommendationsAt = firstJson.RootElement.GetProperty("data").GetProperty("generation").GetProperty("recommendationsGeneratedAt").GetString();
+
+        var second = await client.GetAsync($"/api/v1/dashboard?datasetId={datasetId}");
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        var secondJson = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+        var secondRecommendationsAt = secondJson.RootElement.GetProperty("data").GetProperty("generation").GetProperty("recommendationsGeneratedAt").GetString();
+
+        secondRecommendationsAt.Should().Be(firstRecommendationsAt);
+    }
+
+    [Fact]
+    public async Task Dashboard_ShouldInvalidateCache_WhenIndexIsRegenerated()
+    {
+        var user = await RegisterUserAsync($"dash_cache_invalidate_{Guid.NewGuid():N}@test.local");
+        using var client = CreateAuthorizedClient(user.AccessToken);
+        var datasetId = await UploadDatasetAsync(client, TestHelpers.CreateSimpleTestCsv(), "dashboard-cache-invalidate.csv");
+
+        var buildFirst = await client.PostAsJsonAsync($"/api/v1/datasets/{datasetId}/index:build", new { });
+        buildFirst.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var first = await client.GetAsync($"/api/v1/dashboard?datasetId={datasetId}");
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstJson = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
+        var firstRecommendationsAt = firstJson.RootElement.GetProperty("data").GetProperty("generation").GetProperty("recommendationsGeneratedAt").GetString();
+
+        await Task.Delay(1100);
+
+        var buildSecond = await client.PostAsJsonAsync($"/api/v1/datasets/{datasetId}/index:build", new { });
+        buildSecond.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var second = await client.GetAsync($"/api/v1/dashboard?datasetId={datasetId}");
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        var secondJson = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
+        var secondRecommendationsAt = secondJson.RootElement.GetProperty("data").GetProperty("generation").GetProperty("recommendationsGeneratedAt").GetString();
+
+        secondRecommendationsAt.Should().NotBe(firstRecommendationsAt);
+    }
+
+    [Fact]
+    public async Task Dashboard_ShouldRecompute_WhenOnlyLegacyCacheVersionExists()
+    {
+        var user = await RegisterUserAsync($"dash_cache_version_{Guid.NewGuid():N}@test.local");
+        using var client = CreateAuthorizedClient(user.AccessToken);
+        var datasetId = await UploadDatasetAsync(client, TestHelpers.CreateSimpleTestCsv(), "dashboard-cache-version.csv");
+        var buildIndexResponse = await client.PostAsJsonAsync($"/api/v1/datasets/{datasetId}/index:build", new { });
+        buildIndexResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var userId = ExtractUserId(user.AccessToken);
+        await InsertLegacyDashboardCacheAsync(userId, datasetId);
+
+        var response = await client.GetAsync($"/api/v1/dashboard?datasetId={datasetId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var dbPath = ResolveMetadataDbPath();
+        await using var connection = new SqliteConnection($"Data Source={dbPath}");
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM DashboardCache WHERE OwnerUserId = $owner AND DatasetId = $dataset AND Version = $version;";
+        command.Parameters.AddWithValue("$owner", userId.ToString());
+        command.Parameters.AddWithValue("$dataset", datasetId.ToString());
+        command.Parameters.AddWithValue("$version", "dashboard-v2");
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync());
+        count.Should().BeGreaterThan(0);
+    }
+
     private async Task<AuthTokensData> RegisterUserAsync(string email)
     {
         var response = await _client.PostAsJsonAsync("/api/v1/auth/register", new
@@ -132,6 +211,68 @@ public class DashboardEndpointTests : IAsyncLifetime
         var client = new HttpClient { BaseAddress = new Uri(_fixture.BaseUrl) };
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return client;
+    }
+
+    private static Guid ExtractUserId(string accessToken)
+    {
+        var parts = accessToken.Split('.');
+        var payload = parts[1];
+        var normalized = payload.Replace('-', '+').Replace('_', '/');
+        while (normalized.Length % 4 != 0)
+        {
+            normalized += "=";
+        }
+
+        var bytes = Convert.FromBase64String(normalized);
+        using var json = JsonDocument.Parse(bytes);
+        var sub = json.RootElement.GetProperty("sub").GetString();
+        return Guid.Parse(sub!);
+    }
+
+    private static async Task InsertLegacyDashboardCacheAsync(Guid ownerUserId, Guid datasetId)
+    {
+        var dbPath = ResolveMetadataDbPath();
+        await using var connection = new SqliteConnection($"Data Source={dbPath}");
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+            INSERT INTO DashboardCache
+            (Id, OwnerUserId, DatasetId, Version, PayloadJson, SourceDatasetUpdatedAt, SourceFingerprint, CreatedAt)
+            VALUES
+            ($id, $owner, $dataset, $version, $payload, $sourceUpdatedAt, $fingerprint, $createdAt);";
+        command.Parameters.AddWithValue("$id", Guid.NewGuid().ToString());
+        command.Parameters.AddWithValue("$owner", ownerUserId.ToString());
+        command.Parameters.AddWithValue("$dataset", datasetId.ToString());
+        command.Parameters.AddWithValue("$version", "dashboard-v1-legacy");
+        command.Parameters.AddWithValue("$payload", "{\"kpis\":[],\"charts\":[],\"tables\":{\"topFeatures\":[],\"dataQuality\":[],\"topCategories\":[]},\"insights\":{\"warnings\":[],\"executiveBullets\":[],\"nextActions\":[]},\"metadata\":{\"indexAvailable\":true,\"recommendationsAvailable\":false,\"formulaAvailable\":false},\"generation\":{}}");
+        command.Parameters.AddWithValue("$sourceUpdatedAt", DateTime.UtcNow.AddDays(1).ToString("O"));
+        command.Parameters.AddWithValue("$fingerprint", "legacy");
+        command.Parameters.AddWithValue("$createdAt", DateTime.UtcNow.ToString("O"));
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static string ResolveMetadataDbPath()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            var candidate = Path.Combine(current.FullName, "src", "InsightEngine.API", "bin");
+            if (Directory.Exists(candidate))
+            {
+                var file = Directory.GetFiles(candidate, "insightengine-metadata.db", SearchOption.AllDirectories)
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(file))
+                {
+                    return file;
+                }
+            }
+
+            current = current.Parent;
+        }
+
+        throw new FileNotFoundException("Metadata database not found.");
     }
 
     private class AuthTokensData

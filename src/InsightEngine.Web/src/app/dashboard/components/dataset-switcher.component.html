@@ -9,7 +9,7 @@
     <mat-label>Dataset</mat-label>
     <mat-select [ngModel]="selectedDatasetId" (ngModelChange)="onSelectionChange($event)">
       <mat-option *ngFor="let dataset of filteredDatasets" [value]="dataset.datasetId">
-        {{ dataset.originalFileName }} · {{ (dataset.lastAccessedAt || dataset.createdAt) | date:'short' }}
+        {{ dataset.originalFileName }} - {{ (dataset.lastAccessedAt || dataset.createdAt) | date:'short' }}
       </mat-option>
     </mat-select>
   </mat-form-field>

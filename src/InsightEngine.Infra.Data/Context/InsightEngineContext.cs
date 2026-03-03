@@ -13,6 +13,7 @@ public class InsightEngineContext : IdentityDbContext<ApplicationUser, IdentityR
     }
 
     public DbSet<DataSet> DataSets { get; set; }
+    public DbSet<DashboardCacheEntry> DashboardCacheEntries { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

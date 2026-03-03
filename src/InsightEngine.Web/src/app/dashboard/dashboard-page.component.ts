@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { DatasetApiService } from '../core/services/dataset-api.service';
 import { AuthService } from '../core/services/auth.service';
 import { DataSetSummary } from '../core/models/dataset.model';
@@ -24,6 +25,7 @@ import { DatasetMetaComponent } from './components/dataset-meta.component';
     RouterLink,
     MatCardModule,
     MatButtonModule,
+    MatIconModule,
     DatasetSwitcherComponent,
     KpiCardsComponent,
     ChartsGridComponent,
@@ -41,6 +43,7 @@ export class DashboardPageComponent implements OnInit {
   dashboard: DashboardViewModel | null = null;
   loading = false;
   lang = 'pt-br';
+  errorMessage: string | null = null;
 
   constructor(
     private readonly datasetApi: DatasetApiService,
@@ -60,6 +63,18 @@ export class DashboardPageComponent implements OnInit {
     this.loadDashboard();
   }
 
+  refreshDashboard(): void {
+    this.loadDashboard();
+  }
+
+  get selectedDataset(): DataSetSummary | undefined {
+    if (!this.selectedDatasetId) {
+      return undefined;
+    }
+
+    return this.datasets.find(item => item.datasetId === this.selectedDatasetId);
+  }
+
   private loadDatasets(): void {
     this.datasetApi.listDatasets().subscribe({
       next: response => {
@@ -72,6 +87,7 @@ export class DashboardPageComponent implements OnInit {
       },
       error: () => {
         this.datasets = [];
+        this.errorMessage = 'Falha ao carregar datasets.';
       }
     });
   }
@@ -82,15 +98,22 @@ export class DashboardPageComponent implements OnInit {
       return;
     }
 
+    this.errorMessage = null;
     this.loading = true;
     this.dashboardService.getDashboard(this.selectedDatasetId).subscribe({
       next: response => {
         this.loading = false;
         this.dashboard = response.data || null;
       },
-      error: () => {
+      error: err => {
         this.loading = false;
         this.dashboard = null;
+        const message =
+          err?.error?.errors?.[0]?.message ||
+          err?.error?.message ||
+          err?.message ||
+          'Não foi possível carregar o dashboard.';
+        this.errorMessage = message;
       }
     });
   }

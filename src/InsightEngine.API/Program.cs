@@ -28,6 +28,7 @@ var runtimeSettings = runtimeSettingsSection.Get<InsightEngineSettings>() ?? new
 builder.Services.Configure<InsightEngineSettings>(runtimeSettingsSection);
 builder.Services.Configure<LLMSettings>(builder.Configuration.GetSection(LLMSettings.SectionName));
 builder.Services.Configure<InsightEngineFeatures>(builder.Configuration.GetSection(InsightEngineFeatures.SectionName));
+builder.Services.Configure<AdminSeedSettings>(builder.Configuration.GetSection(AdminSeedSettings.SectionName));
 
 // Configurar Kestrel para suportar uploads com limite centralizado
 builder.Services.Configure<KestrelServerOptions>(options =>
@@ -193,6 +194,8 @@ using (var scope = app.Services.CreateScope())
         EnsureAuthSchema(dbContext, logger);
         logger.LogInformation("Metadata store initialized using SQLite.");
     }
+
+    await SeedDefaultAdminAsync(scope.ServiceProvider, logger);
 }
 
 // Get API Version Description Provider
@@ -404,6 +407,29 @@ static void EnsureAuthSchema(InsightEngineContext dbContext, ILogger logger)
 
         EnsureColumn(connection, "RefreshTokens", "CreatedByIp", "TEXT NULL");
 
+        using (var dashboardCache = connection.CreateCommand())
+        {
+            dashboardCache.CommandText = @"
+                CREATE TABLE IF NOT EXISTS DashboardCache (
+                    Id TEXT NOT NULL PRIMARY KEY,
+                    OwnerUserId TEXT NOT NULL,
+                    DatasetId TEXT NOT NULL,
+                    Version TEXT NOT NULL,
+                    PayloadJson TEXT NOT NULL,
+                    SourceDatasetUpdatedAt TEXT NOT NULL,
+                    SourceFingerprint TEXT NOT NULL DEFAULT '',
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_DashboardCache_OwnerUserId_DatasetId_Version 
+                    ON DashboardCache (OwnerUserId, DatasetId, Version);
+                CREATE INDEX IF NOT EXISTS IX_DashboardCache_OwnerUserId_DatasetId 
+                    ON DashboardCache (OwnerUserId, DatasetId);";
+            dashboardCache.ExecuteNonQuery();
+        }
+
+        EnsureColumn(connection, "DashboardCache", "SourceFingerprint", "TEXT NOT NULL DEFAULT ''");
+
         using var checkColumn = connection.CreateCommand();
         checkColumn.CommandText = "PRAGMA table_info(DataSets);";
         using var reader = checkColumn.ExecuteReader();
@@ -450,6 +476,57 @@ static void EnsureColumn(System.Data.Common.DbConnection connection, string tabl
     using var alter = connection.CreateCommand();
     alter.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {sqlDefinition};";
     alter.ExecuteNonQuery();
+}
+
+static async Task SeedDefaultAdminAsync(IServiceProvider serviceProvider, ILogger logger)
+{
+    try
+    {
+        var settings = serviceProvider.GetRequiredService<IOptions<AdminSeedSettings>>().Value;
+        if (!settings.Enabled)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.Email) || string.IsNullOrWhiteSpace(settings.Password))
+        {
+            logger.LogWarning("Admin seed enabled but Email/Password are empty. Skipping admin seed.");
+            return;
+        }
+
+        var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var normalizedEmail = settings.Email.Trim();
+        var existing = await userManager.FindByEmailAsync(normalizedEmail);
+        if (existing is not null)
+        {
+            return;
+        }
+
+        var admin = new ApplicationUser
+        {
+            UserName = normalizedEmail,
+            Email = normalizedEmail,
+            EmailConfirmed = true,
+            DisplayName = string.IsNullOrWhiteSpace(settings.DisplayName) ? "Admin" : settings.DisplayName.Trim(),
+            Plan = string.IsNullOrWhiteSpace(settings.Plan) ? "Enterprise" : settings.Plan.Trim(),
+            AvatarUrl = settings.AvatarUrl?.Trim() ?? string.Empty,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var createResult = await userManager.CreateAsync(admin, settings.Password);
+        if (!createResult.Succeeded)
+        {
+            logger.LogWarning("Failed to seed default admin user: {Errors}", string.Join(" | ", createResult.Errors.Select(error => error.Description)));
+            return;
+        }
+
+        logger.LogInformation("Default admin user seeded successfully: {Email}", normalizedEmail);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to seed default admin user.");
+    }
 }
 
 public partial class Program { }

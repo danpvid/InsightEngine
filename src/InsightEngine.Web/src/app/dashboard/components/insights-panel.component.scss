@@ -1,13 +1,58 @@
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+}
+
 .insights-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  grid-column: span 4;
+  background: linear-gradient(180deg, rgba(31, 41, 55, 0.95) 0%, rgba(15, 23, 42, 0.96) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+}
+
+.summary-card {
+  grid-column: span 12;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-head button {
+  background: transparent;
+  color: #93c5fd;
+  border: 0;
+  cursor: pointer;
+  font-size: 12px;
 }
 
 .summary {
-  margin: 0 0 8px;
-  line-height: 1.5;
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+.bullets,
+.actions {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.bullets li,
+.actions li {
+  margin-bottom: 6px;
 }
 
 .muted {
   opacity: 0.75;
+}
+
+@media (max-width: 1024px) {
+  .insights-card,
+  .summary-card {
+    grid-column: span 12;
+  }
 }

@@ -1,12 +1,25 @@
 <div class="charts-grid">
-  <mat-card class="chart-card" *ngFor="let chart of cards">
+  <mat-card
+    class="chart-card"
+    [class.hero-card]="chart.layout === 'hero'"
+    [class.secondary-card]="chart.layout === 'secondary'"
+    *ngFor="let chart of cards; trackBy: trackById">
     <div class="chart-header">
-      <h4>{{ chart.title }}</h4>
+      <div class="title-block">
+        <h4 [title]="chart.title">{{ chart.title }}</h4>
+        <p class="reason" *ngIf="chart.reason">{{ chart.reason }}</p>
+      </div>
       <a [routerLink]="chartLink(chart.id)">Abrir</a>
     </div>
-    <p class="reason" *ngIf="chart.reason">{{ chart.reason }}</p>
     <div class="chart-state" *ngIf="chart.loading">Carregando...</div>
     <div class="chart-state" *ngIf="!chart.loading && chart.error">{{ chart.error }}</div>
-    <div class="chart-host" echarts [options]="chart.option" *ngIf="!chart.loading && !chart.error && chart.option"></div>
+    <div
+      class="chart-host"
+      [class.hero-host]="chart.layout === 'hero'"
+      [class.secondary-host]="chart.layout === 'secondary'"
+      echarts
+      [options]="chart.option"
+      *ngIf="!chart.loading && !chart.error && chart.option">
+    </div>
   </mat-card>
 </div>

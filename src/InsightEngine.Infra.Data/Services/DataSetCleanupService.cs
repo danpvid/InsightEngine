@@ -11,6 +11,7 @@ public class DataSetCleanupService : IDataSetCleanupService
     private readonly IFileStorageService _fileStorageService;
     private readonly IMetadataCacheService _metadataCacheService;
     private readonly IChartQueryCache _chartQueryCache;
+    private readonly IDashboardCacheRepository _dashboardCacheRepository;
     private readonly IIndexStore _indexStore;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
@@ -22,6 +23,7 @@ public class DataSetCleanupService : IDataSetCleanupService
         IFileStorageService fileStorageService,
         IMetadataCacheService metadataCacheService,
         IChartQueryCache chartQueryCache,
+        IDashboardCacheRepository dashboardCacheRepository,
         IIndexStore indexStore,
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
@@ -32,6 +34,7 @@ public class DataSetCleanupService : IDataSetCleanupService
         _fileStorageService = fileStorageService;
         _metadataCacheService = metadataCacheService;
         _chartQueryCache = chartQueryCache;
+        _dashboardCacheRepository = dashboardCacheRepository;
         _indexStore = indexStore;
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
@@ -62,6 +65,7 @@ public class DataSetCleanupService : IDataSetCleanupService
             }
 
             await _indexStore.InvalidateAsync(dataSet.Id, cancellationToken);
+            await _dashboardCacheRepository.RemoveByDatasetAsync(dataSet.Id, cancellationToken);
 
             _dataSetRepository.Remove(dataSet);
         }
@@ -130,6 +134,7 @@ public class DataSetCleanupService : IDataSetCleanupService
         await _metadataCacheService.ClearCacheAsync(datasetId);
         await _chartQueryCache.InvalidateDatasetAsync(datasetId);
         await _indexStore.InvalidateAsync(datasetId, cancellationToken);
+        await _dashboardCacheRepository.RemoveByDatasetAsync(datasetId, cancellationToken);
 
         _dataSetRepository.Remove(dataSet);
         var commitSucceeded = await _unitOfWork.CommitAsync();

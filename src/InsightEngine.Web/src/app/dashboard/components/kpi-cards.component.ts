@@ -12,4 +12,8 @@ import { DashboardKpiCard } from '../models/dashboard.model';
 })
 export class KpiCardsComponent {
   @Input() kpis: DashboardKpiCard[] = [];
+
+  formatValue(value: string): string {
+    return value;
+  }
 }

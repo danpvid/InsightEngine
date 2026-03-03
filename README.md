@@ -644,3 +644,19 @@ AI UI manual checks:
 
 MIT. See `LICENSE`.
 
+
+## Dashboard Cache (Per Dataset, Per User)
+
+The dashboard endpoint (GET /api/v1/dashboard?datasetId={guid}) now uses persistent JSON cache in DashboardCache.
+
+- Cache key scope: OwnerUserId + DatasetId + Version
+- Current version: dashboard-v2
+- Stored payload: serialized DashboardViewModel JSON
+- Validation:
+  - cache is reused only when dataset.UpdatedAt <= cached.SourceDatasetUpdatedAt
+  - cache is reused only when SourceFingerprint matches current index/formula/feature-state fingerprint
+- Invalidation occurs automatically on:
+  - dataset updates (new UpdatedAt)
+  - index rebuild / formula updates (fingerprint changes)
+  - dashboard format/version changes (DashboardCacheVersion bump)
+

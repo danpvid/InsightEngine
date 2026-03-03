@@ -84,6 +84,7 @@ public static class NativeInjectorBootStrapper
 
         // Repositories específicos
         services.AddScoped<IDataSetRepository, DataSetRepository>();
+        services.AddScoped<IDashboardCacheRepository, DashboardCacheRepository>();
         services.AddScoped<IAppUserRepository, AppUserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 

@@ -12,4 +12,9 @@ import { DashboardInsights } from '../models/dashboard.model';
 })
 export class InsightsPanelComponent {
   @Input() insights: DashboardInsights | null = null;
+  expanded = false;
+
+  toggleExpanded(): void {
+    this.expanded = !this.expanded;
+  }
 }

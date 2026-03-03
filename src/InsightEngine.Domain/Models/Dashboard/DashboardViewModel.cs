@@ -7,9 +7,12 @@ public class DashboardViewModel
     public DashboardDatasetSummary? Dataset { get; set; }
     public List<DashboardKpiCard> Kpis { get; set; } = new();
     public List<ChartRecommendation> Charts { get; set; } = new();
+    public ChartRecommendation? HeroChart { get; set; }
+    public List<ChartRecommendation> SecondaryCharts { get; set; } = new();
     public DashboardTables Tables { get; set; } = new();
     public DashboardInsights Insights { get; set; } = new();
     public DashboardMetadata Metadata { get; set; } = new();
+    public DashboardRenderingHints RenderingHints { get; set; } = new();
     public DateTime? LastUpdated { get; set; }
     public DashboardGenerationTimestamps Generation { get; set; } = new();
 }
@@ -37,6 +40,7 @@ public class DashboardTables
 {
     public List<DashboardTopFeatureRow> TopFeatures { get; set; } = new();
     public List<DashboardDataQualityRow> DataQuality { get; set; } = new();
+    public List<DashboardCategorySummaryRow> TopCategories { get; set; } = new();
 }
 
 public class DashboardTopFeatureRow
@@ -57,10 +61,19 @@ public class DashboardDataQualityRow
     public long DistinctCount { get; set; }
 }
 
+public class DashboardCategorySummaryRow
+{
+    public string Column { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public long Count { get; set; }
+}
+
 public class DashboardInsights
 {
     public string? LlmExecutiveSummary { get; set; }
+    public List<string> ExecutiveBullets { get; set; } = new();
     public List<string> Warnings { get; set; } = new();
+    public List<string> NextActions { get; set; } = new();
 }
 
 public class DashboardMetadata
@@ -83,4 +96,22 @@ public class DashboardGenerationTimestamps
     public DateTime? IndexGeneratedAt { get; set; }
     public DateTime? RecommendationsGeneratedAt { get; set; }
     public DateTime? InsightsGeneratedAt { get; set; }
+}
+
+public class DashboardRenderingHints
+{
+    public DashboardNumberFormatHints NumberFormat { get; set; } = new();
+    public DashboardMultiSeriesPolicy MultiSeriesPolicy { get; set; } = new();
+}
+
+public class DashboardNumberFormatHints
+{
+    public string Mode { get; set; } = "compact";
+    public string Locale { get; set; } = "pt-BR";
+}
+
+public class DashboardMultiSeriesPolicy
+{
+    public int MaxSeries { get; set; } = 3;
+    public int MaxLegendItems { get; set; } = 5;
 }

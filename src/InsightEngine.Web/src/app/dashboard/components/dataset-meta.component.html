@@ -1,13 +1,13 @@
 <mat-card class="meta-card">
   <h3>Dataset Meta</h3>
   <p *ngIf="dataset">
-    {{ dataset.name }} · {{ dataset.rowCount | number }} linhas · {{ dataset.columnCount | number }} colunas
+    {{ dataset.name }} - {{ dataset.rowCount | number }} linhas - {{ dataset.columnCount | number }} colunas
   </p>
 
   <div class="chips" *ngIf="metadata">
     <mat-chip>Index: {{ metadata.indexAvailable ? 'ON' : 'OFF' }}</mat-chip>
-    <mat-chip>Recomendações: {{ metadata.recommendationsAvailable ? 'ON' : 'OFF' }}</mat-chip>
-    <mat-chip>Fórmula: {{ metadata.formulaAvailable ? 'ON' : 'OFF' }}</mat-chip>
+    <mat-chip>Recomendacoes: {{ metadata.recommendationsAvailable ? 'ON' : 'OFF' }}</mat-chip>
+    <mat-chip>Formula: {{ metadata.formulaAvailable ? 'ON' : 'OFF' }}</mat-chip>
   </div>
 
   <div class="links">

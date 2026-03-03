@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatTableModule } from '@angular/material/table';
 import { DashboardDataQualityRow } from '../models/dashboard.model';
+import { formatCompactNumber } from '../../shared/format/compact-number';
 
 @Component({
   selector: 'app-data-quality-table',
@@ -14,4 +15,8 @@ import { DashboardDataQualityRow } from '../models/dashboard.model';
 export class DataQualityTableComponent {
   @Input() rows: DashboardDataQualityRow[] = [];
   readonly displayedColumns = ['column', 'nullRate', 'outlierRate', 'distinctCount'];
+
+  compact(value: number): string {
+    return formatCompactNumber(value, { locale: 'pt-BR' });
+  }
 }
