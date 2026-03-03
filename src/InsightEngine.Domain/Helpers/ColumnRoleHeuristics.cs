@@ -10,7 +10,7 @@ public static class ColumnRoleHeuristics
         }
 
         var normalized = columnName.Trim().ToLowerInvariant();
-        return normalized is "__row_id" or "_row_id"
+        return normalized is "__row_id" or "_row_id" or "_id"
             || normalized.StartsWith("__row_id_", StringComparison.Ordinal)
             || normalized.StartsWith("_row_id_", StringComparison.Ordinal);
     }

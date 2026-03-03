@@ -141,4 +141,85 @@ public class DataSetSanitizer : IDataSetSanitizer
         File.Move(tempPath, csvPath);
         return new FileInfo(csvPath).Length;
     }
+
+    public async Task<long> AddDerivedKeyColumnAsync(
+        string csvPath,
+        string keyColumnName,
+        string sourceColumnName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(keyColumnName))
+        {
+            throw new ArgumentException("Key column name is required.", nameof(keyColumnName));
+        }
+
+        if (string.IsNullOrWhiteSpace(sourceColumnName))
+        {
+            throw new ArgumentException("Source column name is required.", nameof(sourceColumnName));
+        }
+
+        var tempPath = $"{csvPath}.derive.tmp";
+        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            HasHeaderRecord = true,
+            MissingFieldFound = null,
+            BadDataFound = null
+        };
+
+        {
+            using var reader = new StreamReader(csvPath);
+            using var csvReader = new CsvReader(reader, config);
+
+            await csvReader.ReadAsync();
+            csvReader.ReadHeader();
+            var headers = csvReader.HeaderRecord ?? throw new InvalidOperationException("CSV file has no header");
+            var sourceIndex = Array.FindIndex(
+                headers,
+                header => string.Equals(header, sourceColumnName, StringComparison.OrdinalIgnoreCase));
+
+            if (sourceIndex < 0)
+            {
+                throw new InvalidOperationException($"Source column '{sourceColumnName}' was not found.");
+            }
+
+            if (headers.Any(header => string.Equals(header, keyColumnName, StringComparison.OrdinalIgnoreCase)))
+            {
+                return new FileInfo(csvPath).Length;
+            }
+
+            await using var writer = new StreamWriter(tempPath);
+            await using var csvWriter = new CsvWriter(writer, CultureInfo.InvariantCulture);
+
+            csvWriter.WriteField(keyColumnName);
+            foreach (var header in headers)
+            {
+                csvWriter.WriteField(header);
+            }
+
+            await csvWriter.NextRecordAsync();
+
+            while (await csvReader.ReadAsync())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                csvWriter.WriteField(csvReader.GetField(sourceIndex) ?? string.Empty);
+                for (var index = 0; index < headers.Length; index++)
+                {
+                    csvWriter.WriteField(csvReader.GetField(index) ?? string.Empty);
+                }
+
+                await csvWriter.NextRecordAsync();
+            }
+
+            await writer.FlushAsync(cancellationToken);
+        }
+
+        if (File.Exists(csvPath))
+        {
+            File.Delete(csvPath);
+        }
+
+        File.Move(tempPath, csvPath);
+        return new FileInfo(csvPath).Length;
+    }
 }

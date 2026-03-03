@@ -11,4 +11,10 @@ public interface IDataSetSanitizer
         string csvPath,
         string keyColumnName,
         CancellationToken cancellationToken = default);
+
+    Task<long> AddDerivedKeyColumnAsync(
+        string csvPath,
+        string keyColumnName,
+        string sourceColumnName,
+        CancellationToken cancellationToken = default);
 }

@@ -379,7 +379,7 @@ public class DataSetIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task FinalizeImport_WithoutUniqueCandidate_CreatesSequentialKey_AndBuildIndexSucceeds()
+    public async Task FinalizeImport_WithoutUniqueCandidate_CreatesSequentialCanonicalId_AndBuildIndexSucceeds()
     {
         var csv = "a,b,c\n1,10,x\n1,10,x\n1,20,y\n2,20,y\n";
         var datasetId = await TestHelpers.UploadTestDatasetAsync(_client, csv, "row-id-regression.csv");
@@ -401,7 +401,7 @@ public class DataSetIntegrationTests : IAsyncLifetime
         var finalizeData = finalizeJson.RootElement.GetProperty("data");
         var uniqueKeyColumn = finalizeData.GetProperty("uniqueKeyColumn").GetString();
         uniqueKeyColumn.Should().NotBeNullOrWhiteSpace();
-        uniqueKeyColumn!.Should().StartWith("__row_id");
+        uniqueKeyColumn.Should().Be("_id");
 
         var buildResponse = await _client.PostAsJsonAsync(
             $"/api/v1/datasets/{datasetId}/index:build",
@@ -415,6 +415,72 @@ public class DataSetIntegrationTests : IAsyncLifetime
         buildResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var buildJson = JsonDocument.Parse(await buildResponse.Content.ReadAsStringAsync());
         buildJson.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task FinalizeImport_WithSingleUniqueCandidate_DuplicatesToCanonicalId()
+    {
+        var csv = "order_number,region,value\nA1,N,10\nA2,N,20\nA3,S,30\nA4,S,40\n";
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client, csv, "canonical-id-single.csv");
+
+        var finalizeResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/finalize",
+            new
+            {
+                targetColumn = "value",
+                uniqueKeyColumn = (string?)null,
+                ignoredColumns = Array.Empty<string>(),
+                columnTypeOverrides = new Dictionary<string, string>(),
+                currencyCode = "BRL"
+            });
+
+        finalizeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var finalizeJson = JsonDocument.Parse(await finalizeResponse.Content.ReadAsStringAsync());
+        finalizeJson.RootElement.GetProperty("data").GetProperty("uniqueKeyColumn").GetString().Should().Be("_id");
+
+        var schemaResponse = await _client.GetAsync($"/api/v1/datasets/{datasetId}/schema");
+        schemaResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var schemaJson = JsonDocument.Parse(await schemaResponse.Content.ReadAsStringAsync());
+        var columns = schemaJson.RootElement.GetProperty("data").GetProperty("columns").EnumerateArray()
+            .Select(column => column.GetProperty("name").GetString())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToList();
+        columns.Should().Contain("order_number");
+        columns.Should().Contain("_id");
+    }
+
+    [Fact]
+    public async Task FinalizeImport_WithMultipleUniqueCandidates_RequiresUniqueKeyColumnSelection()
+    {
+        var csv = "id_a,id_b,amount\nA1,B1,10\nA2,B2,20\nA3,B3,30\nA4,B4,40\n";
+        var datasetId = await TestHelpers.UploadTestDatasetAsync(_client, csv, "canonical-id-multiple.csv");
+
+        var finalizeResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/finalize",
+            new
+            {
+                targetColumn = "amount",
+                uniqueKeyColumn = (string?)null,
+                ignoredColumns = Array.Empty<string>(),
+                columnTypeOverrides = new Dictionary<string, string>(),
+                currencyCode = "BRL"
+            });
+        finalizeResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var finalizeWithSelectionResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/datasets/{datasetId}/finalize",
+            new
+            {
+                targetColumn = "amount",
+                uniqueKeyColumn = "id_b",
+                ignoredColumns = Array.Empty<string>(),
+                columnTypeOverrides = new Dictionary<string, string>(),
+                currencyCode = "BRL"
+            });
+        finalizeWithSelectionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var finalizeWithSelectionJson = JsonDocument.Parse(await finalizeWithSelectionResponse.Content.ReadAsStringAsync());
+        finalizeWithSelectionJson.RootElement.GetProperty("data").GetProperty("uniqueKeyColumn").GetString().Should().Be("_id");
     }
 
     [Fact]

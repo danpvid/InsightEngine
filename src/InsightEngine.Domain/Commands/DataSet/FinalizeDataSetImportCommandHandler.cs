@@ -83,6 +83,14 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                 ignoredColumns.Add(resolvedIgnored);
             }
 
+            var internalIdentifiers = allColumns
+                .Where(ColumnRoleHeuristics.IsRowIdLike)
+                .ToList();
+            foreach (var internalIdentifier in internalIdentifiers)
+            {
+                ignoredColumns.Add(internalIdentifier);
+            }
+
             string? targetColumn = null;
             if (!string.IsNullOrWhiteSpace(request.TargetColumn))
             {
@@ -105,18 +113,35 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                 ignoredColumns,
                 cancellationToken);
 
-            var uniqueKeyColumn = ResolveUniqueKeyColumn(request.UniqueKeyColumn, uniqueCandidates, lookup);
-            var syntheticKeyColumn = string.Empty;
-
-            if (string.IsNullOrWhiteSpace(uniqueKeyColumn) && uniqueCandidates.Count == 0)
+            var uniqueKeyResolution = ResolveUniqueKeyColumn(request.UniqueKeyColumn, uniqueCandidates, lookup);
+            if (!uniqueKeyResolution.IsValid)
             {
-                syntheticKeyColumn = BuildSyntheticKeyColumnName(allColumns);
+                return Result.Failure<FinalizeDataSetImportResponse>(uniqueKeyResolution.ErrorMessage!);
+            }
+
+            const string canonicalIdColumn = "_id";
+            var sourceUniqueKeyColumn = uniqueKeyResolution.SelectedColumn;
+            if (string.IsNullOrWhiteSpace(sourceUniqueKeyColumn))
+            {
                 var updatedSize = await _dataSetSanitizer
-                    .AddSequentialKeyColumnAsync(dataSet.StoredPath, syntheticKeyColumn, cancellationToken);
+                    .AddSequentialKeyColumnAsync(dataSet.StoredPath, canonicalIdColumn, cancellationToken);
                 dataSet.UpdateFileInfo(updatedSize);
-                allColumns.Add(syntheticKeyColumn);
-                lookup[syntheticKeyColumn] = syntheticKeyColumn;
-                uniqueKeyColumn = syntheticKeyColumn;
+                if (!allColumns.Contains(canonicalIdColumn, StringComparer.OrdinalIgnoreCase))
+                {
+                    allColumns.Add(canonicalIdColumn);
+                    lookup[canonicalIdColumn] = canonicalIdColumn;
+                }
+            }
+            else if (!string.Equals(sourceUniqueKeyColumn, canonicalIdColumn, StringComparison.OrdinalIgnoreCase))
+            {
+                var updatedSize = await _dataSetSanitizer
+                    .AddDerivedKeyColumnAsync(dataSet.StoredPath, canonicalIdColumn, sourceUniqueKeyColumn, cancellationToken);
+                dataSet.UpdateFileInfo(updatedSize);
+                if (!allColumns.Contains(canonicalIdColumn, StringComparer.OrdinalIgnoreCase))
+                {
+                    allColumns.Add(canonicalIdColumn);
+                    lookup[canonicalIdColumn] = canonicalIdColumn;
+                }
             }
 
             var overrides = new Dictionary<string, InferredType>(StringComparer.OrdinalIgnoreCase);
@@ -164,13 +189,18 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                 })
                 .ToList();
 
-            if (!string.IsNullOrWhiteSpace(syntheticKeyColumn))
+            if (!schemaColumns.Any(column => string.Equals(column.Name, canonicalIdColumn, StringComparison.OrdinalIgnoreCase)))
             {
+                var sourceColumnProfile = profile.Columns
+                    .FirstOrDefault(column => string.Equals(column.Name, sourceUniqueKeyColumn, StringComparison.OrdinalIgnoreCase));
+                var canonicalType = sourceColumnProfile?.ConfirmedType?.NormalizeLegacy()
+                    ?? sourceColumnProfile?.InferredType.NormalizeLegacy()
+                    ?? InferredType.Integer;
                 schemaColumns.Add(new DatasetImportSchemaColumn
                 {
-                    Name = syntheticKeyColumn,
-                    InferredType = InferredType.Integer,
-                    ConfirmedType = InferredType.Integer,
+                    Name = canonicalIdColumn,
+                    InferredType = canonicalType,
+                    ConfirmedType = canonicalType,
                     IsIgnored = false,
                     IsTarget = false,
                     CurrencyCode = null,
@@ -208,7 +238,7 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                 SchemaVersion = 1,
                 SchemaConfirmed = true,
                 TargetColumn = targetColumn,
-                UniqueKeyColumn = uniqueKeyColumn,
+                UniqueKeyColumn = canonicalIdColumn,
                 CurrencyCode = string.IsNullOrWhiteSpace(request.CurrencyCode) ? "BRL" : request.CurrencyCode,
                 FinalizedAtUtc = DateTime.UtcNow,
                 Columns = schemaColumns
@@ -225,7 +255,7 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
                 DatasetId = request.DatasetId,
                 SchemaVersion = schema.SchemaVersion,
                 TargetColumn = targetColumn,
-                UniqueKeyColumn = uniqueKeyColumn,
+                UniqueKeyColumn = canonicalIdColumn,
                 IgnoredColumnsCount = ignoredColumns.Count,
                 StoredColumnsCount = storedColumnsCount,
                 CurrencyCode = schema.CurrencyCode
@@ -238,7 +268,7 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
         }
     }
 
-    private static string ResolveUniqueKeyColumn(
+    private static UniqueKeyResolution ResolveUniqueKeyColumn(
         string? requestedUniqueKeyColumn,
         IReadOnlyList<string> uniqueCandidates,
         IReadOnlyDictionary<string, string> lookup)
@@ -248,16 +278,16 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
             var single = uniqueCandidates[0];
             if (string.IsNullOrWhiteSpace(requestedUniqueKeyColumn))
             {
-                return single;
+                return UniqueKeyResolution.Success(single);
             }
 
             if (!lookup.TryGetValue(requestedUniqueKeyColumn.Trim(), out var resolvedRequested)
                 || !string.Equals(single, resolvedRequested, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException($"Unique key column must be '{single}'.");
+                return UniqueKeyResolution.Failure($"Unique key column must be '{single}'.");
             }
 
-            return single;
+            return UniqueKeyResolution.Success(single);
         }
 
         if (uniqueCandidates.Count > 1)
@@ -265,20 +295,20 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
             if (string.IsNullOrWhiteSpace(requestedUniqueKeyColumn))
             {
                 var options = string.Join(", ", uniqueCandidates.OrderBy(item => item, StringComparer.OrdinalIgnoreCase));
-                throw new InvalidOperationException($"Multiple unique key candidates found: {options}. Please choose one in uniqueKeyColumn.");
+                return UniqueKeyResolution.Failure($"Multiple unique key candidates found: {options}. Please choose one in uniqueKeyColumn.");
             }
 
             if (!lookup.TryGetValue(requestedUniqueKeyColumn.Trim(), out var resolvedRequested)
                 || !uniqueCandidates.Contains(resolvedRequested, StringComparer.OrdinalIgnoreCase))
             {
                 var options = string.Join(", ", uniqueCandidates.OrderBy(item => item, StringComparer.OrdinalIgnoreCase));
-                throw new InvalidOperationException($"Invalid uniqueKeyColumn '{requestedUniqueKeyColumn}'. Valid options: {options}.");
+                return UniqueKeyResolution.Failure($"Invalid uniqueKeyColumn '{requestedUniqueKeyColumn}'. Valid options: {options}.");
             }
 
-            return resolvedRequested;
+            return UniqueKeyResolution.Success(resolvedRequested);
         }
 
-        return string.Empty;
+        return UniqueKeyResolution.Success(string.Empty);
     }
 
     private async Task<List<string>> ResolveUniqueKeyCandidatesAsync(
@@ -317,27 +347,15 @@ public class FinalizeDataSetImportCommandHandler : IRequestHandler<FinalizeDataS
             .Where(candidate => candidate.UniquenessRatio >= 0.999999)
             .Where(candidate => candidate.NullRate <= 0)
             .Select(candidate => candidate.Columns[0])
+            .Where(column => !ColumnRoleHeuristics.IsRowIdLike(column))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
-    private static string BuildSyntheticKeyColumnName(IReadOnlyCollection<string> existingColumns)
+    private sealed record UniqueKeyResolution(bool IsValid, string SelectedColumn, string? ErrorMessage)
     {
-        const string baseName = "__row_id";
-        var taken = new HashSet<string>(existingColumns, StringComparer.OrdinalIgnoreCase);
-
-        if (!taken.Contains(baseName))
-        {
-            return baseName;
-        }
-
-        var suffix = 1;
-        while (taken.Contains($"{baseName}_{suffix}"))
-        {
-            suffix++;
-        }
-
-        return $"{baseName}_{suffix}";
+        public static UniqueKeyResolution Success(string selectedColumn) => new(true, selectedColumn, null);
+        public static UniqueKeyResolution Failure(string errorMessage) => new(false, string.Empty, errorMessage);
     }
 }

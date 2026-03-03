@@ -20,5 +20,13 @@ public class FinalizeDataSetImportCommandValidator : AbstractValidator<FinalizeD
 
         RuleFor(command => command.ColumnTypeOverrides)
             .NotNull();
+
+        RuleFor(command => command.IgnoredColumns)
+            .Must(columns => !columns.Any(column => string.Equals(column, "_id", StringComparison.OrdinalIgnoreCase)))
+            .WithMessage("Ignored columns cannot include canonical _id.");
+
+        RuleFor(command => command.UniqueKeyColumn)
+            .MaximumLength(256)
+            .When(command => !string.IsNullOrWhiteSpace(command.UniqueKeyColumn));
     }
 }

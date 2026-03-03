@@ -51,6 +51,10 @@ public class FinalizeImportRequestValidator : AbstractValidator<FinalizeImportRe
             .NotEmpty()
             .MaximumLength(256);
 
+        RuleFor(x => x.IgnoredColumns)
+            .Must(columns => !columns.Any(column => string.Equals(column, "_id", StringComparison.OrdinalIgnoreCase)))
+            .WithMessage("IgnoredColumns cannot contain canonical _id.");
+
         RuleFor(x => x.ColumnTypeOverrides)
             .Must(overrides => overrides.Count <= 500)
             .WithMessage("ColumnTypeOverrides cannot exceed 500 entries.");
